@@ -1,0 +1,41 @@
+// Benchmark: List / accumulation operations
+// Tests list building, mapping, and reduction.
+
+def make_range(n: i64) -> list<i64> {
+    val result = list()
+    var i = 0
+    while i < n {
+        push(result, i);
+        i = i + 1
+    }
+    result
+}
+
+def sum_list(xs: list<i64>) -> i64 {
+    var total = 0
+    var i = 0
+    while i < list_len(xs) {
+        total = total + list_get(xs, i);
+        i = i + 1
+    }
+    total
+}
+
+def map_square(xs: list<i64>) -> list<i64> {
+    val result = list()
+    var i = 0
+    while i < list_len(xs) {
+        val x = list_get(xs, i)
+        push(result, x * x);
+        i = i + 1
+    }
+    result
+}
+
+def main() -> i64 {
+    val data = make_range(200)
+    val squared = map_square(data)
+    val total = sum_list(squared)
+    print(total);
+    0
+}

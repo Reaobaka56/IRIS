@@ -6,8 +6,8 @@ pub def getenv(key: str) -> str {
 }
 
 // Set an environment variable.
-pub def setenv(key: str, val: str) -> bool {
-    env_set(key, val)
+pub def setenv(key: str, value: str) -> bool {
+    env_set(key, value)
 }
 
 // Get the current process ID.
@@ -22,7 +22,7 @@ pub def shell(cmd: str) -> str {
 
 // Exit the process with a given code.
 pub def exit(code: i64) -> i64 {
-    exit_code(code)
+    exit_code(code);
     0
 }
 
@@ -33,12 +33,12 @@ pub def getcwd() -> str {
 
 // List files in a directory.
 pub def readdir(path: str) -> list<str> {
-    listdir(path)
+    list_dir(path)
 }
 
 // Check if a path exists.
 pub def exists(path: str) -> bool {
-    path_exists(path)
+    file_exists(path)
 }
 
 // Create a directory.

@@ -1,18 +1,37 @@
-# Ignore Claude, Python, and text files
-.claude/
-*.py
-*.txt
-*.md
-!README.md
-# Ignore build and target directories
+# ── Build artifacts ──
 /target/
 
-# Installer build artifacts
-installer/_stage/
-installer/dist/
-# Ignore other common files
-*.log
-*.bak
+# ── IDE / Editor ──
+.vscode/
+.idea/
 *.swp
+*.swo
+*~
+
+# ── OS junk ──
 .DS_Store
 Thumbs.db
+Desktop.ini
+
+# ── Installer build artifacts ──
+installer/_stage/
+installer/dist/
+
+# ── VS Code extension build artifacts ──
+vscode-iris/node_modules/
+vscode-iris/out/
+vscode-iris/*.vsix
+
+# ── Release archives & generated docs ──
+*.zip
+*.pdf
+
+# ── Backup files ──
+*.bak
+
+# ── Claude / AI agent state ──
+.claude/
+
+# ── Misc temp files ──
+*.log
+test_output*.txt

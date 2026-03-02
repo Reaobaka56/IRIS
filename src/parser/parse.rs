@@ -48,11 +48,61 @@ use crate::parser::lexer::{Span, Spanned, Token};
 pub struct Parser<'t> {
     tokens: &'t [Spanned<Token>],
     pos: usize,
+    /// Accumulated parse errors (for recovery mode).
+    errors: Vec<ParseError>,
+    /// Maximum number of errors before aborting.
+    max_errors: usize,
 }
 
 impl<'t> Parser<'t> {
     pub fn new(tokens: &'t [Spanned<Token>]) -> Self {
-        Self { tokens, pos: 0 }
+        Self { tokens, pos: 0, errors: Vec::new(), max_errors: 50 }
+    }
+
+    /// Return all accumulated errors (empty if parsing succeeded).
+    pub fn errors(&self) -> &[ParseError] {
+        &self.errors
+    }
+
+    /// Parse the module with error recovery. Returns a partial AST and any
+    /// accumulated errors. When `errors` is non-empty the AST may be
+    /// incomplete but will still contain all successfully-parsed items.
+    pub fn parse_module_recovering(&mut self) -> (AstModule, Vec<ParseError>) {
+        let module = self.parse_module_inner();
+        let errors = std::mem::take(&mut self.errors);
+        (module, errors)
+    }
+
+    // -----------------------------------------------------------------------
+    // Synchronization (error recovery)
+    // -----------------------------------------------------------------------
+
+    /// Skip tokens until we reach a token that can start a new top-level
+    /// declaration (or EOF). This is the primary recovery point.
+    fn synchronize(&mut self) {
+        while !self.at_eof() {
+            match self.peek_tok() {
+                Token::Def
+                | Token::Record
+                | Token::Choice
+                | Token::Model
+                | Token::Const
+                | Token::Type
+                | Token::Trait
+                | Token::Impl
+                | Token::Bring
+                | Token::Extern
+                | Token::Pub
+                | Token::Async => return,
+                _ => { self.advance(); }
+            }
+        }
+    }
+
+    /// Record an error and synchronize.
+    fn record_error(&mut self, err: ParseError) {
+        self.errors.push(err);
+        self.synchronize();
     }
 
     // -----------------------------------------------------------------------
@@ -123,6 +173,17 @@ impl<'t> Parser<'t> {
     // -----------------------------------------------------------------------
 
     pub fn parse_module(&mut self) -> Result<AstModule, ParseError> {
+        let module = self.parse_module_inner();
+        // If we accumulated errors, return the first one for backward compat.
+        if !self.errors.is_empty() {
+            return Err(self.errors.remove(0));
+        }
+        Ok(module)
+    }
+
+    /// Internal: parse the full module, recovering from errors in individual
+    /// top-level declarations.
+    fn parse_module_inner(&mut self) -> AstModule {
         let mut enums = Vec::new();
         let mut structs = Vec::new();
         let mut functions = Vec::new();
@@ -134,15 +195,58 @@ impl<'t> Parser<'t> {
         let mut brings = Vec::new();
         let mut extern_fns = Vec::new();
         while !self.at_eof() {
+            if self.errors.len() >= self.max_errors {
+                break;
+            }
             match self.peek_tok().clone() {
-                Token::Choice => enums.push(self.parse_enum_def()?),
-                Token::Record => structs.push(self.parse_struct_def()?),
-                Token::Def | Token::Async | Token::At => functions.push(self.parse_fn()?),
-                Token::Model => models.push(self.parse_model()?),
-                Token::Const => consts.push(self.parse_const_decl()?),
-                Token::Type => type_aliases.push(self.parse_type_alias()?),
-                Token::Trait => traits.push(self.parse_trait_def()?),
-                Token::Impl => impls.push(self.parse_impl_def()?),
+                Token::Choice => {
+                    match self.parse_enum_def() {
+                        Ok(e) => enums.push(e),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Record => {
+                    match self.parse_struct_def() {
+                        Ok(s) => structs.push(s),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Def | Token::Async | Token::At => {
+                    match self.parse_fn() {
+                        Ok(f) => functions.push(f),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Model => {
+                    match self.parse_model() {
+                        Ok(m) => models.push(m),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Const => {
+                    match self.parse_const_decl() {
+                        Ok(c) => consts.push(c),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Type => {
+                    match self.parse_type_alias() {
+                        Ok(t) => type_aliases.push(t),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Trait => {
+                    match self.parse_trait_def() {
+                        Ok(t) => traits.push(t),
+                        Err(e) => self.record_error(e),
+                    }
+                }
+                Token::Impl => {
+                    match self.parse_impl_def() {
+                        Ok(i) => impls.push(i),
+                        Err(e) => self.record_error(e),
+                    }
+                }
                 Token::Bring => {
                     let bring_span = self.current_span();
                     self.advance(); // consume 'bring'
@@ -150,77 +254,97 @@ impl<'t> Parser<'t> {
                         // bring "path/to/file.iris"
                         Token::StringLit(path) => {
                             self.advance();
-                            AstBring { path: BringPath::File(path), span: bring_span }
+                            Ok(AstBring { path: BringPath::File(path), span: bring_span })
                         }
                         // bring std.name  OR  bring module_name (legacy identifier)
                         Token::Ident(name) => {
                             self.advance();
                             if name == "std" && matches!(self.peek_tok(), Token::Dot) {
                                 self.advance(); // consume '.'
-                                let lib_name = self.expect_ident()?.name;
-                                AstBring { path: BringPath::Stdlib(lib_name), span: bring_span }
+                                match self.expect_ident() {
+                                    Ok(lib) => Ok(AstBring { path: BringPath::Stdlib(lib.name), span: bring_span }),
+                                    Err(e) => Err(e),
+                                }
                             } else {
                                 // Legacy: bring module_name → treat as File("module_name.iris")
-                                AstBring { path: BringPath::File(format!("{}.iris", name)), span: bring_span }
+                                Ok(AstBring { path: BringPath::File(format!("{}.iris", name)), span: bring_span })
                             }
                         }
-                        _ => return Err(ParseError::UnexpectedToken {
+                        _ => Err(ParseError::UnexpectedToken {
                             expected: "module path (\"file.iris\", std.name, or identifier)".to_owned(),
                             found: format!("{}", self.peek_tok()),
                             span: self.current_span(),
                         }),
                     };
-                    brings.push(bring);
+                    match bring {
+                        Ok(b) => brings.push(b),
+                        Err(e) => self.record_error(e),
+                    }
                 }
                 Token::Extern => {
-                    extern_fns.push(self.parse_extern_fn()?);
+                    match self.parse_extern_fn() {
+                        Ok(f) => extern_fns.push(f),
+                        Err(e) => self.record_error(e),
+                    }
                 }
                 Token::Pub => {
                     self.advance(); // consume 'pub'
                     match self.peek_tok().clone() {
                         Token::Def | Token::Async => {
-                            let mut func = self.parse_fn()?;
-                            func.is_pub = true;
-                            functions.push(func);
+                            match self.parse_fn() {
+                                Ok(mut func) => { func.is_pub = true; functions.push(func); }
+                                Err(e) => self.record_error(e),
+                            }
                         }
                         Token::Record => {
-                            let mut s = self.parse_struct_def()?;
-                            s.is_pub = true;
-                            structs.push(s);
+                            match self.parse_struct_def() {
+                                Ok(mut s) => { s.is_pub = true; structs.push(s); }
+                                Err(e) => self.record_error(e),
+                            }
                         }
                         Token::Choice => {
-                            let mut e = self.parse_enum_def()?;
-                            e.is_pub = true;
-                            enums.push(e);
+                            match self.parse_enum_def() {
+                                Ok(mut e2) => { e2.is_pub = true; enums.push(e2); }
+                                Err(e) => self.record_error(e),
+                            }
                         }
                         Token::Const => {
-                            let mut c = self.parse_const_decl()?;
-                            c.is_pub = true;
-                            consts.push(c);
+                            match self.parse_const_decl() {
+                                Ok(mut c) => { c.is_pub = true; consts.push(c); }
+                                Err(e) => self.record_error(e),
+                            }
                         }
                         Token::Type => {
-                            let mut t = self.parse_type_alias()?;
-                            t.is_pub = true;
-                            type_aliases.push(t);
+                            match self.parse_type_alias() {
+                                Ok(mut t) => { t.is_pub = true; type_aliases.push(t); }
+                                Err(e) => self.record_error(e),
+                            }
                         }
-                        Token::Trait => traits.push(self.parse_trait_def()?),
-                        _ => return Err(ParseError::UnexpectedToken {
-                            expected: "'def', 'record', 'choice', 'const', 'type', or 'trait' after 'pub'".to_owned(),
-                            found: format!("{}", self.peek_tok()),
-                            span: self.current_span(),
-                        }),
+                        Token::Trait => {
+                            match self.parse_trait_def() {
+                                Ok(t) => traits.push(t),
+                                Err(e) => self.record_error(e),
+                            }
+                        }
+                        _ => {
+                            self.record_error(ParseError::UnexpectedToken {
+                                expected: "'def', 'record', 'choice', 'const', 'type', or 'trait' after 'pub'".to_owned(),
+                                found: format!("{}", self.peek_tok()),
+                                span: self.current_span(),
+                            });
+                        }
                     }
                 }
                 _ => {
-                    return Err(ParseError::UnexpectedToken {
+                    self.record_error(ParseError::UnexpectedToken {
                         expected: "'choice', 'record', 'def', 'extern', 'model', 'const', 'type', 'trait', 'impl', or 'bring'".to_owned(),
                         found: format!("{}", self.peek_tok()),
                         span: self.current_span(),
-                    })
+                    });
                 }
             }
         }
-        Ok(AstModule {
+        AstModule {
             enums,
             structs,
             functions,
@@ -231,7 +355,7 @@ impl<'t> Parser<'t> {
             impls,
             brings,
             extern_fns,
-        })
+        }
     }
 
     /// Parses `extern def name(params) -> ret_ty` (no body).

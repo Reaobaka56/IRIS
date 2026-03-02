@@ -16,6 +16,8 @@
 //! 6. `CsePass`        — common subexpression elimination
 //! 7. `ShapeCheckPass` — tensor shape consistency
 
+pub mod bench;
+pub mod cache;
 pub mod cli;
 pub mod codegen;
 pub mod compiler;
@@ -43,6 +45,38 @@ pub use lsp::{LspDiagnostic, LspState};
 pub use parser::ast::{AstBring, BringPath};
 pub use pass::{ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning, LoopUnrollPass, StrengthReducePass};
 pub use repl::ReplState;
+
+/// Compiles an IRIS source string with error recovery, returning a partial AST
+/// and all accumulated parse errors. Useful for IDE/LSP workflows where you
+/// want diagnostics for *every* error, not just the first.
+pub fn compile_with_recovery(
+    source: &str,
+) -> (crate::parser::ast::AstModule, Vec<crate::error::ParseError>) {
+    use crate::parser::lexer::Lexer;
+    use crate::parser::parse::Parser;
+
+    match Lexer::new(source).tokenize() {
+        Ok(tokens) => {
+            let mut parser = Parser::new(&tokens);
+            parser.parse_module_recovering()
+        }
+        Err(e) => {
+            // Lexer error — return empty module + the lex error.
+            (crate::parser::ast::AstModule {
+                enums: vec![],
+                structs: vec![],
+                functions: vec![],
+                models: vec![],
+                consts: vec![],
+                type_aliases: vec![],
+                traits: vec![],
+                impls: vec![],
+                brings: vec![],
+                extern_fns: vec![],
+            }, vec![e])
+        }
+    }
+}
 
 /// Controls what the `compile()` function emits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

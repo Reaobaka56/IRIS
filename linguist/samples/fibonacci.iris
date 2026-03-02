@@ -22,7 +22,9 @@ def fib_iter(n: i64) -> i64 {
 }
 
 def main() -> i64 {
-    print(f"fib(10) = {fib(10)}");
-    print(f"fib(30) = {fib_iter(30)}");
+    val r1 = fib(10);
+    val r2 = fib_iter(30);
+    print(f"fib(10) = {r1}");
+    print(f"fib(30) = {r2}");
     0
 }

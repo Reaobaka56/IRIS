@@ -19,6 +19,8 @@ pub struct CliArgs {
     pub max_steps: usize,
     /// Maximum interpreter call depth before aborting (default: 500).
     pub max_depth: usize,
+    /// Disable the incremental compilation cache.
+    pub no_cache: bool,
 }
 
 /// Result of `parse_args`.
@@ -38,6 +40,8 @@ pub enum ParseArgsResult {
     Dap,
     /// `pkg` subcommand: run the package manager.
     Pkg,
+    /// `bench` subcommand: run performance benchmarks.
+    Bench,
 }
 
 /// Parses command-line arguments (the full `std::env::args()` slice including `argv[0]`).
@@ -49,6 +53,7 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
     let mut dump_ir_after: Option<String> = None;
     let mut max_steps: usize = 1_000_000;
     let mut max_depth: usize = 500;
+    let mut no_cache = false;
     let mut i = 1usize;
 
     if let Some(first) = args.get(i) {
@@ -66,6 +71,7 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
             "lsp"  => return Ok(ParseArgsResult::Lsp),
             "dap"  => return Ok(ParseArgsResult::Dap),
             "pkg"  => return Ok(ParseArgsResult::Pkg),
+            "bench" => return Ok(ParseArgsResult::Bench),
             _ => {}
         }
     }
@@ -133,6 +139,9 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
                     format!("--max-depth: '{}' is not a valid positive integer", n)
                 })?;
             }
+            "--no-cache" => {
+                no_cache = true;
+            }
             arg if !arg.starts_with('-') => {
                 path = Some(PathBuf::from(arg));
             }
@@ -142,7 +151,7 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
     }
 
     let path = path.ok_or_else(|| "no input file specified".to_owned())?;
-    Ok(ParseArgsResult::Args(CliArgs { path, emit, output, run_after_build, dump_ir_after, max_steps, max_depth }))
+    Ok(ParseArgsResult::Args(CliArgs { path, emit, output, run_after_build, dump_ir_after, max_steps, max_depth, no_cache }))
 }
 
 /// Returns the version string for the CLI (GCC-style verbose output).
@@ -220,6 +229,7 @@ pub fn help_text() -> &'static str {
        lsp                   Start the LSP server (JSON-RPC on stdin/stdout)\n\
        dap                   Start the DAP debug adapter (JSON-RPC on stdin/stdout)\n\
        pkg <cmd>             Package manager (init, add, remove, install, list, build, run)\n\
+       bench <file.iris>     Run performance benchmarks on a file\n\
      \n\
      Options:\n\
        --emit <kind>         Output kind: ir (default), llvm, llvm-complete, cuda, simd,\n\
@@ -229,6 +239,7 @@ pub fn help_text() -> &'static str {
        --dump-ir-after <p>   Dump IR to stderr after pass <p> completes\n\
        --max-steps <n>       Max interpreter steps before abort (default: 1000000)\n\
        --max-depth <n>       Max call depth before abort (default: 500)\n\
+       --no-cache            Disable incremental compilation cache\n\
        --help, -h            Print this help and exit\n\
        --version, -V         Print version and exit\n"
 }

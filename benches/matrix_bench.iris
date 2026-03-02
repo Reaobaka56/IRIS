@@ -1,0 +1,51 @@
+// Benchmark: Matrix multiplication
+// Tests nested loops and 2D list access.
+
+def make_row3(a: i64, b: i64, c: i64) -> list<i64> {
+    val row = list()
+    push(row, a);
+    push(row, b);
+    push(row, c);
+    row
+}
+
+def mat_mul(a: list<list<i64>>, b: list<list<i64>>, n: i64) -> list<list<i64>> {
+    val result = list()
+    var i = 0
+    while i < n {
+        val row = list()
+        var j = 0
+        while j < n {
+            var sum = 0
+            var k = 0
+            while k < n {
+                val aik = list_get(list_get(a, i), k)
+                val bkj = list_get(list_get(b, k), j)
+                sum = sum + aik * bkj;
+                k = k + 1
+            }
+            push(row, sum);
+            j = j + 1
+        }
+        push(result, row);
+        i = i + 1
+    }
+    result
+}
+
+def main() -> i64 {
+    val a = list()
+    push(a, make_row3(1, 2, 3));
+    push(a, make_row3(4, 5, 6));
+    push(a, make_row3(7, 8, 9));
+
+    val b = list()
+    push(b, make_row3(9, 8, 7));
+    push(b, make_row3(6, 5, 4));
+    push(b, make_row3(3, 2, 1));
+
+    val c = mat_mul(a, b, 3)
+    val first = list_get(list_get(c, 0), 0)
+    print(first);
+    0
+}

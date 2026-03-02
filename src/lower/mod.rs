@@ -2830,21 +2830,21 @@ impl<'m> Lowerer<'m> {
                 "str_reverse" => Some(("str_reverse", IrType::Str)),
 
                 // ── Phase 105: Async/Concurrency extensions ──
-                "chan_try_recv" => Some(("chan_try_recv", IrType::Infer)),
+                "chan_try_recv" => Some(("chan_try_recv", IrType::Scalar(DType::I64))),
                 "chan_len"      => Some(("chan_len", IrType::Scalar(DType::I64))),
                 "select"       => Some(("select", IrType::Scalar(DType::I64))),
                 "timeout"      => Some(("timeout", IrType::Scalar(DType::Bool))),
                 "thread_count" => Some(("thread_count", IrType::Scalar(DType::I64))),
 
                 // ── Phase 105: Deque (double-ended queue) ──
-                "deque_new"       => Some(("deque_new", IrType::List(Box::new(IrType::Infer)))),
-                "deque_push_front"=> Some(("deque_push_front", IrType::List(Box::new(IrType::Infer)))),
-                "deque_push_back" => Some(("deque_push_back", IrType::List(Box::new(IrType::Infer)))),
-                "deque_pop_front" => Some(("deque_pop_front", IrType::Infer)),
-                "deque_pop_back"  => Some(("deque_pop_back", IrType::Infer)),
+                "deque_new"       => Some(("deque_new", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "deque_push_front"=> Some(("deque_push_front", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "deque_push_back" => Some(("deque_push_back", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "deque_pop_front" => Some(("deque_pop_front", IrType::Scalar(DType::I64))),
+                "deque_pop_back"  => Some(("deque_pop_back", IrType::Scalar(DType::I64))),
                 "deque_len"       => Some(("deque_len", IrType::Scalar(DType::I64))),
-                "deque_front"     => Some(("deque_front", IrType::Infer)),
-                "deque_back"      => Some(("deque_back", IrType::Infer)),
+                "deque_front"     => Some(("deque_front", IrType::Scalar(DType::I64))),
+                "deque_back"      => Some(("deque_back", IrType::Scalar(DType::I64))),
 
                 // ── Phase 105: Sorted collection helpers ──
                 "sorted_keys"     => Some(("sorted_keys", IrType::List(Box::new(IrType::Str)))),
@@ -2858,7 +2858,7 @@ impl<'m> Lowerer<'m> {
 
                 // ── Phase 105: FFI (dynamic library loading) ──
                 "ffi_open"  => Some(("ffi_open", IrType::Scalar(DType::I64))),
-                "ffi_call"  => Some(("ffi_call", IrType::Infer)),
+                "ffi_call"  => Some(("ffi_call", IrType::Scalar(DType::I64))),
                 "ffi_close" => Some(("ffi_close", IrType::Scalar(DType::Bool))),
 
                 // ── Phase 106: Expanded FFI — C / Python / Rust ──
@@ -2867,7 +2867,7 @@ impl<'m> Lowerer<'m> {
                 "ffi_call_f64"   => Some(("ffi_call_f64",   IrType::Scalar(DType::F64))),
                 "ffi_call_str"   => Some(("ffi_call_str",   IrType::Str)),
                 "ffi_call_void"  => Some(("ffi_call_void",  IrType::Scalar(DType::I64))),
-                "ffi_call_args"  => Some(("ffi_call_args",  IrType::Infer)),
+                "ffi_call_args"  => Some(("ffi_call_args",  IrType::Scalar(DType::I64))),
                 // Python FFI
                 "python_eval"    => Some(("python_eval",    IrType::Str)),
                 "python_exec"    => Some(("python_exec",    IrType::Scalar(DType::I64))),
@@ -2907,24 +2907,24 @@ impl<'m> Lowerer<'m> {
                 "is_inf"    => Some(("is_inf", IrType::Scalar(DType::Bool))),
 
                 // ── Phase 105: Functional list operations ──
-                "list_map"       => Some(("list_map", IrType::List(Box::new(IrType::Infer)))),
-                "list_filter"    => Some(("list_filter", IrType::List(Box::new(IrType::Infer)))),
-                "list_reduce"    => Some(("list_reduce", IrType::Infer)),
+                "list_map"       => Some(("list_map", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_filter"    => Some(("list_filter", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_reduce"    => Some(("list_reduce", IrType::Scalar(DType::I64))),
                 "list_any"       => Some(("list_any", IrType::Scalar(DType::Bool))),
                 "list_all"       => Some(("list_all", IrType::Scalar(DType::Bool))),
-                "list_zip"       => Some(("list_zip", IrType::List(Box::new(IrType::Infer)))),
-                "list_enumerate" => Some(("list_enumerate", IrType::List(Box::new(IrType::Infer)))),
-                "list_flatten"   => Some(("list_flatten", IrType::List(Box::new(IrType::Infer)))),
-                "list_unique"    => Some(("list_unique", IrType::List(Box::new(IrType::Infer)))),
-                "list_reverse"   => Some(("list_reverse", IrType::List(Box::new(IrType::Infer)))),
-                "list_sorted"    => Some(("list_sorted", IrType::List(Box::new(IrType::Infer)))),
+                "list_zip"       => Some(("list_zip", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_enumerate" => Some(("list_enumerate", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_flatten"   => Some(("list_flatten", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_unique"    => Some(("list_unique", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_reverse"   => Some(("list_reverse", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_sorted"    => Some(("list_sorted", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
                 "list_sum"       => Some(("list_sum", IrType::Scalar(DType::F64))),
-                "list_min"       => Some(("list_min", IrType::Infer)),
-                "list_max"       => Some(("list_max", IrType::Infer)),
+                "list_min"       => Some(("list_min", IrType::Scalar(DType::I64))),
+                "list_max"       => Some(("list_max", IrType::Scalar(DType::I64))),
                 "list_index_of"  => Some(("list_index_of", IrType::Scalar(DType::I64))),
                 "list_count"     => Some(("list_count", IrType::Scalar(DType::I64))),
-                "list_take"      => Some(("list_take", IrType::List(Box::new(IrType::Infer)))),
-                "list_drop"      => Some(("list_drop", IrType::List(Box::new(IrType::Infer)))),
+                "list_take"      => Some(("list_take", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "list_drop"      => Some(("list_drop", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
 
                 _ => None,
             };

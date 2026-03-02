@@ -6,13 +6,13 @@ pub def deque_create() -> list<i64> {
 }
 
 // Push to front.
-pub def push_front(dq: list<i64>, val: i64) -> list<i64> {
-    deque_push_front(dq, val)
+pub def push_front(dq: list<i64>, value: i64) -> list<i64> {
+    deque_push_front(dq, value)
 }
 
 // Push to back.
-pub def push_back(dq: list<i64>, val: i64) -> list<i64> {
-    deque_push_back(dq, val)
+pub def push_back(dq: list<i64>, value: i64) -> list<i64> {
+    deque_push_back(dq, value)
 }
 
 // Pop from front.

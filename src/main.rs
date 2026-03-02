@@ -52,6 +52,12 @@ fn run() {
                 process::exit(1);
             }
         }
+        Ok(ParseArgsResult::Bench) => {
+            if let Err(e) = iris::bench::run_bench_command(&args) {
+                eprintln!("error: {}", e);
+                process::exit(1);
+            }
+        }
         Ok(ParseArgsResult::Args(cli)) => {
             if cli.emit == iris::EmitKind::Binary {
                 let source = std::fs::read_to_string(&cli.path).unwrap_or_default();

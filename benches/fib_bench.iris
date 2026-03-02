@@ -1,0 +1,16 @@
+// Benchmark: Fibonacci computation
+// Tests recursive function calls and arithmetic performance.
+
+def fib(n: i64) -> i64 {
+    if n <= 1 {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+def main() -> i64 {
+    val result = fib(20)
+    print(result);
+    0
+}

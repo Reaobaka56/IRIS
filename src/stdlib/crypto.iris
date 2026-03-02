@@ -6,31 +6,31 @@ pub def generate_uuid() -> str {
 }
 
 // Compute SHA-256 hash of a string.
-pub def hash_sha256(input: str) -> str {
-    sha256(input)
+pub def hash_sha256(data: str) -> str {
+    sha256(data)
 }
 
 // Encode a string to hexadecimal.
-pub def to_hex(input: str) -> str {
-    hex_encode(input)
+pub def to_hex(data: str) -> str {
+    hex_encode(data)
 }
 
 // Decode a hexadecimal string.
-pub def from_hex(input: str) -> str {
-    hex_decode(input)
+pub def from_hex(data: str) -> str {
+    hex_decode(data)
 }
 
 // Compute a simple hash of a string (returns i64).
-pub def hash_code(input: str) -> i64 {
-    hash(input)
+pub def hash_code(data: str) -> i64 {
+    hash(data)
 }
 
 // Encode to base64.
-pub def to_base64(input: str) -> str {
-    base64_encode(input)
+pub def to_base64(data: str) -> str {
+    base64_encode(data)
 }
 
 // Decode from base64.
-pub def from_base64(input: str) -> str {
-    base64_decode(input)
+pub def from_base64(data: str) -> str {
+    base64_decode(data)
 }

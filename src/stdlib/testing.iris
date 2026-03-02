@@ -2,12 +2,9 @@
 
 pub def assert_eq(actual: i64, expected: i64, msg: str) -> bool {
     if actual != expected {
-        print("FAIL: ")
-        print(msg)
-        print(" — expected ")
-        print(expected)
-        print(", got ")
-        println(actual)
+        val exp_s = to_str(expected);
+        val act_s = to_str(actual);
+        print(concat(concat(concat(concat("FAIL: ", msg), concat(" — expected ", exp_s)), ", got "), act_s));
         false
     } else {
         true
@@ -16,8 +13,7 @@ pub def assert_eq(actual: i64, expected: i64, msg: str) -> bool {
 
 pub def assert_true(cond: bool, msg: str) -> bool {
     if !cond {
-        print("FAIL: ")
-        println(msg)
+        print(concat("FAIL: ", msg));
         false
     } else {
         true
@@ -26,8 +22,7 @@ pub def assert_true(cond: bool, msg: str) -> bool {
 
 pub def assert_false(cond: bool, msg: str) -> bool {
     if cond {
-        print("FAIL: ")
-        println(msg)
+        print(concat("FAIL: ", msg));
         false
     } else {
         true
@@ -36,13 +31,7 @@ pub def assert_false(cond: bool, msg: str) -> bool {
 
 pub def assert_str_eq(actual: str, expected: str, msg: str) -> bool {
     if actual != expected {
-        print("FAIL: ")
-        print(msg)
-        print(" — expected '")
-        print(expected)
-        print("', got '")
-        print(actual)
-        println("'")
+        print(concat(concat(concat(concat("FAIL: ", msg), concat(" — expected '", expected)), "', got '"), concat(actual, "'")));
         false
     } else {
         true

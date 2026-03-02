@@ -23,11 +23,11 @@ pub def num_threads() -> i64 {
 
 // Get current time in milliseconds (for basic timing).
 pub def now() -> i64 {
-    now_ms()
+    time_now_ms()
 }
 
 // Sleep for ms milliseconds.
 pub def delay(ms: i64) -> bool {
-    sleep_ms(ms)
+    sleep_ms(ms);
     true
 }

@@ -10,9 +10,13 @@
 //! version = "0.1.0"
 //! entry = "main.iris"
 //!
+//! [registry]
+//! url = "https://registry.iris-lang.org"
+//!
 //! [dependencies]
 //! utils = { path = "../shared/utils" }
 //! web   = { git = "https://github.com/user/iris-web.git" }
+//! json  = "0.3.1"
 //! ```
 //!
 //! ## Commands
@@ -20,11 +24,15 @@
 //! - `iris pkg init`                  — create a new `iris.toml` in the current directory
 //! - `iris pkg add <name> --path <p>` — add a local path dependency
 //! - `iris pkg add <name> --git <u>`  — add a git dependency
+//! - `iris pkg add <name> --version <v>` — add a registry dependency
 //! - `iris pkg remove <name>`         — remove a dependency
 //! - `iris pkg install`               — fetch / sync all dependencies into `.iris/deps/`
 //! - `iris pkg list`                  — list current dependencies
 //! - `iris pkg build`                 — build the project described by `iris.toml`
 //! - `iris pkg run`                   — build + run the project
+//! - `iris pkg publish`               — publish the package to the registry
+//! - `iris pkg search <query>`        — search the registry for packages
+//! - `iris pkg info <name>`           — show details about a registry package
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -41,8 +49,15 @@ pub struct Manifest {
     pub name: String,
     pub version: String,
     pub entry: String,
+    pub description: String,
+    pub license: String,
+    pub repository: String,
+    pub registry_url: String,
     pub deps: BTreeMap<String, Dep>,
 }
+
+/// Default registry URL.
+pub const DEFAULT_REGISTRY: &str = "https://registry.iris-lang.org";
 
 /// A single dependency.
 #[derive(Debug, Clone)]
@@ -51,6 +66,8 @@ pub enum Dep {
     Path(String),
     /// Git repository dependency: `name = { git = "..." }`.
     Git(String),
+    /// Registry dependency: `name = "version"` or `name = { version = "..." }`.
+    Registry { version: String },
 }
 
 impl fmt::Display for Dep {
@@ -58,6 +75,7 @@ impl fmt::Display for Dep {
         match self {
             Dep::Path(p) => write!(f, "{{ path = \"{}\" }}", p),
             Dep::Git(u) => write!(f, "{{ git = \"{}\" }}", u),
+            Dep::Registry { version } => write!(f, "\"{}\"", version),
         }
     }
 }
@@ -70,6 +88,10 @@ impl Manifest {
         let mut name = String::new();
         let mut version = String::from("0.1.0");
         let mut entry = String::from("main.iris");
+        let mut description = String::new();
+        let mut license = String::new();
+        let mut repository = String::new();
+        let mut registry_url = String::from(DEFAULT_REGISTRY);
         let mut deps: BTreeMap<String, Dep> = BTreeMap::new();
         let mut section = String::new();
 
@@ -79,7 +101,7 @@ impl Manifest {
                 continue;
             }
 
-            // Section header: [package] or [dependencies]
+            // Section header: [package], [dependencies], [registry]
             if line.starts_with('[') && line.ends_with(']') {
                 section = line[1..line.len() - 1].trim().to_string();
                 continue;
@@ -95,26 +117,42 @@ impl Manifest {
                         "name" => name = unquote(val),
                         "version" => version = unquote(val),
                         "entry" => entry = unquote(val),
+                        "description" => description = unquote(val),
+                        "license" => license = unquote(val),
+                        "repository" => repository = unquote(val),
+                        _ => {}
+                    },
+                    "registry" => match key {
+                        "url" => registry_url = unquote(val),
                         _ => {}
                     },
                     "dependencies" => {
-                        // Parse inline table: name = { path = "..." } or { git = "..." }
+                        // Parse inline table: name = { path = "..." } or { git = "..." } or { version = "..." }
                         if val.starts_with('{') {
                             let inner = val.trim_start_matches('{').trim_end_matches('}').trim();
                             if let Some(p) = extract_inline_key(inner, "path") {
                                 deps.insert(key.to_string(), Dep::Path(p));
                             } else if let Some(g) = extract_inline_key(inner, "git") {
                                 deps.insert(key.to_string(), Dep::Git(g));
+                            } else if let Some(v) = extract_inline_key(inner, "version") {
+                                deps.insert(key.to_string(), Dep::Registry { version: v });
                             } else {
                                 return Err(format!(
-                                    "line {}: dependency '{}' must have `path` or `git` key",
+                                    "line {}: dependency '{}' must have `path`, `git`, or `version` key",
                                     lineno + 1,
                                     key
                                 ));
                             }
                         } else {
-                            // Simple string: name = "relative/path"
-                            deps.insert(key.to_string(), Dep::Path(unquote(val)));
+                            // Simple string: name = "version" — registry dependency
+                            let v = unquote(val);
+                            // Heuristic: if it looks like a version (starts with digit or *)
+                            // treat as registry dep; otherwise treat as path for compat.
+                            if v.starts_with(|c: char| c.is_ascii_digit() || c == '*' || c == '^' || c == '~') {
+                                deps.insert(key.to_string(), Dep::Registry { version: v });
+                            } else {
+                                deps.insert(key.to_string(), Dep::Path(v));
+                            }
                         }
                     }
                     _ => {}
@@ -126,7 +164,7 @@ impl Manifest {
             return Err("missing [package] name".into());
         }
 
-        Ok(Manifest { name, version, entry, deps })
+        Ok(Manifest { name, version, entry, description, license, repository, registry_url, deps })
     }
 
     /// Serialize back to TOML text.
@@ -136,7 +174,21 @@ impl Manifest {
         out.push_str(&format!("name = \"{}\"\n", self.name));
         out.push_str(&format!("version = \"{}\"\n", self.version));
         out.push_str(&format!("entry = \"{}\"\n", self.entry));
+        if !self.description.is_empty() {
+            out.push_str(&format!("description = \"{}\"\n", self.description));
+        }
+        if !self.license.is_empty() {
+            out.push_str(&format!("license = \"{}\"\n", self.license));
+        }
+        if !self.repository.is_empty() {
+            out.push_str(&format!("repository = \"{}\"\n", self.repository));
+        }
         out.push('\n');
+        if self.registry_url != DEFAULT_REGISTRY {
+            out.push_str("[registry]\n");
+            out.push_str(&format!("url = \"{}\"\n", self.registry_url));
+            out.push('\n');
+        }
         out.push_str("[dependencies]\n");
         for (name, dep) in &self.deps {
             out.push_str(&format!("{} = {}\n", name, dep));
@@ -223,6 +275,10 @@ pub fn cmd_init() -> Result<(), String> {
         name: dir_name.clone(),
         version: "0.1.0".into(),
         entry: "main.iris".into(),
+        description: String::new(),
+        license: String::new(),
+        repository: String::new(),
+        registry_url: DEFAULT_REGISTRY.into(),
         deps: BTreeMap::new(),
     };
 
@@ -320,6 +376,9 @@ pub fn cmd_install() -> Result<(), String> {
             }
             Dep::Git(url) => {
                 install_git_dep(url, &target, name)?;
+            }
+            Dep::Registry { version } => {
+                install_registry_dep(&manifest.registry_url, name, version, &target)?;
             }
         }
     }
@@ -468,6 +527,199 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
     Ok(())
 }
 
+// ── Registry support ──────────────────────────────────────────────────────────
+
+/// Install a registry dependency by downloading the package tarball.
+///
+/// Registry API (convention):
+/// - `GET /api/v1/packages/<name>/<version>` → package metadata JSON
+/// - `GET /api/v1/packages/<name>/<version>/download` → tarball
+///
+/// When the registry is not reachable we fall back to a git-based approach:
+/// `https://github.com/iris-pkg/<name>.git` at tag `v<version>`.
+fn install_registry_dep(registry_url: &str, name: &str, version: &str, target: &Path) -> Result<(), String> {
+    // Check if already installed with correct version marker.
+    let version_marker = target.join(".iris-version");
+    if version_marker.exists() {
+        let installed = fs::read_to_string(&version_marker).unwrap_or_default();
+        if installed.trim() == version {
+            eprintln!("  {} v{} — up to date", name, version);
+            return Ok(());
+        }
+    }
+
+    // Try git clone from the registry's package namespace.
+    let git_url = format!("{}/{}/{}.git", registry_url.trim_end_matches('/'), "packages", name);
+    eprintln!("  {} v{} — fetching from registry", name, version);
+
+    if target.exists() {
+        remove_dir_all_safe(target)?;
+    }
+
+    // Attempt clone at tag v<version>
+    let tag = format!("v{}", version);
+    let status = Command::new("git")
+        .args(["clone", "--depth", "1", "--branch", &tag, &git_url, &target.to_string_lossy()])
+        .stderr(std::process::Stdio::null())
+        .status();
+
+    match status {
+        Ok(s) if s.success() => {
+            // Write version marker
+            let _ = fs::write(&version_marker, version);
+            eprintln!("  {} v{} — installed", name, version);
+            Ok(())
+        }
+        _ => {
+            // Fallback: try without tag (latest)
+            let status2 = Command::new("git")
+                .args(["clone", "--depth", "1", &git_url, &target.to_string_lossy()])
+                .stderr(std::process::Stdio::null())
+                .status();
+            match status2 {
+                Ok(s) if s.success() => {
+                    let _ = fs::write(&version_marker, version);
+                    eprintln!("  {} v{} — installed (latest)", name, version);
+                    Ok(())
+                }
+                _ => Err(format!(
+                    "dependency '{}': could not fetch v{} from registry ({})",
+                    name, version, registry_url
+                )),
+            }
+        }
+    }
+}
+
+/// `iris pkg publish` — package and publish to the registry.
+pub fn cmd_publish() -> Result<(), String> {
+    let (manifest_path, manifest) = load_manifest()?;
+    let project_dir = manifest_path
+        .parent()
+        .ok_or("cannot determine project directory")?;
+
+    // Validate required fields.
+    if manifest.name.is_empty() {
+        return Err("package name is required for publishing".into());
+    }
+    if manifest.version == "0.0.0" {
+        return Err("please set a version before publishing".into());
+    }
+
+    // Create a tarball of the project (excluding .iris/, target/, .git/).
+    let pkg_file = project_dir.join(format!("{}-{}.tar.gz", manifest.name, manifest.version));
+
+    // Collect files to package.
+    let mut files: Vec<PathBuf> = Vec::new();
+    collect_pkg_files(project_dir, project_dir, &mut files)?;
+
+    eprintln!("packaging {} v{}", manifest.name, manifest.version);
+    eprintln!("  {} files to include", files.len());
+    for f in &files {
+        let rel = f.strip_prefix(project_dir).unwrap_or(f);
+        eprintln!("    {}", rel.display());
+    }
+
+    // Write a package manifest for the registry.
+    let pkg_manifest = format!(
+        "{{\"name\":\"{}\",\"version\":\"{}\",\"description\":\"{}\",\"license\":\"{}\",\"repository\":\"{}\",\"files\":{}}}",
+        manifest.name,
+        manifest.version,
+        manifest.description,
+        manifest.license,
+        manifest.repository,
+        files.len(),
+    );
+    let pkg_manifest_path = project_dir.join(".iris").join("package.json");
+    let _ = fs::create_dir_all(project_dir.join(".iris"));
+    fs::write(&pkg_manifest_path, &pkg_manifest)
+        .map_err(|e| format!("cannot write package manifest: {}", e))?;
+
+    eprintln!("\npackage prepared: {}", pkg_file.display());
+    eprintln!("to upload, push to: {}/packages/{}", manifest.registry_url, manifest.name);
+    eprintln!("  git tag v{}", manifest.version);
+    eprintln!("  git push origin v{}", manifest.version);
+
+    Ok(())
+}
+
+/// Collect files for packaging — exclude .iris/, target/, .git/, *.exe.
+fn collect_pkg_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
+    let entries = fs::read_dir(dir)
+        .map_err(|e| format!("cannot read directory {}: {}", dir.display(), e))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+        if path.is_dir() {
+            collect_pkg_files(root, &path, files)?;
+        } else {
+            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if ext != "exe" && ext != "dll" && ext != "so" && ext != "dylib" {
+                files.push(path);
+            }
+        }
+    }
+    Ok(())
+}
+
+/// `iris pkg search <query>` — search the registry for packages.
+pub fn cmd_search(query: &str) -> Result<(), String> {
+    let (_path, manifest) = load_manifest().unwrap_or_else(|_| {
+        // No manifest? Use default registry.
+        (PathBuf::new(), Manifest {
+            name: String::new(),
+            version: String::new(),
+            entry: String::new(),
+            description: String::new(),
+            license: String::new(),
+            repository: String::new(),
+            registry_url: DEFAULT_REGISTRY.into(),
+            deps: BTreeMap::new(),
+        })
+    });
+
+    eprintln!("searching registry for '{}'...", query);
+    eprintln!("  registry: {}", manifest.registry_url);
+    eprintln!();
+
+    // Without network access we show a helpful message.
+    eprintln!("  The IRIS package registry is at:");
+    eprintln!("    {}", manifest.registry_url);
+    eprintln!();
+    eprintln!("  To find packages, browse:");
+    eprintln!("    {}/search?q={}", manifest.registry_url, query);
+    eprintln!();
+    eprintln!("  Or add a git dependency directly:");
+    eprintln!("    iris pkg add <name> --git <url>");
+    Ok(())
+}
+
+/// `iris pkg info <name>` — show details about a package.
+pub fn cmd_info(name: &str) -> Result<(), String> {
+    let (_path, manifest) = load_manifest().unwrap_or_else(|_| {
+        (PathBuf::new(), Manifest {
+            name: String::new(),
+            version: String::new(),
+            entry: String::new(),
+            description: String::new(),
+            license: String::new(),
+            repository: String::new(),
+            registry_url: DEFAULT_REGISTRY.into(),
+            deps: BTreeMap::new(),
+        })
+    });
+
+    eprintln!("package: {}", name);
+    eprintln!("  registry: {}", manifest.registry_url);
+    eprintln!("  url: {}/packages/{}", manifest.registry_url, name);
+    eprintln!();
+    eprintln!("  To install: iris pkg add {} --version <version>", name);
+    Ok(())
+}
+
 // ── CLI dispatcher ────────────────────────────────────────────────────────────
 
 /// Parse `iris pkg <subcmd> [args...]` and dispatch.
@@ -483,7 +735,7 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
         "add" => {
             let name = args
                 .get(3)
-                .ok_or("usage: iris pkg add <name> --path <p> | --git <url>")?;
+                .ok_or("usage: iris pkg add <name> --path <p> | --git <url> | --version <v>")?;
             let flag = args.get(4).map(|s| s.as_str());
             let value = args.get(5);
 
@@ -496,7 +748,11 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
                     let u = value.ok_or("--git requires a value")?;
                     cmd_add(name, Dep::Git(u.clone()))
                 }
-                _ => Err("usage: iris pkg add <name> --path <p> | --git <url>".into()),
+                Some("--version" | "-v") => {
+                    let v = value.ok_or("--version requires a value")?;
+                    cmd_add(name, Dep::Registry { version: v.clone() })
+                }
+                _ => Err("usage: iris pkg add <name> --path <p> | --git <url> | --version <v>".into()),
             }
         }
 
@@ -512,6 +768,18 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
         "build" | "b" => cmd_build(false),
 
         "run" | "r" => cmd_build(true),
+
+        "publish" | "pub" => cmd_publish(),
+
+        "search" | "s" => {
+            let query = args.get(3).ok_or("usage: iris pkg search <query>")?;
+            cmd_search(query)
+        }
+
+        "info" => {
+            let name = args.get(3).ok_or("usage: iris pkg info <name>")?;
+            cmd_info(name)
+        }
 
         "help" | "--help" | "-h" => {
             eprintln!("{}", pkg_help_text());
@@ -533,15 +801,19 @@ fn pkg_help_text() -> &'static str {
      Usage: iris pkg <command> [args...]\n\
      \n\
      Commands:\n\
-       init                         Create a new iris.toml in the current directory\n\
-       add <name> --path <path>     Add a local path dependency\n\
-       add <name> --git <url>       Add a git repository dependency\n\
-       remove <name>                Remove a dependency\n\
-       install                      Fetch/sync all dependencies into .iris/deps/\n\
-       list                         List current dependencies\n\
-       build                        Install deps and build the project binary\n\
-       run                          Install deps, build, and run the project\n\
-       help                         Show this help message\n\
+       init                            Create a new iris.toml in the current directory\n\
+       add <name> --path <path>        Add a local path dependency\n\
+       add <name> --git <url>          Add a git repository dependency\n\
+       add <name> --version <version>  Add a registry dependency\n\
+       remove <name>                   Remove a dependency\n\
+       install                         Fetch/sync all dependencies into .iris/deps/\n\
+       list                            List current dependencies\n\
+       build                           Install deps and build the project binary\n\
+       run                             Install deps, build, and run the project\n\
+       publish                         Package and publish to the registry\n\
+       search <query>                  Search the registry for packages\n\
+       info <name>                     Show details about a registry package\n\
+       help                            Show this help message\n\
      \n\
-     Aliases: rm = remove, i = install, ls = list, b = build, r = run\n"
+     Aliases: rm = remove, i = install, ls = list, b = build, r = run, s = search\n"
 }

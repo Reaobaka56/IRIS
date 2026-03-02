@@ -1,25 +1,21 @@
 // src/stdlib/log.iris -- IRIS standard logging library
 
 pub def info(msg: str) -> bool {
-    print("[INFO] ")
-    println(msg)
+    print(concat("[INFO] ", msg));
     true
 }
 
 pub def warn(msg: str) -> bool {
-    print("[WARN] ")
-    println(msg)
+    print(concat("[WARN] ", msg));
     true
 }
 
 pub def error(msg: str) -> bool {
-    print("[ERROR] ")
-    println(msg)
+    print(concat("[ERROR] ", msg));
     true
 }
 
 pub def debug(msg: str) -> bool {
-    print("[DEBUG] ")
-    println(msg)
+    print(concat("[DEBUG] ", msg));
     true
 }
