@@ -5,48 +5,63 @@ use iris::{compile_multi, EmitKind};
 // ── 1. kv_set + kv_get round-trips a string value ───────────────────────────
 #[test]
 fn test_kv_set_get() {
-    let src = r#"
+    let tmp = std::env::temp_dir().join("iris_test_kv1.txt");
+    let path = tmp.to_str().unwrap().replace('\\', "/");
+    let src = format!(
+        r#"
 bring std.kv
-def f() -> str {
-    val path = "/tmp/iris_test_kv1.txt"
+def f() -> str {{
+    val path = "{path}"
     val _ = kv_set(path, "hello", "world")
     kv_get(path, "hello")
-}
-"#;
-    let result = compile_multi(&[("main", src)], "main", EmitKind::Eval).unwrap();
+}}
+"#
+    );
+    let result = compile_multi(&[("main", &src)], "main", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "world");
+    let _ = std::fs::remove_file(&tmp);
 }
 
 // ── 2. kv_delete removes a key ───────────────────────────────────────────────
 #[test]
 fn test_kv_delete() {
-    let src = r#"
+    let tmp = std::env::temp_dir().join("iris_test_kv2.txt");
+    let path = tmp.to_str().unwrap().replace('\\', "/");
+    let src = format!(
+        r#"
 bring std.kv
-def f() -> str {
-    val path = "/tmp/iris_test_kv2.txt"
+def f() -> str {{
+    val path = "{path}"
     val _ = kv_set(path, "foo", "bar")
     val _ = kv_delete(path, "foo")
     kv_get(path, "foo")
-}
-"#;
-    let result = compile_multi(&[("main", src)], "main", EmitKind::Eval).unwrap();
+}}
+"#
+    );
+    let result = compile_multi(&[("main", &src)], "main", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "");
+    let _ = std::fs::remove_file(&tmp);
 }
 
 // ── 3. kv_keys returns correct key count ────────────────────────────────────
 #[test]
 fn test_kv_keys() {
-    let src = r#"
+    let tmp = std::env::temp_dir().join("iris_test_kv3.txt");
+    let path = tmp.to_str().unwrap().replace('\\', "/");
+    let src = format!(
+        r#"
 bring std.kv
-def f() -> i64 {
-    val path = "/tmp/iris_test_kv3.txt"
+def f() -> i64 {{
+    val path = "{path}"
     val _ = kv_set(path, "a", "1")
     val _ = kv_set(path, "b", "2")
     list_len(kv_keys(path))
-}
-"#;
-    let result = compile_multi(&[("main", src)], "main", EmitKind::Eval).unwrap();
+}}
+"#
+    );
+    let result = compile_multi(&[("main", &src)], "main", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "2");
+    let _ = std::fs::remove_file(&tmp);
 }
 
 // ── 4. table_new creates empty table ────────────────────────────────────────

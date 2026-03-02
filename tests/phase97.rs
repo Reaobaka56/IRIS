@@ -71,16 +71,21 @@ def f() -> str {
 // ── 6. write_text then read_text round-trips ────────────────────────────────
 #[test]
 fn test_write_read_roundtrip() {
-    let src = r#"
+    let tmp = std::env::temp_dir().join("iris_phase97_test.txt");
+    let path = tmp.to_str().unwrap().replace('\\', "/");
+    let src = format!(
+        r#"
 bring std.fs
-def f() -> str {
-    val path = "/tmp/iris_phase97_test.txt"
+def f() -> str {{
+    val path = "{path}"
     val ok = write_text(path, "hello iris")
     read_text(path)
-}
-"#;
-    let result = compile_multi(&[("main", src)], "main", EmitKind::Eval).unwrap();
+}}
+"#
+    );
+    let result = compile_multi(&[("main", &src)], "main", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "hello iris");
+    let _ = std::fs::remove_file(&tmp);
 }
 
 // ── 7. dirname("/foo/bar.iris") → "/foo" ───────────────────────────────────
