@@ -140,5 +140,9 @@ def f() -> str {
         count, ir
     );
     assert!(ir.contains("@.str.0"), "expected @.str.0:\n{}", ir);
-    assert!(!ir.contains("@.str.1"), "unexpected @.str.1 (not deduped):\n{}", ir);
+    assert!(
+        !ir.contains("@.str.1"),
+        "unexpected @.str.1 (not deduped):\n{}",
+        ir
+    );
 }

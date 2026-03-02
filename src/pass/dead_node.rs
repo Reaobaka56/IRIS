@@ -43,8 +43,11 @@ impl GraphPass for DeadNodePass {
         }
 
         // 2. Drain nodes, keeping only live ones in original order.
-        let live_nodes: Vec<GraphNode> =
-            graph.nodes.drain(..).filter(|n| live.contains(&n.id())).collect();
+        let live_nodes: Vec<GraphNode> = graph
+            .nodes
+            .drain(..)
+            .filter(|n| live.contains(&n.id()))
+            .collect();
 
         // 3. Assign new sequential NodeIds and build the remap table.
         let mut remap: HashMap<NodeId, NodeId> = HashMap::new();

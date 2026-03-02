@@ -10,8 +10,8 @@
 //!  7. Runtime C source is accessible via codegen::build module
 //!  8. EmitKind::Binary exists and emits LLVM IR
 
-use iris::{compile, EmitKind};
 use iris::codegen::{runtime_c_source, runtime_h_source};
+use iris::{compile, EmitKind};
 
 // ---------------------------------------------------------------------------
 // 1. Boxing function declares are emitted

@@ -16,7 +16,11 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(out.contains("panic"), "IR should contain panic, got:\n{}", out);
+    assert!(
+        out.contains("panic"),
+        "IR should contain panic, got:\n{}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------

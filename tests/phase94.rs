@@ -15,7 +15,8 @@ def f() -> i64 { add_one(41) }
         &[("utils", utils_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "42");
 }
 
@@ -33,7 +34,10 @@ def f() -> i64 { secret(0) }
         "main",
         EmitKind::Eval,
     );
-    assert!(result.is_err(), "expected error: private fn should not be visible");
+    assert!(
+        result.is_err(),
+        "expected error: private fn should not be visible"
+    );
 }
 
 // ── 3. pub record from dependency usable as a type ──────────────────────────
@@ -52,7 +56,8 @@ def f() -> i64 {
         &[("types", types_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "7");
 }
 
@@ -69,7 +74,8 @@ def f() -> i64 { ANSWER }
         &[("config", config_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "42");
 }
 
@@ -93,7 +99,8 @@ def f() -> i64 { six_times(7) }
         &[("c", c_src), ("b", b_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "42");
 }
 
@@ -133,11 +140,7 @@ fn test_bring_stdlib_math() {
 bring std.math
 def f() -> i64 { gcd(12, 8) }
 "#;
-    let result = compile_multi(
-        &[("main", main_src)],
-        "main",
-        EmitKind::Eval,
-    ).unwrap();
+    let result = compile_multi(&[("main", main_src)], "main", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "4");
 }
 

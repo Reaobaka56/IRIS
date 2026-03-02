@@ -35,7 +35,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "recv after send(42) should be 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "recv after send(42) should be 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +56,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "100", "channel i64 should return 100, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "100",
+        "channel i64 should return 100, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +78,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "7 * 6 from channel should be 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "7 * 6 from channel should be 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -108,7 +123,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "spawned body should send 42, recv should get 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "spawned body should send 42, recv should get 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +144,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "55", "channel should return 55, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "55",
+        "channel should return 55, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -145,5 +170,10 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "321", "recv order: 1 + 2*10 + 3*100 = 321, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "321",
+        "recv order: 1 + 2*10 + 3*100 = 321, got: {}",
+        out.trim()
+    );
 }

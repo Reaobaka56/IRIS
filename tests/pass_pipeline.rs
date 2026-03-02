@@ -5,8 +5,8 @@ use iris::ir::function::Param;
 use iris::ir::instr::{BinOp, IrInstr, TensorOp};
 use iris::ir::module::{IrFunctionBuilder, IrModule};
 use iris::ir::types::{DType, Dim, IrType, Shape};
-use iris::pass::validate::ValidatePass;
 use iris::pass::type_infer::TypeInferPass;
+use iris::pass::validate::ValidatePass;
 use iris::pass::PassManager;
 
 fn build_add_module() -> IrModule {
@@ -38,7 +38,12 @@ fn build_add_module() -> IrModule {
         },
         Some(f32_ty),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
     module.add_function(builder.build()).unwrap();
     module
 }
@@ -123,9 +128,15 @@ fn test_ir_printer_contains_expected_tokens() {
     pm.run(&mut module).unwrap();
 
     let output = iris::codegen::emit_ir_text(&module).unwrap();
-    assert!(output.contains("def add"), "output should contain 'def add'");
+    assert!(
+        output.contains("def add"),
+        "output should contain 'def add'"
+    );
     assert!(output.contains("return"), "output should contain 'return'");
-    assert!(output.contains("add"), "output should contain the add binop");
+    assert!(
+        output.contains("add"),
+        "output should contain the add binop"
+    );
 }
 
 #[test]
@@ -136,9 +147,15 @@ fn test_llvm_stub_contains_expected_tokens() {
     pm.run(&mut module).unwrap();
 
     let output = iris::codegen::emit_llvm_stub(&module).unwrap();
-    assert!(output.contains("define"), "LLVM stub should contain 'define'");
+    assert!(
+        output.contains("define"),
+        "LLVM stub should contain 'define'"
+    );
     assert!(output.contains("@add"), "LLVM stub should contain '@add'");
-    assert!(output.contains("float"), "LLVM stub should contain 'float' type");
+    assert!(
+        output.contains("float"),
+        "LLVM stub should contain 'float' type"
+    );
 }
 
 #[test]

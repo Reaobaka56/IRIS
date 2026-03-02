@@ -1,5 +1,4 @@
 /// Phase 82: BLAS bindings — matmul, list_dot_blas, list_axpy_blas, list_scale_blas
-
 use iris::{compile, EmitKind};
 
 fn eval(src: &str) -> String {
@@ -7,7 +6,10 @@ fn eval(src: &str) -> String {
 }
 
 fn eval_f(src: &str) -> f64 {
-    eval(src).trim().parse().unwrap_or_else(|e| panic!("parse failed: {e}\n{}", eval(src)))
+    eval(src)
+        .trim()
+        .parse()
+        .unwrap_or_else(|e| panic!("parse failed: {e}\n{}", eval(src)))
 }
 
 // ------------------------------------------------------------------
@@ -15,7 +17,8 @@ fn eval_f(src: &str) -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_matmul_identity() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val a = list()
     push(a, 1.0);
@@ -30,7 +33,8 @@ def main() -> f64 {
     val c = matmul(a, 2, 2, id, 2)
     list_sum(c)
 }
-"#);
+"#,
+    );
     // A@I = A = [1,2,3,4], sum=10
     assert!((v - 10.0).abs() < 1e-9, "expected 10.0, got {v}");
 }
@@ -40,7 +44,8 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_matmul_dot_product() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val a = list()
     push(a, 3.0);
@@ -51,7 +56,8 @@ def main() -> f64 {
     val c = matmul(a, 1, 2, b, 1)
     list_get(c, 0)
 }
-"#);
+"#,
+    );
     assert!((v - 25.0).abs() < 1e-9, "expected 25.0, got {v}");
 }
 
@@ -60,7 +66,8 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_list_dot_blas() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val a = list()
     push(a, 1.0);
@@ -72,7 +79,8 @@ def main() -> f64 {
     push(b, 6.0);
     list_dot_blas(a, b)
 }
-"#);
+"#,
+    );
     // 1*4 + 2*5 + 3*6 = 32
     assert!((v - 32.0).abs() < 1e-9, "expected 32.0, got {v}");
 }
@@ -82,7 +90,8 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_list_axpy_blas() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val x = list()
     push(x, 1.0);
@@ -93,7 +102,8 @@ def main() -> f64 {
     val r = list_axpy_blas(2.0, x, y)
     list_sum(r)
 }
-"#);
+"#,
+    );
     // alpha=2, x=[1,2], y=[10,20] → [12,24], sum=36
     assert!((v - 36.0).abs() < 1e-9, "expected 36.0, got {v}");
 }
@@ -103,7 +113,8 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_list_scale_blas() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val x = list()
     push(x, 1.0);
@@ -112,7 +123,8 @@ def main() -> f64 {
     val r = list_scale_blas(x, 3.0)
     list_sum(r)
 }
-"#);
+"#,
+    );
     // [1,2,3]*3 = [3,6,9], sum=18
     assert!((v - 18.0).abs() < 1e-9, "expected 18.0, got {v}");
 }
@@ -122,7 +134,8 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_matmul_2x3_3x2() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val a = list()
     push(a, 1.0); push(a, 2.0); push(a, 3.0);
@@ -134,7 +147,8 @@ def main() -> f64 {
     val c = matmul(a, 2, 3, b, 2)
     list_get(c, 0)
 }
-"#);
+"#,
+    );
     // C[0,0] = 1*7+2*9+3*11 = 58
     assert!((v - 58.0).abs() < 1e-9, "expected 58.0, got {v}");
 }
@@ -144,13 +158,15 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_list_dot_blas_zeros() {
-    let v = eval_f(r#"
+    let v = eval_f(
+        r#"
 def main() -> f64 {
     val a = zeros(5)
     val b = ones(5)
     list_dot_blas(a, b)
 }
-"#);
+"#,
+    );
     assert!(v.abs() < 1e-9, "expected 0.0, got {v}");
 }
 
@@ -159,13 +175,15 @@ def main() -> f64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_matmul_result_length() {
-    let result = eval(r#"
+    let result = eval(
+        r#"
 def main() -> i64 {
     val a = fill(6, 1.0)
     val b = fill(8, 1.0)
     val c = matmul(a, 3, 2, b, 4)
     list_len(c)
 }
-"#);
+"#,
+    );
     assert_eq!(result.trim(), "12", "expected length 12, got: {}", result);
 }

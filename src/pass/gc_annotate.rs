@@ -5,7 +5,6 @@
 ///
 /// In the interpreter, Retain/Release are no-ops.
 /// In LLVM IR, they lower to `@iris_retain` / `@iris_release` calls.
-
 use std::collections::HashSet;
 
 use crate::error::PassError;
@@ -19,7 +18,9 @@ use crate::pass::Pass;
 pub struct GcAnnotatePass;
 
 impl Pass for GcAnnotatePass {
-    fn name(&self) -> &'static str { "GcAnnotate" }
+    fn name(&self) -> &'static str {
+        "GcAnnotate"
+    }
 
     fn run(&mut self, module: &mut IrModule) -> Result<(), PassError> {
         for func in &mut module.functions {
@@ -72,13 +73,18 @@ impl Pass for GcAnnotatePass {
                     for (i, instr) in func.blocks[bidx].instrs.iter().enumerate() {
                         // Insert Retain after heap-creating instrs.
                         new_instrs.push(instr.clone());
-                        if let Some((_, retain_instr)) = inserts_after.iter().find(|(idx, _)| *idx == i) {
+                        if let Some((_, retain_instr)) =
+                            inserts_after.iter().find(|(idx, _)| *idx == i)
+                        {
                             new_instrs.push(retain_instr.clone());
                         }
                         // Insert Releases before Return.
                         if i + 1 == ret_idx {
                             for (val, ty) in &heap_vals {
-                                new_instrs.push(IrInstr::Release { ptr: *val, ty: ty.clone() });
+                                new_instrs.push(IrInstr::Release {
+                                    ptr: *val,
+                                    ty: ty.clone(),
+                                });
                             }
                         }
                     }
@@ -86,7 +92,10 @@ impl Pass for GcAnnotatePass {
                     if ret_idx == 0 && !heap_vals.is_empty() {
                         let mut new2 = Vec::new();
                         for (val, ty) in &heap_vals {
-                            new2.push(IrInstr::Release { ptr: *val, ty: ty.clone() });
+                            new2.push(IrInstr::Release {
+                                ptr: *val,
+                                ty: ty.clone(),
+                            });
                         }
                         new2.extend(new_instrs);
                         new_instrs = new2;
@@ -97,7 +106,9 @@ impl Pass for GcAnnotatePass {
                     let mut new_instrs = Vec::new();
                     for (i, instr) in func.blocks[bidx].instrs.iter().enumerate() {
                         new_instrs.push(instr.clone());
-                        if let Some((_, retain_instr)) = inserts_after.iter().find(|(idx, _)| *idx == i) {
+                        if let Some((_, retain_instr)) =
+                            inserts_after.iter().find(|(idx, _)| *idx == i)
+                        {
                             new_instrs.push(retain_instr.clone());
                         }
                     }
@@ -110,15 +121,16 @@ impl Pass for GcAnnotatePass {
 }
 
 fn is_heap_ty(ty: &IrType) -> bool {
-    matches!(ty,
+    matches!(
+        ty,
         IrType::List(_)
-        | IrType::Map(_, _)
-        | IrType::Option(_)
-        | IrType::ResultType(_, _)
-        | IrType::Chan(_)
-        | IrType::Atomic(_)
-        | IrType::Mutex(_)
-        | IrType::Grad(_)
-        | IrType::Sparse(_)
+            | IrType::Map(_, _)
+            | IrType::Option(_)
+            | IrType::ResultType(_, _)
+            | IrType::Chan(_)
+            | IrType::Atomic(_)
+            | IrType::Mutex(_)
+            | IrType::Grad(_)
+            | IrType::Sparse(_)
     )
 }

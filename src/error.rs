@@ -57,7 +57,9 @@ pub enum ParseError {
     #[error("invalid escape sequence '\\{escaped}' — valid escapes are \\n, \\t, \\r, \\\\ and \\\" (at byte {pos})", escaped = ch.map(|c| c.to_string()).unwrap_or_else(|| "EOF".into()))]
     InvalidEscape { ch: Option<char>, pos: u32 },
 
-    #[error("invalid literal '{text}' — this does not look like a valid number, string, or boolean")]
+    #[error(
+        "invalid literal '{text}' — this does not look like a valid number, string, or boolean"
+    )]
     InvalidLiteral { text: String, span: Span },
 
     #[error("expected {expected}, but found '{found}' — the compiler was looking for {expected} at this point")]
@@ -99,7 +101,9 @@ pub enum LowerError {
     #[error("duplicate node name '{name}' — each node in a model must have a unique name")]
     DuplicateNode { name: String, span: Span },
 
-    #[error("invalid layer parameter — {detail}. Check the documentation for valid hyperparameters")]
+    #[error(
+        "invalid layer parameter — {detail}. Check the documentation for valid hyperparameters"
+    )]
     InvalidLayerParam { detail: String, span: Span },
 
     #[error("unknown operation '{op}' — there is no shape inference rule for this layer type")]
@@ -112,7 +116,9 @@ pub enum LowerError {
 
 #[derive(Debug, Error)]
 pub enum PassError {
-    #[error("in function '{func}': variable '{value}' is used before it has been assigned a value")]
+    #[error(
+        "in function '{func}': variable '{value}' is used before it has been assigned a value"
+    )]
     UseBeforeDef { func: String, value: String },
 
     #[error("in function '{func}': variable '{value}' is defined more than once — each variable can only be assigned once in SSA form")]
@@ -124,7 +130,9 @@ pub enum PassError {
     #[error("in function '{func}': block '{block}' does not end with a return or branch — every code path must have an explicit ending")]
     MissingTerminator { func: String, block: String },
 
-    #[error("shape mismatch in function '{func}' — {detail}. Tensor dimensions must be compatible")]
+    #[error(
+        "shape mismatch in function '{func}' — {detail}. Tensor dimensions must be compatible"
+    )]
     ShapeMismatch { func: String, detail: String },
 
     #[error("could not determine the type of a value in function '{func}' — try adding an explicit type annotation")]

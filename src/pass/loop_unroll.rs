@@ -25,11 +25,15 @@ pub struct LoopUnrollPass {
 }
 
 impl Default for LoopUnrollPass {
-    fn default() -> Self { Self { max_unroll: 8 } }
+    fn default() -> Self {
+        Self { max_unroll: 8 }
+    }
 }
 
 impl super::Pass for LoopUnrollPass {
-    fn name(&self) -> &'static str { "loop-unroll" }
+    fn name(&self) -> &'static str {
+        "loop-unroll"
+    }
 
     fn run(&mut self, module: &mut IrModule) -> Result<(), PassError> {
         let threshold = self.max_unroll;
@@ -55,9 +59,16 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         }
         // Check: header terminator is CondBr
         let header_term = module.functions[fn_idx].blocks[header_idx]
-            .instrs.last().cloned();
+            .instrs
+            .last()
+            .cloned();
         let (cond_val, then_block, else_block) = match header_term {
-            Some(IrInstr::CondBr { cond, then_block, else_block, .. }) => (cond, then_block, else_block),
+            Some(IrInstr::CondBr {
+                cond,
+                then_block,
+                else_block,
+                ..
+            }) => (cond, then_block, else_block),
             _ => continue,
         };
 
@@ -65,23 +76,38 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         let (cmp_lhs, end_const) = {
             let mut found = None;
             for instr in &module.functions[fn_idx].blocks[header_idx].instrs {
-                if let IrInstr::BinOp { result, op: BinOp::CmpLt, lhs, rhs, .. } = instr {
+                if let IrInstr::BinOp {
+                    result,
+                    op: BinOp::CmpLt,
+                    lhs,
+                    rhs,
+                    ..
+                } = instr
+                {
                     if *result == cond_val {
                         found = Some((*lhs, *rhs));
                         break;
                     }
                 }
             }
-            match found { Some(x) => x, None => continue }
+            match found {
+                Some(x) => x,
+                None => continue,
+            }
         };
 
         // Look up end_const value
         let end_val = find_const_int(module, fn_idx, end_const);
-        let end_val = match end_val { Some(v) => v, None => continue };
+        let end_val = match end_val {
+            Some(v) => v,
+            None => continue,
+        };
 
         // The header's block param IS cmp_lhs (the loop variable i)
         let header_param_id = module.functions[fn_idx].blocks[header_idx].params[0].id;
-        if cmp_lhs != header_param_id { continue; }
+        if cmp_lhs != header_param_id {
+            continue;
+        }
 
         // Find start value: look for a Br to the header in the predecessor
         // (we'll look for any block that does Br to this header with a single arg that is a ConstInt)
@@ -89,7 +115,9 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         let start_val = {
             let mut found = None;
             for bi in 0..num_blocks {
-                if bi == header_idx { continue; }
+                if bi == header_idx {
+                    continue;
+                }
                 let term = module.functions[fn_idx].blocks[bi].instrs.last();
                 if let Some(IrInstr::Br { target, args }) = term {
                     if *target == header_bid && args.len() == 1 {
@@ -100,11 +128,16 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
                     }
                 }
             }
-            match found { Some(v) => v, None => continue }
+            match found {
+                Some(v) => v,
+                None => continue,
+            }
         };
 
         let trip_count = (end_val - start_val).max(0) as usize;
-        if trip_count == 0 || trip_count > threshold { continue; }
+        if trip_count == 0 || trip_count > threshold {
+            continue;
+        }
 
         // body_block is then_block
         let body_idx = then_block.0 as usize;
@@ -113,8 +146,12 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         // Check: body is single block with Br back to header (no internal CondBr)
         {
             let body_instrs = &module.functions[fn_idx].blocks[body_idx].instrs;
-            let has_cond_br = body_instrs.iter().any(|i| matches!(i, IrInstr::CondBr { .. }));
-            if has_cond_br { continue; }
+            let has_cond_br = body_instrs
+                .iter()
+                .any(|i| matches!(i, IrInstr::CondBr { .. }));
+            if has_cond_br {
+                continue;
+            }
             match body_instrs.last() {
                 Some(IrInstr::Br { target, .. }) if *target == header_bid => {}
                 _ => continue,
@@ -124,7 +161,9 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         // 2. Unroll: create trip_count inline copies of the body.
         // Build a fresh block that contains all inlined iterations.
         let unrolled_bid = BlockId(module.functions[fn_idx].blocks.len() as u32);
-        module.functions[fn_idx].blocks.push(IrBlock::new(unrolled_bid, Some("unrolled".to_owned())));
+        module.functions[fn_idx]
+            .blocks
+            .push(IrBlock::new(unrolled_bid, Some("unrolled".to_owned())));
 
         let mut current_i_val: Option<ValueId> = None; // tracks the current i value (for adding back)
 
@@ -133,10 +172,16 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
 
             // Allocate a fresh ConstInt for this iteration's i value.
             let i_const = module.functions[fn_idx].fresh_value();
-            let body_ty = module.functions[fn_idx].blocks[header_idx].params[0].ty.clone();
-            module.functions[fn_idx].blocks[unrolled_bid.0 as usize].instrs.push(
-                IrInstr::ConstInt { result: i_const, value: i_const_val, ty: body_ty.clone() }
-            );
+            let body_ty = module.functions[fn_idx].blocks[header_idx].params[0]
+                .ty
+                .clone();
+            module.functions[fn_idx].blocks[unrolled_bid.0 as usize]
+                .instrs
+                .push(IrInstr::ConstInt {
+                    result: i_const,
+                    value: i_const_val,
+                    ty: body_ty.clone(),
+                });
 
             // Build val_map: header_param_id → i_const, plus remap body results.
             let mut val_map: HashMap<ValueId, ValueId> = HashMap::new();
@@ -148,7 +193,8 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
 
             // Clone non-terminator body instructions.
             let body_instrs: Vec<IrInstr> = module.functions[fn_idx].blocks[body_idx]
-                .instrs.iter()
+                .instrs
+                .iter()
                 .filter(|i| !i.is_terminator())
                 .cloned()
                 .collect();
@@ -160,13 +206,21 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
                     crate::pass::inline::set_result(&mut bi, fresh);
                 }
                 crate::pass::opt::apply_replacements(&mut bi, &val_map);
-                module.functions[fn_idx].blocks[unrolled_bid.0 as usize].instrs.push(bi);
+                module.functions[fn_idx].blocks[unrolled_bid.0 as usize]
+                    .instrs
+                    .push(bi);
             }
 
             // The "next i" produced by this iteration is val_map[Add result in body].
             // Find it by looking for the Add instruction in the body.
             for old_instr in &module.functions[fn_idx].blocks[body_idx].instrs {
-                if let IrInstr::BinOp { result, op: BinOp::Add, lhs, .. } = old_instr {
+                if let IrInstr::BinOp {
+                    result,
+                    op: BinOp::Add,
+                    lhs,
+                    ..
+                } = old_instr
+                {
                     if *lhs == header_param_id {
                         current_i_val = val_map.get(result).copied();
                         break;
@@ -176,9 +230,12 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         }
 
         // Terminate unrolled block by jumping to exit.
-        module.functions[fn_idx].blocks[unrolled_bid.0 as usize].instrs.push(
-            IrInstr::Br { target: exit_bid, args: vec![] }
-        );
+        module.functions[fn_idx].blocks[unrolled_bid.0 as usize]
+            .instrs
+            .push(IrInstr::Br {
+                target: exit_bid,
+                args: vec![],
+            });
 
         // Patch the predecessor block(s) that had Br to header → now Br to unrolled.
         for bi in 0..num_blocks {
@@ -201,9 +258,12 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         // Replace header instrs with just a Br to exit.
         module.functions[fn_idx].blocks[header_idx].params.clear();
         module.functions[fn_idx].blocks[header_idx].instrs.clear();
-        module.functions[fn_idx].blocks[header_idx].instrs.push(
-            IrInstr::Br { target: exit_bid, args: vec![] }
-        );
+        module.functions[fn_idx].blocks[header_idx]
+            .instrs
+            .push(IrInstr::Br {
+                target: exit_bid,
+                args: vec![],
+            });
 
         // Only process one loop per function pass to avoid block index invalidation.
         break;

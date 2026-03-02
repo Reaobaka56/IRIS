@@ -52,7 +52,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "true", "is_ok(ok(100)) should be true, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "true",
+        "is_ok(ok(100)) should be true, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +72,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "false", "is_ok(err(99)) should be false, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "false",
+        "is_ok(err(99)) should be false, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -81,7 +91,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "true", "is_ok(ok(5)) should be true, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "true",
+        "is_ok(ok(5)) should be true, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -95,7 +110,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "false", "is_ok(err(42)) should be false, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "false",
+        "is_ok(err(42)) should be false, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +130,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "ok(21) should make is_ok true, giving 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "ok(21) should make is_ok true, giving 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -125,5 +150,10 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "false", "result propagation should return false for err, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "false",
+        "result propagation should return false for err, got: {}",
+        out.trim()
+    );
 }

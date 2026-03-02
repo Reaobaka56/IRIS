@@ -13,7 +13,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("42"), "expected '42' in output, got: {}", out.trim());
+    assert!(
+        out.contains("42"),
+        "expected '42' in output, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -27,7 +31,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("3.14"), "expected '3.14' in output, got: {}", out.trim());
+    assert!(
+        out.contains("3.14"),
+        "expected '3.14' in output, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -41,7 +49,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("true"), "expected 'true' in output, got: {}", out.trim());
+    assert!(
+        out.contains("true"),
+        "expected 'true' in output, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +85,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("count:") && out.contains("42"), "expected 'count: 42', got: {}", out.trim());
+    assert!(
+        out.contains("count:") && out.contains("42"),
+        "expected 'count: 42', got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -124,5 +140,9 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("n=") && out.contains("7"), "expected 'n=7', got: {}", out.trim());
+    assert!(
+        out.contains("n=") && out.contains("7"),
+        "expected 'n=7', got: {}",
+        out.trim()
+    );
 }

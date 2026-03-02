@@ -27,10 +27,12 @@ pub fn lower_model(model: &AstModel) -> Result<GraphIr, LowerError> {
             name: input.name.name.clone(),
             ty,
         };
-        let id = graph.add_node(node).map_err(|_| LowerError::DuplicateNode {
-            name: input.name.name.clone(),
-            span: input.name.span,
-        })?;
+        let id = graph
+            .add_node(node)
+            .map_err(|_| LowerError::DuplicateNode {
+                name: input.name.name.clone(),
+                span: input.name.span,
+            })?;
         // Fix up id in the stored node.
         if let GraphNode::Input { id: stored_id, .. } = graph.nodes.last_mut().unwrap() {
             *stored_id = id;
@@ -49,10 +51,13 @@ pub fn lower_model(model: &AstModel) -> Result<GraphIr, LowerError> {
                 .input_refs
                 .iter()
                 .map(|r| {
-                    name_to_node.get(&r.name).copied().ok_or_else(|| LowerError::UndefinedLayer {
-                        name: r.name.clone(),
-                        span: r.span,
-                    })
+                    name_to_node
+                        .get(&r.name)
+                        .copied()
+                        .ok_or_else(|| LowerError::UndefinedLayer {
+                            name: r.name.clone(),
+                            span: r.span,
+                        })
                 })
                 .collect::<Result<Vec<_>, _>>()?
         } else {
@@ -68,10 +73,12 @@ pub fn lower_model(model: &AstModel) -> Result<GraphIr, LowerError> {
             params,
             inputs,
         };
-        let id = graph.add_node(node).map_err(|_| LowerError::DuplicateNode {
-            name: layer.name.name.clone(),
-            span: layer.name.span,
-        })?;
+        let id = graph
+            .add_node(node)
+            .map_err(|_| LowerError::DuplicateNode {
+                name: layer.name.name.clone(),
+                span: layer.name.span,
+            })?;
         if let GraphNode::Layer { id: stored_id, .. } = graph.nodes.last_mut().unwrap() {
             *stored_id = id;
         }

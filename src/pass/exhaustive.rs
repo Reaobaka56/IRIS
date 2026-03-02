@@ -12,13 +12,20 @@ use crate::pass::Pass;
 pub struct ExhaustivePass;
 
 impl Pass for ExhaustivePass {
-    fn name(&self) -> &'static str { "exhaustive" }
+    fn name(&self) -> &'static str {
+        "exhaustive"
+    }
 
     fn run(&mut self, module: &mut IrModule) -> Result<(), PassError> {
         for func in module.functions() {
             for block in func.blocks() {
                 for instr in &block.instrs {
-                    if let IrInstr::SwitchVariant { scrutinee, arms, default_block } = instr {
+                    if let IrInstr::SwitchVariant {
+                        scrutinee,
+                        arms,
+                        default_block,
+                    } = instr
+                    {
                         if default_block.is_some() {
                             // A default arm covers all unspecified variants.
                             continue;
@@ -31,9 +38,8 @@ impl Pass for ExhaustivePass {
                         };
                         let covered: std::collections::HashSet<usize> =
                             arms.iter().map(|(idx, _)| *idx).collect();
-                        let missing: Vec<usize> = (0..num_variants)
-                            .filter(|v| !covered.contains(v))
-                            .collect();
+                        let missing: Vec<usize> =
+                            (0..num_variants).filter(|v| !covered.contains(v)).collect();
                         if !missing.is_empty() {
                             return Err(PassError::TypeError {
                                 func: func.name.clone(),

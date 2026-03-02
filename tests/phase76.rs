@@ -71,9 +71,19 @@ def f() -> i64 { 99 }
     let module = compile_to_module(src, "test").unwrap();
     let bytes = serialize_module(&module);
     let module2 = deserialize_module(&bytes).expect("deserialization failed");
-    let names: Vec<&str> = module2.functions().iter().map(|f| f.name.as_str()).collect();
-    assert!(names.contains(&"compute"), "function 'compute' should survive round-trip");
-    assert!(names.contains(&"f"), "function 'f' should survive round-trip");
+    let names: Vec<&str> = module2
+        .functions()
+        .iter()
+        .map(|f| f.name.as_str())
+        .collect();
+    assert!(
+        names.contains(&"compute"),
+        "function 'compute' should survive round-trip"
+    );
+    assert!(
+        names.contains(&"f"),
+        "function 'f' should survive round-trip"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +100,11 @@ fn test_eval_round_trip() {
     let rt_out = eval_ir_module(&module2).unwrap();
 
     assert_eq!(orig_out.trim(), "42");
-    assert_eq!(rt_out.trim(), orig_out.trim(), "eval result must match after round-trip");
+    assert_eq!(
+        rt_out.trim(),
+        orig_out.trim(),
+        "eval result must match after round-trip"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -123,7 +137,10 @@ def f() -> i64 {
     let m_large = compile_to_module(src_large, "test").unwrap();
     let small_bytes = serialize_module(&m_small).len();
     let large_bytes = serialize_module(&m_large).len();
-    assert!(large_bytes > small_bytes,
+    assert!(
+        large_bytes > small_bytes,
         "larger module ({} bytes) should produce more bytes than small ({} bytes)",
-        large_bytes, small_bytes);
+        large_bytes,
+        small_bytes
+    );
 }

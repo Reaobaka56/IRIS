@@ -45,7 +45,11 @@ pub enum AstType {
     /// A tuple type, e.g. `(i64, f64, bool)`.
     Tuple(Vec<AstType>, Span),
     /// A fixed-length array type, e.g. `[i64; 5]`.
-    Array { elem: Box<AstType>, len: usize, span: Span },
+    Array {
+        elem: Box<AstType>,
+        len: usize,
+        span: Span,
+    },
     /// `option<T>` optional type.
     Option(Box<AstType>, Span),
     /// `result<T, E>` result type.
@@ -65,7 +69,11 @@ pub enum AstType {
     /// `map<K, V>` map type.
     Map(Box<AstType>, Box<AstType>, Span),
     /// Function type, e.g. `(i64, bool) -> i64`.
-    Fn { params: Vec<AstType>, ret: Box<AstType>, span: Span },
+    Fn {
+        params: Vec<AstType>,
+        ret: Box<AstType>,
+        span: Span,
+    },
 }
 
 impl AstType {
@@ -413,7 +421,11 @@ pub struct AstEnumDef {
 #[derive(Debug, Clone)]
 pub enum AstWhenPattern {
     /// `EnumName.Variant` or `EnumName.Variant(a, b, ...)` — enum variant pattern.
-    EnumVariant { enum_name: String, variant_name: String, bindings: Vec<String> },
+    EnumVariant {
+        enum_name: String,
+        variant_name: String,
+        bindings: Vec<String>,
+    },
     /// `some(binding)` — option Some pattern with an optional bound name.
     OptionSome { binding: Option<String> },
     /// `none` — option None pattern.

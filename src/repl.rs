@@ -22,7 +22,9 @@ pub struct ReplState {
 }
 
 impl Default for ReplState {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ReplState {
@@ -67,16 +69,11 @@ impl ReplState {
         let start = std::time::Instant::now();
 
         let result = match first_word {
-            "def" | "record" | "choice" | "const" | "type"
-            | "extern" | "trait" | "impl" => {
+            "def" | "record" | "choice" | "const" | "type" | "extern" | "trait" | "impl" => {
                 self.add_top_level(trimmed)
             }
-            "val" | "var" => {
-                self.add_context(trimmed)
-            }
-            _ => {
-                self.eval_expression(trimmed)
-            }
+            "val" | "var" => self.add_context(trimmed),
+            _ => self.eval_expression(trimmed),
         };
 
         self.last_elapsed = Some(start.elapsed());
@@ -84,20 +81,27 @@ impl ReplState {
     }
 
     /// Returns the list of active top-level definitions (for `:env`).
-    pub fn top_level_defs(&self) -> &[String] { &self.top_level }
+    pub fn top_level_defs(&self) -> &[String] {
+        &self.top_level
+    }
 
     /// Returns the list of active context bindings (for `:env`).
-    pub fn context_bindings(&self) -> &[String] { &self.context }
+    pub fn context_bindings(&self) -> &[String] {
+        &self.context
+    }
 
     /// Returns the elapsed time of the last evaluation.
-    pub fn last_elapsed(&self) -> Option<std::time::Duration> { self.last_elapsed }
+    pub fn last_elapsed(&self) -> Option<std::time::Duration> {
+        self.last_elapsed
+    }
 
     // ------------------------------------------------------------------
     // REPL meta-command dispatch
     // ------------------------------------------------------------------
 
     fn run_command(&mut self, cmd: &str) -> String {
-        let (name, arg) = cmd.split_once(' ')
+        let (name, arg) = cmd
+            .split_once(' ')
             .map(|(n, a)| (n, a.trim()))
             .unwrap_or((cmd, ""));
 
@@ -114,7 +118,8 @@ impl ReplState {
                 "  :ir <expr>     — show the compiled IR for an expression\n",
                 "  :reset         — clear all session state\n",
                 "  :quit, :q      — exit the REPL",
-            ).to_owned(),
+            )
+            .to_owned(),
 
             "env" | "e" => {
                 let mut out = String::new();
@@ -143,7 +148,10 @@ impl ReplState {
                 }
                 let n = self.eval_counter;
                 for (ret_ty, label) in &[
-                    ("i64", "i64"), ("f64", "f64"), ("bool", "bool"), ("str", "str"),
+                    ("i64", "i64"),
+                    ("f64", "f64"),
+                    ("bool", "bool"),
+                    ("str", "str"),
                 ] {
                     if self.try_eval_with_type(arg, ret_ty, n).is_some() {
                         return format!(": {}", label);
@@ -154,13 +162,17 @@ impl ReplState {
 
             "bring" | "b" => {
                 // Accept both `bring std.math` and `std.math` forms.
-                let mod_spec = if arg.starts_with("std.") { arg.to_owned() }
-                    else { format!("std.{}", arg) };
+                let mod_spec = if arg.starts_with("std.") {
+                    arg.to_owned()
+                } else {
+                    format!("std.{}", arg)
+                };
                 let bring_line = format!("bring {}", mod_spec);
                 // Validate by compiling with this bring statement.
                 let test_src = format!(
                     "{}\n{}\ndef __repl_validate__() -> i64 {{ 0 }}",
-                    bring_line, self.top_level.join("\n")
+                    bring_line,
+                    self.top_level.join("\n")
                 );
                 match crate::compile(&test_src, "repl", crate::EmitKind::Ir) {
                     Ok(_) => {
@@ -172,12 +184,10 @@ impl ReplState {
                 }
             }
 
-            "time" => {
-                match self.last_elapsed {
-                    Some(d) => format!("last evaluation took {:.3}ms", d.as_secs_f64() * 1000.0),
-                    None => "no evaluation has been performed yet".to_owned(),
-                }
-            }
+            "time" => match self.last_elapsed {
+                Some(d) => format!("last evaluation took {:.3}ms", d.as_secs_f64() * 1000.0),
+                None => "no evaluation has been performed yet".to_owned(),
+            },
 
             "history" => {
                 if self.history.is_empty() {
@@ -223,7 +233,10 @@ impl ReplState {
                 std::process::exit(0);
             }
 
-            _ => format!("unknown command: :{} — try :help for available commands", name),
+            _ => format!(
+                "unknown command: :{} — try :help for available commands",
+                name
+            ),
         }
     }
 
@@ -281,7 +294,10 @@ impl ReplState {
         self.top_level.push(item.to_owned());
 
         // Validate by trying to compile the accumulated source with a dummy main.
-        let test_src = format!("{}\ndef __repl_validate__() -> i64 {{ 0 }}", self.top_level.join("\n"));
+        let test_src = format!(
+            "{}\ndef __repl_validate__() -> i64 {{ 0 }}",
+            self.top_level.join("\n")
+        );
         if let Err(e) = crate::compile(&test_src, "repl", EmitKind::Ir) {
             // Roll back.
             self.top_level.pop();
@@ -295,7 +311,11 @@ impl ReplState {
         // Extract the variable name (second token after val/var).
         let parts: Vec<&str> = binding.splitn(3, ' ').collect();
         let name = if parts.len() >= 2 {
-            parts[1].trim_end_matches(':').trim_end_matches('=').trim().to_owned()
+            parts[1]
+                .trim_end_matches(':')
+                .trim_end_matches('=')
+                .trim()
+                .to_owned()
         } else {
             "?".to_owned()
         };

@@ -122,10 +122,11 @@ impl Manifest {
                         "repository" => repository = unquote(val),
                         _ => {}
                     },
-                    "registry" => match key {
-                        "url" => registry_url = unquote(val),
-                        _ => {}
-                    },
+                    "registry" => {
+                        if key == "url" {
+                            registry_url = unquote(val)
+                        }
+                    }
                     "dependencies" => {
                         // Parse inline table: name = { path = "..." } or { git = "..." } or { version = "..." }
                         if val.starts_with('{') {
@@ -148,7 +149,9 @@ impl Manifest {
                             let v = unquote(val);
                             // Heuristic: if it looks like a version (starts with digit or *)
                             // treat as registry dep; otherwise treat as path for compat.
-                            if v.starts_with(|c: char| c.is_ascii_digit() || c == '*' || c == '^' || c == '~') {
+                            if v.starts_with(|c: char| {
+                                c.is_ascii_digit() || c == '*' || c == '^' || c == '~'
+                            }) {
                                 deps.insert(key.to_string(), Dep::Registry { version: v });
                             } else {
                                 deps.insert(key.to_string(), Dep::Path(v));
@@ -164,7 +167,16 @@ impl Manifest {
             return Err("missing [package] name".into());
         }
 
-        Ok(Manifest { name, version, entry, description, license, repository, registry_url, deps })
+        Ok(Manifest {
+            name,
+            version,
+            entry,
+            description,
+            license,
+            repository,
+            registry_url,
+            deps,
+        })
     }
 
     /// Serialize back to TOML text.
@@ -242,17 +254,18 @@ fn find_manifest(start_dir: &Path) -> Option<PathBuf> {
 /// Load and parse the project manifest from the current directory or above.
 fn load_manifest() -> Result<(PathBuf, Manifest), String> {
     let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {}", e))?;
-    let path = find_manifest(&cwd).ok_or_else(|| {
-        "no iris.toml found (run `iris pkg init` to create one)".to_string()
-    })?;
-    let text = fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
+    let path = find_manifest(&cwd)
+        .ok_or_else(|| "no iris.toml found (run `iris pkg init` to create one)".to_string())?;
+    let text =
+        fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
     let manifest = Manifest::parse(&text)?;
     Ok((path, manifest))
 }
 
 /// Save manifest back to disk.
 fn save_manifest(path: &Path, manifest: &Manifest) -> Result<(), String> {
-    fs::write(path, manifest.to_toml()).map_err(|e| format!("cannot write {}: {}", path.display(), e))
+    fs::write(path, manifest.to_toml())
+        .map_err(|e| format!("cannot write {}: {}", path.display(), e))
 }
 
 /// `iris pkg init` — create a new project.
@@ -303,7 +316,11 @@ pub fn cmd_init() -> Result<(), String> {
         fs::create_dir_all(&iris_dir).map_err(|e| format!("cannot create .iris/: {}", e))?;
     }
 
-    eprintln!("initialized IRIS project '{}' in {}", dir_name, cwd.display());
+    eprintln!(
+        "initialized IRIS project '{}' in {}",
+        dir_name,
+        cwd.display()
+    );
     Ok(())
 }
 
@@ -350,8 +367,7 @@ pub fn cmd_install() -> Result<(), String> {
     let deps_dir = project_dir.join(".iris").join("deps");
 
     if !deps_dir.exists() {
-        fs::create_dir_all(&deps_dir)
-            .map_err(|e| format!("cannot create .iris/deps/: {}", e))?;
+        fs::create_dir_all(&deps_dir).map_err(|e| format!("cannot create .iris/deps/: {}", e))?;
     }
 
     if manifest.deps.is_empty() {
@@ -421,7 +437,10 @@ fn install_git_dep(url: &str, target: &Path, name: &str) -> Result<(), String> {
             .status()
             .map_err(|e| format!("dependency '{}': git pull failed: {}", name, e))?;
         if !status.success() {
-            return Err(format!("dependency '{}': git pull failed (exit {})", name, status));
+            return Err(format!(
+                "dependency '{}': git pull failed (exit {})",
+                name, status
+            ));
         }
     } else {
         // Fresh clone.
@@ -434,7 +453,10 @@ fn install_git_dep(url: &str, target: &Path, name: &str) -> Result<(), String> {
             .status()
             .map_err(|e| format!("dependency '{}': git clone failed: {}", name, e))?;
         if !status.success() {
-            return Err(format!("dependency '{}': git clone failed (exit {})", name, status));
+            return Err(format!(
+                "dependency '{}': git clone failed (exit {})",
+                name, status
+            ));
         }
     }
     Ok(())
@@ -505,8 +527,8 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
         .and_then(|n| n.to_str())
         .unwrap_or("main");
 
-    let ir = crate::compile_ast_to_module(&main_ast, module_name, None)
-        .map_err(|e| format!("{}", e))?;
+    let ir =
+        crate::compile_ast_to_module(&main_ast, module_name, None).map_err(|e| format!("{}", e))?;
 
     let output_name = format!("{}{}", manifest.name, std::env::consts::EXE_SUFFIX);
     let output_path = project_dir.join(&output_name);
@@ -515,8 +537,7 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
     eprintln!("wrote binary: {}", output_path.display());
 
     if run_after {
-        let run_path =
-            fs::canonicalize(&output_path).unwrap_or_else(|_| output_path.clone());
+        let run_path = fs::canonicalize(&output_path).unwrap_or_else(|_| output_path.clone());
         let status = Command::new(&run_path)
             .current_dir(project_dir)
             .status()
@@ -537,7 +558,12 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
 ///
 /// When the registry is not reachable we fall back to a git-based approach:
 /// `https://github.com/iris-pkg/<name>.git` at tag `v<version>`.
-fn install_registry_dep(registry_url: &str, name: &str, version: &str, target: &Path) -> Result<(), String> {
+fn install_registry_dep(
+    registry_url: &str,
+    name: &str,
+    version: &str,
+    target: &Path,
+) -> Result<(), String> {
     // Check if already installed with correct version marker.
     let version_marker = target.join(".iris-version");
     if version_marker.exists() {
@@ -549,7 +575,12 @@ fn install_registry_dep(registry_url: &str, name: &str, version: &str, target: &
     }
 
     // Try git clone from the registry's package namespace.
-    let git_url = format!("{}/{}/{}.git", registry_url.trim_end_matches('/'), "packages", name);
+    let git_url = format!(
+        "{}/{}/{}.git",
+        registry_url.trim_end_matches('/'),
+        "packages",
+        name
+    );
     eprintln!("  {} v{} — fetching from registry", name, version);
 
     if target.exists() {
@@ -559,7 +590,15 @@ fn install_registry_dep(registry_url: &str, name: &str, version: &str, target: &
     // Attempt clone at tag v<version>
     let tag = format!("v{}", version);
     let status = Command::new("git")
-        .args(["clone", "--depth", "1", "--branch", &tag, &git_url, &target.to_string_lossy()])
+        .args([
+            "clone",
+            "--depth",
+            "1",
+            "--branch",
+            &tag,
+            &git_url,
+            &target.to_string_lossy(),
+        ])
         .stderr(std::process::Stdio::null())
         .status();
 
@@ -636,7 +675,10 @@ pub fn cmd_publish() -> Result<(), String> {
         .map_err(|e| format!("cannot write package manifest: {}", e))?;
 
     eprintln!("\npackage prepared: {}", pkg_file.display());
-    eprintln!("to upload, push to: {}/packages/{}", manifest.registry_url, manifest.name);
+    eprintln!(
+        "to upload, push to: {}/packages/{}",
+        manifest.registry_url, manifest.name
+    );
     eprintln!("  git tag v{}", manifest.version);
     eprintln!("  git push origin v{}", manifest.version);
 
@@ -644,9 +686,10 @@ pub fn cmd_publish() -> Result<(), String> {
 }
 
 /// Collect files for packaging — exclude .iris/, target/, .git/, *.exe.
+#[allow(clippy::only_used_in_recursion)]
 fn collect_pkg_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries = fs::read_dir(dir)
-        .map_err(|e| format!("cannot read directory {}: {}", dir.display(), e))?;
+    let entries =
+        fs::read_dir(dir).map_err(|e| format!("cannot read directory {}: {}", dir.display(), e))?;
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().to_string();
@@ -669,16 +712,19 @@ fn collect_pkg_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Resul
 pub fn cmd_search(query: &str) -> Result<(), String> {
     let (_path, manifest) = load_manifest().unwrap_or_else(|_| {
         // No manifest? Use default registry.
-        (PathBuf::new(), Manifest {
-            name: String::new(),
-            version: String::new(),
-            entry: String::new(),
-            description: String::new(),
-            license: String::new(),
-            repository: String::new(),
-            registry_url: DEFAULT_REGISTRY.into(),
-            deps: BTreeMap::new(),
-        })
+        (
+            PathBuf::new(),
+            Manifest {
+                name: String::new(),
+                version: String::new(),
+                entry: String::new(),
+                description: String::new(),
+                license: String::new(),
+                repository: String::new(),
+                registry_url: DEFAULT_REGISTRY.into(),
+                deps: BTreeMap::new(),
+            },
+        )
     });
 
     eprintln!("searching registry for '{}'...", query);
@@ -700,16 +746,19 @@ pub fn cmd_search(query: &str) -> Result<(), String> {
 /// `iris pkg info <name>` — show details about a package.
 pub fn cmd_info(name: &str) -> Result<(), String> {
     let (_path, manifest) = load_manifest().unwrap_or_else(|_| {
-        (PathBuf::new(), Manifest {
-            name: String::new(),
-            version: String::new(),
-            entry: String::new(),
-            description: String::new(),
-            license: String::new(),
-            repository: String::new(),
-            registry_url: DEFAULT_REGISTRY.into(),
-            deps: BTreeMap::new(),
-        })
+        (
+            PathBuf::new(),
+            Manifest {
+                name: String::new(),
+                version: String::new(),
+                entry: String::new(),
+                description: String::new(),
+                license: String::new(),
+                repository: String::new(),
+                registry_url: DEFAULT_REGISTRY.into(),
+                deps: BTreeMap::new(),
+            },
+        )
     });
 
     eprintln!("package: {}", name);
@@ -752,7 +801,9 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
                     let v = value.ok_or("--version requires a value")?;
                     cmd_add(name, Dep::Registry { version: v.clone() })
                 }
-                _ => Err("usage: iris pkg add <name> --path <p> | --git <url> | --version <v>".into()),
+                _ => Err(
+                    "usage: iris pkg add <name> --path <p> | --git <url> | --version <v>".into(),
+                ),
             }
         }
 

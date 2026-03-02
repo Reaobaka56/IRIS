@@ -13,6 +13,7 @@ use crate::ir::value::{BlockParam, ValueDef, ValueId};
 /// - `FunctionId(n)` always indexes `functions[n]`.
 /// - Once a function is added via `add_function()`, it is immutable to external
 ///   callers. Passes may mutate through the `pub(crate)` fields.
+///
 /// An extern function declaration (C-linkage FFI).
 #[derive(Debug, Clone)]
 pub struct IrExternFn {
@@ -211,7 +212,8 @@ impl IrFunctionBuilder {
 
     /// Returns the current insertion block.
     pub fn current_block(&self) -> BlockId {
-        self.current_block.expect("IrFunctionBuilder: no current block set")
+        self.current_block
+            .expect("IrFunctionBuilder: no current block set")
     }
 
     /// Sets the current insertion block.
@@ -255,7 +257,10 @@ impl IrFunctionBuilder {
 
         // Record the current span into the span table (first instruction per statement).
         if let Some(byte) = self.current_span.take() {
-            self.func.span_table.entries.insert((block_id.0, instr_idx), byte);
+            self.func
+                .span_table
+                .entries
+                .insert((block_id.0, instr_idx), byte);
         }
 
         self.func.blocks[block_id.0 as usize].instrs.push(instr);
@@ -310,22 +315,15 @@ impl IrFunctionBuilder {
 
     /// Emits a `Print` instruction (no result).
     pub fn emit_print(&mut self, operand: ValueId) {
-        self.push_instr(
-            crate::ir::instr::IrInstr::Print { operand },
-            None,
-        );
+        self.push_instr(crate::ir::instr::IrInstr::Print { operand }, None);
     }
 
     /// Terminates any unsealed blocks with `Return { values: [] }`.
     /// Call this before `build()` if early-return paths may leave orphan blocks.
     pub fn seal_unterminated_blocks(&mut self) {
         use crate::ir::instr::IrInstr;
-        let block_ids: Vec<crate::ir::block::BlockId> = self
-            .func
-            .blocks
-            .iter()
-            .map(|b| b.id)
-            .collect();
+        let block_ids: Vec<crate::ir::block::BlockId> =
+            self.func.blocks.iter().map(|b| b.id).collect();
         for bid in block_ids {
             if !self.func.blocks[bid.0 as usize].is_sealed() {
                 self.func.blocks[bid.0 as usize]

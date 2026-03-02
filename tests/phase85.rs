@@ -1,7 +1,6 @@
-/// Phase 85: Hindley-Milner type inference.
-
-use iris::{compile, compile_to_module, HmTypeInferPass, EmitKind};
 use iris::pass::Pass;
+/// Phase 85: Hindley-Milner type inference.
+use iris::{compile, compile_to_module, EmitKind, HmTypeInferPass};
 
 fn eval(src: &str) -> String {
     compile(src, "phase85", EmitKind::Eval).expect("eval failed")

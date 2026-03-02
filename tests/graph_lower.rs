@@ -86,7 +86,10 @@ model S {
     let input_ty = shapes.get(&input_node.id()).expect("input type");
     let sm_ty = shapes.get(&sm_node.id()).expect("softmax type");
 
-    assert_eq!(sm_ty, input_ty, "Softmax should pass through shape unchanged");
+    assert_eq!(
+        sm_ty, input_ty,
+        "Softmax should pass through shape unchanged"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -107,9 +110,21 @@ fn test_infer_shapes_chain() {
     let r1 = graph.node_by_name("r1").expect("r1");
     let sm = graph.node_by_name("sm").expect("sm");
 
-    assert_eq!(shapes.get(&d1.id()).unwrap(), &expected, "Dense output shape");
-    assert_eq!(shapes.get(&r1.id()).unwrap(), &expected, "ReLU passthrough shape");
-    assert_eq!(shapes.get(&sm.id()).unwrap(), &expected, "Softmax passthrough shape");
+    assert_eq!(
+        shapes.get(&d1.id()).unwrap(),
+        &expected,
+        "Dense output shape"
+    );
+    assert_eq!(
+        shapes.get(&r1.id()).unwrap(),
+        &expected,
+        "ReLU passthrough shape"
+    );
+    assert_eq!(
+        shapes.get(&sm.id()).unwrap(),
+        &expected,
+        "Softmax passthrough shape"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -162,8 +177,16 @@ fn test_lower_graph_to_ir_has_call_instrs() {
     module.add_function(func).unwrap();
     let ir = emit_ir_text(&module).unwrap();
 
-    assert!(ir.contains("call @Dense"), "IR should contain call @Dense\n{}", ir);
-    assert!(ir.contains("call @Softmax"), "IR should contain call @Softmax\n{}", ir);
+    assert!(
+        ir.contains("call @Dense"),
+        "IR should contain call @Dense\n{}",
+        ir
+    );
+    assert!(
+        ir.contains("call @Softmax"),
+        "IR should contain call @Softmax\n{}",
+        ir
+    );
     assert!(ir.contains("return"), "IR should contain return\n{}", ir);
 }
 

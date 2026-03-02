@@ -25,7 +25,11 @@ def f() -> i64 { 42 }
 fn test_parse_error_has_prefix() {
     let src = "def f() -> i64 { @bad }";
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
-    assert!(err.starts_with("error:"), "expected 'error:' prefix, got: {}", err);
+    assert!(
+        err.starts_with("error:"),
+        "expected 'error:' prefix, got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -37,7 +41,11 @@ fn test_parse_error_has_line_number() {
     let src = "\ndef f() -> i64 {\n    @bad\n}";
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
     // The diagnostic should mention line 3
-    assert!(err.contains("3:"), "expected line 3 reference, got: {}", err);
+    assert!(
+        err.contains("3:"),
+        "expected line 3 reference, got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -47,7 +55,11 @@ fn test_parse_error_has_line_number() {
 fn test_parse_error_has_location_marker() {
     let src = "def f() -> i64 { @bad }";
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
-    assert!(err.contains("-->"), "expected '-->' in diagnostic, got: {}", err);
+    assert!(
+        err.contains("-->"),
+        "expected '-->' in diagnostic, got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -58,7 +70,11 @@ fn test_parse_error_includes_source_line() {
     let src = "def f() -> i64 { @bad }";
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
     // The source line should appear in the diagnostic
-    assert!(err.contains("@bad"), "expected source content in diagnostic, got: {}", err);
+    assert!(
+        err.contains("@bad"),
+        "expected source content in diagnostic, got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +84,11 @@ fn test_parse_error_includes_source_line() {
 fn test_parse_error_has_caret() {
     let src = "def f() -> i64 { @bad }";
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
-    assert!(err.contains('^'), "expected caret '^' in diagnostic, got: {}", err);
+    assert!(
+        err.contains('^'),
+        "expected caret '^' in diagnostic, got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -84,7 +104,11 @@ def f() -> i64 {
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
     assert!(err.starts_with("error:"), "expected error prefix");
     // Should mention the undefined variable
-    assert!(err.contains("undefined_var"), "expected variable name in error, got: {}", err);
+    assert!(
+        err.contains("undefined_var"),
+        "expected variable name in error, got: {}",
+        err
+    );
 }
 
 // ---------------------------------------------------------------------------

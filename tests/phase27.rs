@@ -37,7 +37,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "zero-range par for should return 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "zero-range par for should return 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +60,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "5", "par for 0..5 should run 5 times, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "5",
+        "par for 0..5 should run 5 times, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +101,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "3", "2..5 runs 3 iterations, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "3",
+        "2..5 runs 3 iterations, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -110,7 +125,12 @@ def f() -> i64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // 0^2 + 1^2 + 2^2 + 3^2 = 0 + 1 + 4 + 9 = 14
-    assert_eq!(out.trim(), "14", "sum of squares 0..4 = 14, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "14",
+        "sum of squares 0..4 = 14, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -133,7 +153,12 @@ def f() -> i64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // i < 3 for 0..6: true for 0,1,2 → 3 increments
-    assert_eq!(out.trim(), "3", "i < 3 in 0..6 gives 3 increments, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "3",
+        "i < 3 in 0..6 gives 3 increments, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

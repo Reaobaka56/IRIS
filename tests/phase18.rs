@@ -19,7 +19,11 @@ def f() -> i64 {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "for keyword should be lexed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "for keyword should be lexed: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -35,9 +39,17 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile");
-    assert!(out.contains("for_header"), "IR should have for_header: {}", out);
+    assert!(
+        out.contains("for_header"),
+        "IR should have for_header: {}",
+        out
+    );
     assert!(out.contains("for_body"), "IR should have for_body: {}", out);
-    assert!(out.contains("for_merge"), "IR should have for_merge: {}", out);
+    assert!(
+        out.contains("for_merge"),
+        "IR should have for_merge: {}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +67,12 @@ def count_to_5() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "5", "loop should run 5 times, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "5",
+        "loop should run 5 times, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +109,12 @@ def empty_range() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "99", "zero-iteration loop should not modify acc, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "99",
+        "zero-iteration loop should not modify acc, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -132,7 +154,12 @@ def multiplication() -> i64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // 3 * 3 = 9 iterations
-    assert_eq!(out.trim(), "9", "3x3 nested loop = 9 iterations, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "9",
+        "3x3 nested loop = 9 iterations, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

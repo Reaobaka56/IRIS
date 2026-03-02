@@ -27,7 +27,14 @@ fn test_eval_const_return() {
     let entry = b.create_block(Some("entry"));
     b.set_current_block(entry);
     let c = b.fresh_value();
-    b.push_instr(IrInstr::ConstInt { result: c, value: 42, ty: ty.clone() }, Some(ty));
+    b.push_instr(
+        IrInstr::ConstInt {
+            result: c,
+            value: 42,
+            ty: ty.clone(),
+        },
+        Some(ty),
+    );
     b.push_instr(IrInstr::Return { values: vec![c] }, None);
     let func = b.build();
 
@@ -42,8 +49,14 @@ fn test_eval_const_return() {
 fn test_eval_arithmetic() {
     let ty = f32_ty();
     let params = vec![
-        Param { name: "a".into(), ty: ty.clone() },
-        Param { name: "b".into(), ty: ty.clone() },
+        Param {
+            name: "a".into(),
+            ty: ty.clone(),
+        },
+        Param {
+            name: "b".into(),
+            ty: ty.clone(),
+        },
     ];
     let mut b = IrFunctionBuilder::new("add", params, ty.clone());
     let entry = b.create_block(Some("entry"));
@@ -52,13 +65,20 @@ fn test_eval_arithmetic() {
     b.set_current_block(entry);
     let sum = b.fresh_value();
     b.push_instr(
-        IrInstr::BinOp { result: sum, op: BinOp::Add, lhs: a, rhs: bv, ty: ty.clone() },
+        IrInstr::BinOp {
+            result: sum,
+            op: BinOp::Add,
+            lhs: a,
+            rhs: bv,
+            ty: ty.clone(),
+        },
         Some(ty),
     );
     b.push_instr(IrInstr::Return { values: vec![sum] }, None);
     let func = b.build();
 
-    let result = eval_function(&func, &[IrValue::F32(1.0), IrValue::F32(2.0)]).expect("should eval");
+    let result =
+        eval_function(&func, &[IrValue::F32(1.0), IrValue::F32(2.0)]).expect("should eval");
     assert_eq!(result, vec![IrValue::F32(3.0)]);
 }
 
@@ -70,8 +90,14 @@ fn test_eval_if_true() {
     let ty = f32_ty();
     let bty = bool_ty();
     let params = vec![
-        Param { name: "a".into(), ty: ty.clone() },
-        Param { name: "b".into(), ty: ty.clone() },
+        Param {
+            name: "a".into(),
+            ty: ty.clone(),
+        },
+        Param {
+            name: "b".into(),
+            ty: ty.clone(),
+        },
     ];
     let mut builder = IrFunctionBuilder::new("max", params, ty.clone());
     let entry = builder.create_block(Some("entry"));
@@ -86,7 +112,13 @@ fn test_eval_if_true() {
     builder.set_current_block(entry);
     let cond = builder.fresh_value();
     builder.push_instr(
-        IrInstr::BinOp { result: cond, op: BinOp::CmpGt, lhs: a, rhs: bv, ty: bty.clone() },
+        IrInstr::BinOp {
+            result: cond,
+            op: BinOp::CmpGt,
+            lhs: a,
+            rhs: bv,
+            ty: bty.clone(),
+        },
         Some(bty),
     );
     builder.push_instr(
@@ -101,10 +133,20 @@ fn test_eval_if_true() {
     );
 
     builder.set_current_block(then_bb);
-    builder.push_instr(IrInstr::Return { values: vec![then_val] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![then_val],
+        },
+        None,
+    );
 
     builder.set_current_block(else_bb);
-    builder.push_instr(IrInstr::Return { values: vec![else_val] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![else_val],
+        },
+        None,
+    );
 
     let func = builder.build();
 
@@ -123,8 +165,14 @@ fn test_eval_if_false() {
     let ty = f32_ty();
     let bty = bool_ty();
     let params = vec![
-        Param { name: "a".into(), ty: ty.clone() },
-        Param { name: "b".into(), ty: ty.clone() },
+        Param {
+            name: "a".into(),
+            ty: ty.clone(),
+        },
+        Param {
+            name: "b".into(),
+            ty: ty.clone(),
+        },
     ];
     let mut builder = IrFunctionBuilder::new("max2", params, ty.clone());
     let entry = builder.create_block(Some("entry"));
@@ -139,7 +187,13 @@ fn test_eval_if_false() {
     builder.set_current_block(entry);
     let cond = builder.fresh_value();
     builder.push_instr(
-        IrInstr::BinOp { result: cond, op: BinOp::CmpGt, lhs: a, rhs: bv, ty: bty.clone() },
+        IrInstr::BinOp {
+            result: cond,
+            op: BinOp::CmpGt,
+            lhs: a,
+            rhs: bv,
+            ty: bty.clone(),
+        },
         Some(bty),
     );
     builder.push_instr(
@@ -154,10 +208,20 @@ fn test_eval_if_false() {
     );
 
     builder.set_current_block(then_bb);
-    builder.push_instr(IrInstr::Return { values: vec![then_val] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![then_val],
+        },
+        None,
+    );
 
     builder.set_current_block(else_bb);
-    builder.push_instr(IrInstr::Return { values: vec![else_val] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![else_val],
+        },
+        None,
+    );
 
     let func = builder.build();
 
@@ -173,14 +237,22 @@ fn test_eval_if_false() {
 #[test]
 fn test_eval_neg() {
     let ty = f32_ty();
-    let params = vec![Param { name: "x".into(), ty: ty.clone() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: ty.clone(),
+    }];
     let mut b = IrFunctionBuilder::new("neg", params, ty.clone());
     let entry = b.create_block(Some("entry"));
     let x = b.add_block_param(entry, Some("x"), ty.clone());
     b.set_current_block(entry);
     let r = b.fresh_value();
     b.push_instr(
-        IrInstr::UnaryOp { result: r, op: ScalarUnaryOp::Neg, operand: x, ty: ty.clone() },
+        IrInstr::UnaryOp {
+            result: r,
+            op: ScalarUnaryOp::Neg,
+            operand: x,
+            ty: ty.clone(),
+        },
         Some(ty),
     );
     b.push_instr(IrInstr::Return { values: vec![r] }, None);
@@ -196,14 +268,22 @@ fn test_eval_neg() {
 #[test]
 fn test_eval_not() {
     let bty = bool_ty();
-    let params = vec![Param { name: "b".into(), ty: bty.clone() }];
+    let params = vec![Param {
+        name: "b".into(),
+        ty: bty.clone(),
+    }];
     let mut b = IrFunctionBuilder::new("inv", params, bty.clone());
     let entry = b.create_block(Some("entry"));
     let bv = b.add_block_param(entry, Some("b"), bty.clone());
     b.set_current_block(entry);
     let r = b.fresh_value();
     b.push_instr(
-        IrInstr::UnaryOp { result: r, op: ScalarUnaryOp::Not, operand: bv, ty: bty.clone() },
+        IrInstr::UnaryOp {
+            result: r,
+            op: ScalarUnaryOp::Not,
+            operand: bv,
+            ty: bty.clone(),
+        },
         Some(bty),
     );
     b.push_instr(IrInstr::Return { values: vec![r] }, None);
@@ -226,8 +306,14 @@ fn test_eval_tensor_load() {
     let elem_ty = f32_ty();
 
     let params = vec![
-        Param { name: "t".into(), ty: tensor_ty.clone() },
-        Param { name: "i".into(), ty: idx_ty.clone() },
+        Param {
+            name: "t".into(),
+            ty: tensor_ty.clone(),
+        },
+        Param {
+            name: "i".into(),
+            ty: idx_ty.clone(),
+        },
     ];
     let mut b = IrFunctionBuilder::new("get", params, elem_ty.clone());
     let entry = b.create_block(Some("entry"));
@@ -236,7 +322,12 @@ fn test_eval_tensor_load() {
     b.set_current_block(entry);
     let r = b.fresh_value();
     b.push_instr(
-        IrInstr::Load { result: r, tensor: t, indices: vec![idx], result_ty: elem_ty.clone() },
+        IrInstr::Load {
+            result: r,
+            tensor: t,
+            indices: vec![idx],
+            result_ty: elem_ty.clone(),
+        },
         Some(elem_ty),
     );
     b.push_instr(IrInstr::Return { values: vec![r] }, None);

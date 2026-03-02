@@ -2,7 +2,6 @@
 ///
 /// Cells are 1-element lists (Rc-backed), so closures that capture a cell
 /// share mutations with the outer scope.
-
 use iris::{compile, EmitKind};
 
 fn eval(src: &str) -> String {
@@ -140,8 +139,11 @@ def main() -> i64 {
 }
 "#;
     let ir_text = ir(src);
-    assert!(ir_text.contains("list_new") || ir_text.contains("ListNew"),
-        "expected list_new in IR (cell desugars to list):\n{}", ir_text);
+    assert!(
+        ir_text.contains("list_new") || ir_text.contains("ListNew"),
+        "expected list_new in IR (cell desugars to list):\n{}",
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------

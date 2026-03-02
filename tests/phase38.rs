@@ -1,3 +1,4 @@
+#![allow(clippy::approx_constant)]
 //! Phase 38 integration tests: type aliases — `type Name = Type`.
 
 use iris::{compile, EmitKind};
@@ -52,7 +53,11 @@ def f() -> Counter {
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should emit IR");
     // The IR should use the concrete type (i64), not the alias name "Counter"
-    assert!(out.contains("i64"), "IR should use resolved type i64, got:\n{}", out);
+    assert!(
+        out.contains("i64"),
+        "IR should use resolved type i64, got:\n{}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -138,5 +143,9 @@ def f() -> Index {
 }
 "#;
     let out = compile(src, "test", EmitKind::Llvm).expect("should emit LLVM stub");
-    assert!(out.contains("i64"), "LLVM stub should use i64, got:\n{}", out);
+    assert!(
+        out.contains("i64"),
+        "LLVM stub should use i64, got:\n{}",
+        out
+    );
 }

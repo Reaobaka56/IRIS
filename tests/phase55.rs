@@ -208,6 +208,14 @@ def f() -> i64 {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("iris_list_len"), "expected iris_list_len in LLVM:\n{}", ll);
-    assert!(ll.contains("iris_list_get"), "expected iris_list_get in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("iris_list_len"),
+        "expected iris_list_len in LLVM:\n{}",
+        ll
+    );
+    assert!(
+        ll.contains("iris_list_get"),
+        "expected iris_list_get in LLVM:\n{}",
+        ll
+    );
 }

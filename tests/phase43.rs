@@ -131,7 +131,11 @@ def f() -> i64 {
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
     assert!(ir.contains("list_new"), "expected list_new in IR:\n{}", ir);
-    assert!(ir.contains("list_push"), "expected list_push in IR:\n{}", ir);
+    assert!(
+        ir.contains("list_push"),
+        "expected list_push in IR:\n{}",
+        ir
+    );
     assert!(ir.contains("list_len"), "expected list_len in IR:\n{}", ir);
 }
 
@@ -149,7 +153,19 @@ def f() -> i64 {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("iris_list_new"), "expected iris_list_new in LLVM:\n{}", ll);
-    assert!(ll.contains("iris_list_push"), "expected iris_list_push in LLVM:\n{}", ll);
-    assert!(ll.contains("iris_list_len"), "expected iris_list_len in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("iris_list_new"),
+        "expected iris_list_new in LLVM:\n{}",
+        ll
+    );
+    assert!(
+        ll.contains("iris_list_push"),
+        "expected iris_list_push in LLVM:\n{}",
+        ll
+    );
+    assert!(
+        ll.contains("iris_list_len"),
+        "expected iris_list_len in LLVM:\n{}",
+        ll
+    );
 }

@@ -47,7 +47,10 @@ fn test_compile_add_emit_ir() {
     assert!(output.contains("def add"), "IR should contain 'def add'");
     assert!(output.contains("return"), "IR should contain 'return'");
     // The add binop appears in the IR text
-    assert!(output.contains("add"), "IR should contain an add instruction");
+    assert!(
+        output.contains("add"),
+        "IR should contain an add instruction"
+    );
 }
 
 #[test]
@@ -67,8 +70,8 @@ fn test_compile_constant_emit_ir() {
 
 #[test]
 fn test_compile_matmul_emit_ir() {
-    let output = compile(MATMUL_SRC, "matmul_module", EmitKind::Ir)
-        .expect("matmul compile should succeed");
+    let output =
+        compile(MATMUL_SRC, "matmul_module", EmitKind::Ir).expect("matmul compile should succeed");
     assert!(output.contains("def matmul"));
     assert!(output.contains("einsum"));
     assert!(output.contains("return"));
@@ -76,8 +79,8 @@ fn test_compile_matmul_emit_ir() {
 
 #[test]
 fn test_compile_multi_function_emit_ir() {
-    let output =
-        compile(MULTI_FN_SRC, "multi_module", EmitKind::Ir).expect("multi fn compile should succeed");
+    let output = compile(MULTI_FN_SRC, "multi_module", EmitKind::Ir)
+        .expect("multi fn compile should succeed");
     assert!(output.contains("def square"));
     assert!(output.contains("def negate"));
 }
@@ -88,8 +91,7 @@ fn test_compile_multi_function_emit_ir() {
 
 #[test]
 fn test_compile_add_emit_llvm() {
-    let output =
-        compile(ADD_SRC, "add_module", EmitKind::Llvm).expect("llvm stub should succeed");
+    let output = compile(ADD_SRC, "add_module", EmitKind::Llvm).expect("llvm stub should succeed");
     assert!(output.contains("define"));
     assert!(output.contains("@add"));
     assert!(output.contains("float %x"));
@@ -107,8 +109,8 @@ fn test_compile_identity_emit_llvm() {
 
 #[test]
 fn test_compile_matmul_emit_llvm() {
-    let output = compile(MATMUL_SRC, "matmul_module", EmitKind::Llvm)
-        .expect("llvm stub should succeed");
+    let output =
+        compile(MATMUL_SRC, "matmul_module", EmitKind::Llvm).expect("llvm stub should succeed");
     assert!(output.contains("define"));
     assert!(output.contains("@matmul"));
     // tensor args lower to ptr

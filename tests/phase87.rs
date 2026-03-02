@@ -1,5 +1,4 @@
 /// Phase 87: CUDA end-to-end — @kernel attribute, NVVM annotations.
-
 use iris::{compile, EmitKind};
 
 fn cuda(src: &str) -> String {
@@ -19,10 +18,16 @@ def vec_add(a: f32, b: f32) -> f32 {
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
-    assert!(out.contains("nvvm.annotations"),
-        "expected nvvm.annotations:\n{}", out);
-    assert!(out.contains("vec_add"),
-        "expected vec_add in CUDA output:\n{}", out);
+    assert!(
+        out.contains("nvvm.annotations"),
+        "expected nvvm.annotations:\n{}",
+        out
+    );
+    assert!(
+        out.contains("vec_add"),
+        "expected vec_add in CUDA output:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -36,8 +41,11 @@ def my_kernel(x: f32) -> f32 { x * 2.0 }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
-    assert!(out.contains("\"kernel\"") || out.contains("!\"kernel\""),
-        "expected kernel metadata:\n{}", out);
+    assert!(
+        out.contains("\"kernel\"") || out.contains("!\"kernel\""),
+        "expected kernel metadata:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -51,8 +59,11 @@ def compute(n: i64) -> i64 { n + 1 }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
-    assert!(out.contains("tid.x") || out.contains("sreg.tid"),
-        "expected tid register read in kernel body:\n{}", out);
+    assert!(
+        out.contains("tid.x") || out.contains("sreg.tid"),
+        "expected tid register read in kernel body:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -66,8 +77,11 @@ def gpu_fn(x: f32, y: f32) -> f32 { x + y }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
-    assert!(out.contains("define") && out.contains("gpu_fn"),
-        "expected 'define ... gpu_fn' in CUDA output:\n{}", out);
+    assert!(
+        out.contains("define") && out.contains("gpu_fn"),
+        "expected 'define ... gpu_fn' in CUDA output:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -81,8 +95,11 @@ def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
     // Should not have any nvvm annotations (no @kernel, no ParFor)
-    assert!(!out.contains("nvvm.annotations") || !out.contains("host_fn"),
-        "host_fn should not be in NVVM annotations:\n{}", out);
+    assert!(
+        !out.contains("nvvm.annotations") || !out.contains("host_fn"),
+        "host_fn should not be in NVVM annotations:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -98,8 +115,11 @@ def kernel_b(x: f32) -> f32 { x * 2.0 }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
-    assert!(out.contains("kernel_a") && out.contains("kernel_b"),
-        "expected both kernels in CUDA output:\n{}", out);
+    assert!(
+        out.contains("kernel_a") && out.contains("kernel_b"),
+        "expected both kernels in CUDA output:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -113,8 +133,11 @@ def my_kernel(x: i64) -> i64 { x }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
-    assert!(out.contains("nvptx64-nvidia-cuda"),
-        "expected nvptx64 triple:\n{}", out);
+    assert!(
+        out.contains("nvptx64-nvidia-cuda"),
+        "expected nvptx64 triple:\n{}",
+        out
+    );
 }
 
 // ------------------------------------------------------------------
@@ -129,6 +152,9 @@ def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
     // Check that float multiply is present (fmul instruction)
-    assert!(out.contains("fmul") || out.contains("fadd") || out.contains("scale"),
-        "expected float op in CUDA kernel:\n{}", out);
+    assert!(
+        out.contains("fmul") || out.contains("fadd") || out.contains("scale"),
+        "expected float op in CUDA kernel:\n{}",
+        out
+    );
 }

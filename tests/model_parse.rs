@@ -92,7 +92,10 @@ model ParamTest {
     assert_eq!(params[1].key.name, "b");
     assert!(matches!(params[1].value, AstExpr::FloatLit { .. }));
     assert_eq!(params[2].key.name, "c");
-    assert!(matches!(params[2].value, AstExpr::BoolLit { value: true, .. }));
+    assert!(matches!(
+        params[2].value,
+        AstExpr::BoolLit { value: true, .. }
+    ));
     assert_eq!(params[3].key.name, "d");
     assert!(matches!(params[3].value, AstExpr::StringLit { .. }));
 }
@@ -139,8 +142,8 @@ fn test_fn_and_model_coexist() {
 
 #[test]
 fn test_emit_graph_text() {
-    let output = compile(SIMPLE_MODEL, "net_module", EmitKind::Graph)
-        .expect("graph emit should succeed");
+    let output =
+        compile(SIMPLE_MODEL, "net_module", EmitKind::Graph).expect("graph emit should succeed");
 
     assert!(output.contains("model Net"), "output:\n{}", output);
     assert!(output.contains("input x"), "output:\n{}", output);

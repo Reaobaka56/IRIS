@@ -36,7 +36,11 @@ def f() -> f64 {
     let result = compile_multi(&[("main", src)], "main", EmitKind::Eval).unwrap();
     let v: f64 = result.trim().parse().unwrap();
     // std of [1,2,3] = sqrt(2/3) ≈ 0.8165
-    assert!((v - 0.8164965809277261).abs() < 1e-6, "expected ~0.8165, got {}", v);
+    assert!(
+        (v - 0.8164965809277261).abs() < 1e-6,
+        "expected ~0.8165, got {}",
+        v
+    );
 }
 
 // ── 3. dataset_normalize → zero mean, unit std ──────────────────────────────

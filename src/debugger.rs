@@ -68,7 +68,7 @@ pub struct BreakpointInfo {
 /// ```
 pub struct DebugSession {
     source: String,
-    breakpoints: HashMap<u32, BreakpointInfo>,  // line -> info
+    breakpoints: HashMap<u32, BreakpointInfo>, // line -> info
     trace: Vec<TraceEntry>,
     cursor: usize,
     /// Log messages emitted by log-points during the last `continue` / `step`.
@@ -80,7 +80,9 @@ pub struct DebugSession {
 }
 
 impl Default for DebugSession {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DebugSession {
@@ -341,7 +343,9 @@ impl DebugSession {
 /// Supported forms: `"5"` (== 5), `">5"`, `">=5"`, `"<5"`, `"<=5"`, `"==5"`, `"%3"` (every 3rd).
 fn check_hit_condition(count: u64, cond: &str) -> bool {
     let cond = cond.trim();
-    if cond.is_empty() { return true; }
+    if cond.is_empty() {
+        return true;
+    }
 
     if let Some(rest) = cond.strip_prefix(">=") {
         rest.trim().parse::<u64>().map_or(true, |n| count >= n)
@@ -354,7 +358,9 @@ fn check_hit_condition(count: u64, cond: &str) -> bool {
     } else if let Some(rest) = cond.strip_prefix("==") {
         rest.trim().parse::<u64>().map_or(true, |n| count == n)
     } else if let Some(rest) = cond.strip_prefix('%') {
-        rest.trim().parse::<u64>().map_or(true, |n| n > 0 && count % n == 0)
+        rest.trim()
+            .parse::<u64>()
+            .map_or(true, |n| n > 0 && count % n == 0)
     } else {
         // Plain number means == n.
         cond.parse::<u64>().map_or(true, |n| count == n)
@@ -392,9 +398,9 @@ fn compare_values(lhs: &str, op: &str, rhs: &str) -> bool {
         return match op {
             "==" => (l - r).abs() < f64::EPSILON,
             "!=" => (l - r).abs() >= f64::EPSILON,
-            ">"  => l > r,
+            ">" => l > r,
             ">=" => l >= r,
-            "<"  => l < r,
+            "<" => l < r,
             "<=" => l <= r,
             _ => false,
         };
@@ -416,7 +422,9 @@ fn interpolate_log_message(msg: &str, vars: &[(String, String)]) -> String {
         if c == '{' {
             let mut name = String::new();
             for ch in chars.by_ref() {
-                if ch == '}' { break; }
+                if ch == '}' {
+                    break;
+                }
                 name.push(ch);
             }
             if let Some(val) = find_var(vars, name.trim()) {

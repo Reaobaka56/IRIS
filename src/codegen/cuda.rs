@@ -59,7 +59,10 @@ pub fn emit_cuda(module: &IrModule) -> Result<String, CodegenError> {
     let mut out = String::new();
 
     writeln!(out, "; IRIS CUDA/NVPTX IR — phase 50")?;
-    writeln!(out, "; Compile: clang -target nvptx64-nvidia-cuda -O3 -o out.ptx")?;
+    writeln!(
+        out,
+        "; Compile: clang -target nvptx64-nvidia-cuda -O3 -o out.ptx"
+    )?;
     writeln!(out)?;
     writeln!(out, "target datalayout = \"{}\"", NVPTX_DATALAYOUT)?;
     writeln!(out, "target triple = \"{}\"\n", NVPTX_TRIPLE)?;
@@ -123,7 +126,8 @@ pub fn emit_cuda(module: &IrModule) -> Result<String, CodegenError> {
         .collect();
 
     // Combined set of kernel names (for NVVM annotation).
-    let all_kernel_names: Vec<String> = parfor_kernels.iter()
+    let all_kernel_names: Vec<String> = parfor_kernels
+        .iter()
         .map(|n| format!("{}_kernel", n))
         .chain(attr_kernels.iter().cloned())
         .collect();
@@ -171,7 +175,11 @@ pub fn emit_cuda(module: &IrModule) -> Result<String, CodegenError> {
                 out,
                 "  !{{ptr @{}, !\"kernel\", i32 1}}{}",
                 name,
-                if i + 1 < all_kernel_names.len() { "," } else { "" }
+                if i + 1 < all_kernel_names.len() {
+                    ","
+                } else {
+                    ""
+                }
             )?;
         }
         writeln!(out, "}}")?;
@@ -202,7 +210,13 @@ fn emit_cuda_kernel(
         "; ── CUDA kernel: {}_kernel ───────────────────────────────",
         func.name
     )?;
-    writeln!(out, "define {} @{}_kernel({}) {{", ret, func.name, params?.join(", "))?;
+    writeln!(
+        out,
+        "define {} @{}_kernel({}) {{",
+        ret,
+        func.name,
+        params?.join(", ")
+    )?;
 
     // Entry: compute flat thread index.
     writeln!(out, "kernel_entry{}:", func.name)?;
@@ -229,16 +243,33 @@ fn emit_cuda_attr_kernel(
     out: &mut String,
 ) -> Result<(), CodegenError> {
     let ret = cuda_type(&func.return_ty).unwrap_or_else(|_| "void".to_owned());
-    let params: Result<Vec<String>, CodegenError> = func.params.iter().map(|p| {
-        let ty = cuda_type(&p.ty).unwrap_or_else(|_| "ptr".to_owned());
-        Ok(format!("{} %{}", ty, p.name))
-    }).collect();
-    writeln!(out, "; ── CUDA kernel (attr): {} ──────────────────────────────────", func.name)?;
-    writeln!(out, "define {} @{}({}) {{", ret, func.name, params?.join(", "))?;
+    let params: Result<Vec<String>, CodegenError> = func
+        .params
+        .iter()
+        .map(|p| {
+            let ty = cuda_type(&p.ty).unwrap_or_else(|_| "ptr".to_owned());
+            Ok(format!("{} %{}", ty, p.name))
+        })
+        .collect();
+    writeln!(
+        out,
+        "; ── CUDA kernel (attr): {} ──────────────────────────────────",
+        func.name
+    )?;
+    writeln!(
+        out,
+        "define {} @{}({}) {{",
+        ret,
+        func.name,
+        params?.join(", ")
+    )?;
     // Expose thread/block indices as values programs can read.
     writeln!(out, "kernel_entry_{}_attr:", func.name)?;
     writeln!(out, "  %tid.x = call i32 @llvm.nvvm.read.ptx.sreg.tid.x()")?;
-    writeln!(out, "  %bid.x = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()")?;
+    writeln!(
+        out,
+        "  %bid.x = call i32 @llvm.nvvm.read.ptx.sreg.ctaid.x()"
+    )?;
     emit_cuda_kernel_body(func, str_table, out)?;
     writeln!(out, "}}\n")?;
     Ok(())
@@ -273,15 +304,30 @@ fn emit_cuda_kernel_body(
             match instr {
                 IrInstr::Br { target, args } => {
                     for (i, v) in args.iter().enumerate() {
-                        phi_src.entry((*target, i)).or_default().push((block.id, *v));
+                        phi_src
+                            .entry((*target, i))
+                            .or_default()
+                            .push((block.id, *v));
                     }
                 }
-                IrInstr::CondBr { then_block, then_args, else_block, else_args, .. } => {
+                IrInstr::CondBr {
+                    then_block,
+                    then_args,
+                    else_block,
+                    else_args,
+                    ..
+                } => {
                     for (i, v) in then_args.iter().enumerate() {
-                        phi_src.entry((*then_block, i)).or_default().push((block.id, *v));
+                        phi_src
+                            .entry((*then_block, i))
+                            .or_default()
+                            .push((block.id, *v));
                     }
                     for (i, v) in else_args.iter().enumerate() {
-                        phi_src.entry((*else_block, i)).or_default().push((block.id, *v));
+                        phi_src
+                            .entry((*else_block, i))
+                            .or_default()
+                            .push((block.id, *v));
                     }
                 }
                 _ => {}
@@ -338,7 +384,13 @@ fn emit_cuda_host_function(
         .map(|p| Ok(format!("{} %{}", cuda_type(&p.ty)?, p.name)))
         .collect();
 
-    writeln!(out, "define {} @{}({}) {{", ret, func.name, params?.join(", "))?;
+    writeln!(
+        out,
+        "define {} @{}({}) {{",
+        ret,
+        func.name,
+        params?.join(", ")
+    )?;
     emit_cuda_kernel_body(func, str_table, out)?;
     writeln!(out, "}}\n")?;
     Ok(())
@@ -361,7 +413,13 @@ fn emit_cuda_instr(
     match instr {
         IrInstr::ConstFloat { .. } | IrInstr::ConstInt { .. } | IrInstr::ConstBool { .. } => {}
 
-        IrInstr::BinOp { result, op, lhs, rhs, ty } => {
+        IrInstr::BinOp {
+            result,
+            op,
+            lhs,
+            rhs,
+            ty,
+        } => {
             let lv = val(*lhs);
             let rv = val(*rhs);
             let operand_ty = func.value_type(*lhs).unwrap_or(ty);
@@ -375,7 +433,9 @@ fn emit_cuda_instr(
                 (BinOp::Add, false) => format!("add nsw {} {}, {}", ty_s, lv, rv),
                 (BinOp::Sub, false) => format!("sub nsw {} {}, {}", ty_s, lv, rv),
                 (BinOp::Mul, false) => format!("mul nsw {} {}, {}", ty_s, lv, rv),
-                (BinOp::Div, false) | (BinOp::FloorDiv, _) => format!("sdiv {} {}, {}", ty_s, lv, rv),
+                (BinOp::Div, false) | (BinOp::FloorDiv, _) => {
+                    format!("sdiv {} {}, {}", ty_s, lv, rv)
+                }
                 (BinOp::Mod, _) => format!("srem {} {}, {}", ty_s, lv, rv),
                 (BinOp::CmpEq, true) => format!("fcmp oeq {} {}, {}", ty_s, lv, rv),
                 (BinOp::CmpNe, true) => format!("fcmp one {} {}, {}", ty_s, lv, rv),
@@ -389,48 +449,123 @@ fn emit_cuda_instr(
                 (BinOp::CmpLe, false) => format!("icmp sle {} {}, {}", ty_s, lv, rv),
                 (BinOp::CmpGt, false) => format!("icmp sgt {} {}, {}", ty_s, lv, rv),
                 (BinOp::CmpGe, false) => format!("icmp sge {} {}, {}", ty_s, lv, rv),
-                (BinOp::Pow, true) => format!("call {} @llvm.pow.f64({} {}, {} {})", ty_s, ty_s, lv, ty_s, rv),
+                (BinOp::Pow, true) => format!(
+                    "call {} @llvm.pow.f64({} {}, {} {})",
+                    ty_s, ty_s, lv, ty_s, rv
+                ),
                 (BinOp::Pow, false) => format!("call i64 @iris_pow_i64(i64 {}, i64 {})", lv, rv),
-                (BinOp::Min, true) => format!("call {} @llvm.minnum.f64({} {}, {} {})", ty_s, ty_s, lv, ty_s, rv),
+                (BinOp::Min, true) => format!(
+                    "call {} @llvm.minnum.f64({} {}, {} {})",
+                    ty_s, ty_s, lv, ty_s, rv
+                ),
                 (BinOp::Min, false) => format!("call i64 @iris_min_i64(i64 {}, i64 {})", lv, rv),
-                (BinOp::Max, true) => format!("call {} @llvm.maxnum.f64({} {}, {} {})", ty_s, ty_s, lv, ty_s, rv),
+                (BinOp::Max, true) => format!(
+                    "call {} @llvm.maxnum.f64({} {}, {} {})",
+                    ty_s, ty_s, lv, ty_s, rv
+                ),
                 (BinOp::Max, false) => format!("call i64 @iris_max_i64(i64 {}, i64 {})", lv, rv),
                 (BinOp::BitAnd, false) => format!("and {} {}, {}", ty_s, lv, rv),
                 (BinOp::BitOr, false) => format!("or {} {}, {}", ty_s, lv, rv),
                 (BinOp::BitXor, false) => format!("xor {} {}, {}", ty_s, lv, rv),
                 (BinOp::Shl, false) => format!("shl {} {}, {}", ty_s, lv, rv),
                 (BinOp::Shr, false) => format!("ashr {} {}, {}", ty_s, lv, rv),
-                _ => format!("add i64 0, 0 ; unsupported cuda binop"),
+                _ => "add i64 0, 0 ; unsupported cuda binop".to_string(),
             };
             writeln!(out, "  %v{} = {}", result.0, llvm_op)?;
         }
 
-        IrInstr::UnaryOp { result, op, operand, ty } => {
+        IrInstr::UnaryOp {
+            result,
+            op,
+            operand,
+            ty,
+        } => {
             let ov = val(*operand);
             let ty_s = cuda_type(ty)?;
             let is_float = matches!(ty, IrType::Scalar(DType::F32 | DType::F64));
             match op {
-                ScalarUnaryOp::Neg if is_float => writeln!(out, "  %v{} = fneg {} {}", result.0, ty_s, ov)?,
-                ScalarUnaryOp::Neg => writeln!(out, "  %v{} = sub nsw {} 0, {}", result.0, ty_s, ov)?,
+                ScalarUnaryOp::Neg if is_float => {
+                    writeln!(out, "  %v{} = fneg {} {}", result.0, ty_s, ov)?
+                }
+                ScalarUnaryOp::Neg => {
+                    writeln!(out, "  %v{} = sub nsw {} 0, {}", result.0, ty_s, ov)?
+                }
                 ScalarUnaryOp::Not => writeln!(out, "  %v{} = xor i1 {}, true", result.0, ov)?,
-                ScalarUnaryOp::Sqrt => writeln!(out, "  %v{} = call {} @llvm.sqrt.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Abs if is_float => writeln!(out, "  %v{} = call {} @llvm.fabs.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Abs => writeln!(out, "  %v{} = call i64 @iris_abs_i64(i64 {})", result.0, ov)?,
-                ScalarUnaryOp::Floor => writeln!(out, "  %v{} = call {} @llvm.floor.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Ceil => writeln!(out, "  %v{} = call {} @llvm.ceil.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Sin => writeln!(out, "  %v{} = call {} @llvm.sin.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Cos => writeln!(out, "  %v{} = call {} @llvm.cos.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Exp => writeln!(out, "  %v{} = call {} @llvm.exp.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Log => writeln!(out, "  %v{} = call {} @llvm.log.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Log2 => writeln!(out, "  %v{} = call {} @llvm.log2.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::Round => writeln!(out, "  %v{} = call {} @llvm.round.f64({} {})", result.0, ty_s, ty_s, ov)?,
-                ScalarUnaryOp::BitNot => writeln!(out, "  %v{} = xor {} {}, -1", result.0, ty_s, ov)?,
-                ScalarUnaryOp::Tan => writeln!(out, "  %v{} = call double @__nv_tan(double {})", result.0, ov)?,
-                ScalarUnaryOp::Sign => writeln!(out, "  %v{} = call double @iris_sign_f64(double {})", result.0, ov)?,
+                ScalarUnaryOp::Sqrt => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.sqrt.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Abs if is_float => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.fabs.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Abs => {
+                    writeln!(out, "  %v{} = call i64 @iris_abs_i64(i64 {})", result.0, ov)?
+                }
+                ScalarUnaryOp::Floor => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.floor.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Ceil => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.ceil.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Sin => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.sin.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Cos => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.cos.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Exp => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.exp.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Log => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.log.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Log2 => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.log2.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::Round => writeln!(
+                    out,
+                    "  %v{} = call {} @llvm.round.f64({} {})",
+                    result.0, ty_s, ty_s, ov
+                )?,
+                ScalarUnaryOp::BitNot => {
+                    writeln!(out, "  %v{} = xor {} {}, -1", result.0, ty_s, ov)?
+                }
+                ScalarUnaryOp::Tan => writeln!(
+                    out,
+                    "  %v{} = call double @__nv_tan(double {})",
+                    result.0, ov
+                )?,
+                ScalarUnaryOp::Sign => writeln!(
+                    out,
+                    "  %v{} = call double @iris_sign_f64(double {})",
+                    result.0, ov
+                )?,
             }
         }
 
-        IrInstr::Cast { result, operand, from_ty, to_ty } => {
+        IrInstr::Cast {
+            result,
+            operand,
+            from_ty,
+            to_ty,
+        } => {
             let ov = val(*operand);
             let from_s = cuda_type(from_ty)?;
             let to_s = cuda_type(to_ty)?;
@@ -439,18 +574,38 @@ fn emit_cuda_instr(
             let is_from_int = matches!(from_ty, IrType::Scalar(DType::I32 | DType::I64));
             let is_to_int = matches!(to_ty, IrType::Scalar(DType::I32 | DType::I64));
             if from_ty == to_ty {
-                writeln!(out, "  %v{} = bitcast {} {} to {}", result.0, from_s, ov, to_s)?;
+                writeln!(
+                    out,
+                    "  %v{} = bitcast {} {} to {}",
+                    result.0, from_s, ov, to_s
+                )?;
             } else if is_from_float && is_to_int {
-                writeln!(out, "  %v{} = fptosi {} {} to {}", result.0, from_s, ov, to_s)?;
+                writeln!(
+                    out,
+                    "  %v{} = fptosi {} {} to {}",
+                    result.0, from_s, ov, to_s
+                )?;
             } else if is_from_int && is_to_float {
-                writeln!(out, "  %v{} = sitofp {} {} to {}", result.0, from_s, ov, to_s)?;
+                writeln!(
+                    out,
+                    "  %v{} = sitofp {} {} to {}",
+                    result.0, from_s, ov, to_s
+                )?;
             } else if is_from_float && is_to_float {
                 let is_from_f64 = matches!(from_ty, IrType::Scalar(DType::F64));
                 let is_to_f64 = matches!(to_ty, IrType::Scalar(DType::F64));
                 if !is_from_f64 && is_to_f64 {
-                    writeln!(out, "  %v{} = fpext {} {} to {}", result.0, from_s, ov, to_s)?;
+                    writeln!(
+                        out,
+                        "  %v{} = fpext {} {} to {}",
+                        result.0, from_s, ov, to_s
+                    )?;
                 } else {
-                    writeln!(out, "  %v{} = fptrunc {} {} to {}", result.0, from_s, ov, to_s)?;
+                    writeln!(
+                        out,
+                        "  %v{} = fptrunc {} {} to {}",
+                        result.0, from_s, ov, to_s
+                    )?;
                 }
             } else if is_from_int && is_to_int {
                 let is_from_i64 = matches!(from_ty, IrType::Scalar(DType::I64));
@@ -458,10 +613,18 @@ fn emit_cuda_instr(
                 if !is_from_i64 && is_to_i64 {
                     writeln!(out, "  %v{} = sext {} {} to {}", result.0, from_s, ov, to_s)?;
                 } else {
-                    writeln!(out, "  %v{} = trunc {} {} to {}", result.0, from_s, ov, to_s)?;
+                    writeln!(
+                        out,
+                        "  %v{} = trunc {} {} to {}",
+                        result.0, from_s, ov, to_s
+                    )?;
                 }
             } else {
-                writeln!(out, "  %v{} = bitcast {} {} to {}", result.0, from_s, ov, to_s)?;
+                writeln!(
+                    out,
+                    "  %v{} = bitcast {} {} to {}",
+                    result.0, from_s, ov, to_s
+                )?;
             }
         }
 
@@ -480,14 +643,24 @@ fn emit_cuda_instr(
             writeln!(out, "  br label %{}", lbl)?;
         }
 
-        IrInstr::CondBr { cond, then_block, else_block, .. } => {
+        IrInstr::CondBr {
+            cond,
+            then_block,
+            else_block,
+            ..
+        } => {
             let cv = val(*cond);
             let tl = block_label_by_id(func.blocks(), *then_block);
             let el = block_label_by_id(func.blocks(), *else_block);
             writeln!(out, "  br i1 {}, label %{}, label %{}", cv, tl, el)?;
         }
 
-        IrInstr::Load { result, tensor, indices, result_ty } => {
+        IrInstr::Load {
+            result,
+            tensor,
+            indices,
+            result_ty,
+        } => {
             let tv = val(*tensor);
             let ty_s = cuda_type(result_ty)?;
             match indices.as_slice() {
@@ -495,7 +668,14 @@ fn emit_cuda_instr(
                 [idx] => {
                     let gep = format!("%gep{}", gep_counter);
                     *gep_counter += 1;
-                    writeln!(out, "  {} = getelementptr {}, ptr {}, i64 {}", gep, ty_s, tv, val(*idx))?;
+                    writeln!(
+                        out,
+                        "  {} = getelementptr {}, ptr {}, i64 {}",
+                        gep,
+                        ty_s,
+                        tv,
+                        val(*idx)
+                    )?;
                     writeln!(out, "  %v{} = load {}, ptr {}", result.0, ty_s, gep)?;
                 }
                 _ => {
@@ -503,12 +683,22 @@ fn emit_cuda_instr(
                     for idx in indices {
                         args.push(format!("i64 {}", val(*idx)));
                     }
-                    writeln!(out, "  %v{} = call {} @iris_tensor_load({})", result.0, ty_s, args.join(", "))?;
+                    writeln!(
+                        out,
+                        "  %v{} = call {} @iris_tensor_load({})",
+                        result.0,
+                        ty_s,
+                        args.join(", ")
+                    )?;
                 }
             }
         }
 
-        IrInstr::Store { tensor, indices, value } => {
+        IrInstr::Store {
+            tensor,
+            indices,
+            value,
+        } => {
             let tv = val(*tensor);
             let vv = val(*value);
             let ty_s = func
@@ -520,7 +710,14 @@ fn emit_cuda_instr(
                 [idx] => {
                     let gep = format!("%gep{}", gep_counter);
                     *gep_counter += 1;
-                    writeln!(out, "  {} = getelementptr {}, ptr {}, i64 {}", gep, ty_s, tv, val(*idx))?;
+                    writeln!(
+                        out,
+                        "  {} = getelementptr {}, ptr {}, i64 {}",
+                        gep,
+                        ty_s,
+                        tv,
+                        val(*idx)
+                    )?;
                     writeln!(out, "  store {} {}, ptr {}", ty_s, vv, gep)?;
                 }
                 _ => {
@@ -538,7 +735,12 @@ fn emit_cuda_instr(
             writeln!(out, "  call void @llvm.nvvm.barrier0()")?;
         }
 
-        IrInstr::ParFor { body_fn, start, end, .. } => {
+        IrInstr::ParFor {
+            body_fn,
+            start,
+            end,
+            ..
+        } => {
             // On the GPU host side, emit a comment describing the kernel launch.
             // Actual kernel launch configuration is handled by the host runtime.
             writeln!(
@@ -557,11 +759,19 @@ fn emit_cuda_instr(
             )?;
         }
 
-        IrInstr::MakeVariant { result, variant_idx, .. } => {
+        IrInstr::MakeVariant {
+            result,
+            variant_idx,
+            ..
+        } => {
             writeln!(out, "  %v{} = add i64 0, {}", result.0, variant_idx)?;
         }
 
-        IrInstr::SwitchVariant { scrutinee, arms, default_block } => {
+        IrInstr::SwitchVariant {
+            scrutinee,
+            arms,
+            default_block,
+        } => {
             let sv = val(*scrutinee);
             let blocks = func.blocks();
             let default = default_block
@@ -573,7 +783,12 @@ fn emit_cuda_instr(
                 });
             write!(out, "  switch i64 {}, {} [", sv, default)?;
             for (idx, bb) in arms {
-                write!(out, " i64 {}, label %{}", idx, block_label_by_id(blocks, *bb))?;
+                write!(
+                    out,
+                    " i64 {}, label %{}",
+                    idx,
+                    block_label_by_id(blocks, *bb)
+                )?;
             }
             writeln!(out, " ]")?;
         }
@@ -582,14 +797,26 @@ fn emit_cuda_instr(
             writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
         }
 
-        IrInstr::Call { result, callee, args, result_ty } => {
+        IrInstr::Call {
+            result,
+            callee,
+            args,
+            result_ty,
+        } => {
             let ret_ty_s = result_ty
                 .as_ref()
                 .and_then(|t| cuda_type(t).ok())
                 .unwrap_or_else(|| "ptr".to_owned());
             let args_str: Vec<String> = args.iter().map(|a| format!("ptr {}", val(*a))).collect();
             if let Some(r) = result {
-                writeln!(out, "  %v{} = call {} @{}({})", r.0, ret_ty_s, callee, args_str.join(", "))?;
+                writeln!(
+                    out,
+                    "  %v{} = call {} @{}({})",
+                    r.0,
+                    ret_ty_s,
+                    callee,
+                    args_str.join(", ")
+                )?;
             } else {
                 writeln!(out, "  call void @{}({})", callee, args_str.join(", "))?;
             }
@@ -617,7 +844,11 @@ fn emit_cuda_instr(
         // Everything else: emit as opaque runtime call or no-op.
         instr => {
             if let Some(result_id) = instr_result(instr) {
-                writeln!(out, "  %v{} = call ptr @iris_cuda_unsupported()", result_id.0)?;
+                writeln!(
+                    out,
+                    "  %v{} = call ptr @iris_cuda_unsupported()",
+                    result_id.0
+                )?;
             }
         }
     }
@@ -700,7 +931,10 @@ fn instr_result(instr: &IrInstr) -> Option<ValueId> {
         | IrInstr::ConstBool { result, .. }
         | IrInstr::Cast { result, .. }
         | IrInstr::Load { result, .. }
-        | IrInstr::Call { result: Some(result), .. }
+        | IrInstr::Call {
+            result: Some(result),
+            ..
+        }
         | IrInstr::MakeStruct { result, .. }
         | IrInstr::GetField { result, .. }
         | IrInstr::MakeVariant { result, .. }

@@ -47,7 +47,11 @@ def area() -> f32 {
     let out = compile(src, "test", EmitKind::Eval).expect("should compile and eval");
     // 5.0 * 5.0 = 25.0
     let v: f32 = out.trim().parse().expect("should be a float");
-    assert!((v - 25.0_f32).abs() < 0.001, "Circle(5) area should be 25, got {}", v);
+    assert!(
+        (v - 25.0_f32).abs() < 0.001,
+        "Circle(5) area should be 25, got {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +75,11 @@ def area() -> f32 {
     let out = compile(src, "test", EmitKind::Eval).expect("should compile and eval");
     // 4.0 * 3.0 = 12.0
     let v: f32 = out.trim().parse().expect("should be a float");
-    assert!((v - 12.0_f32).abs() < 0.001, "Rect(4,3) area should be 12, got {}", v);
+    assert!(
+        (v - 12.0_f32).abs() < 0.001,
+        "Rect(4,3) area should be 12, got {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------

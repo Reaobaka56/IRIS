@@ -24,7 +24,10 @@ fn main() {
 
     // Git dirty flag.
     let git_dirty = git_is_dirty();
-    println!("cargo:rustc-env=IRIS_GIT_DIRTY={}", if git_dirty { "true" } else { "false" });
+    println!(
+        "cargo:rustc-env=IRIS_GIT_DIRTY={}",
+        if git_dirty { "true" } else { "false" }
+    );
 
     // Rustc version.
     let rustc_ver = rustc_version();
@@ -56,17 +59,21 @@ fn chrono_lite_date() -> String {
     {
         if let Ok(out) = Command::new("date").arg("+%Y-%m-%d").output() {
             let s = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            if !s.is_empty() { return s; }
+            if !s.is_empty() {
+                return s;
+            }
         }
     }
     #[cfg(windows)]
     {
         if let Ok(out) = Command::new("powershell")
-            .args(&["-NoProfile", "-Command", "Get-Date -Format 'yyyy-MM-dd'"])
+            .args(["-NoProfile", "-Command", "Get-Date -Format 'yyyy-MM-dd'"])
             .output()
         {
             let s = String::from_utf8_lossy(&out.stdout).trim().to_owned();
-            if !s.is_empty() { return s; }
+            if !s.is_empty() {
+                return s;
+            }
         }
     }
     "unknown".to_owned()
@@ -76,21 +83,29 @@ fn chrono_lite_date() -> String {
 fn git_commit_hashes() -> (String, String) {
     use std::process::Command;
     let long = Command::new("git")
-        .args(&["rev-parse", "HEAD"])
+        .args(["rev-parse", "HEAD"])
         .output()
         .ok()
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            if s.is_empty() || !o.status.success() { None } else { Some(s) }
+            if s.is_empty() || !o.status.success() {
+                None
+            } else {
+                Some(s)
+            }
         })
         .unwrap_or_else(|| "unknown".to_owned());
     let short = Command::new("git")
-        .args(&["rev-parse", "--short", "HEAD"])
+        .args(["rev-parse", "--short", "HEAD"])
         .output()
         .ok()
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            if s.is_empty() || !o.status.success() { None } else { Some(s) }
+            if s.is_empty() || !o.status.success() {
+                None
+            } else {
+                Some(s)
+            }
         })
         .unwrap_or_else(|| "unknown".to_owned());
     (short, long)
@@ -100,12 +115,16 @@ fn git_commit_hashes() -> (String, String) {
 fn git_branch() -> String {
     use std::process::Command;
     Command::new("git")
-        .args(&["rev-parse", "--abbrev-ref", "HEAD"])
+        .args(["rev-parse", "--abbrev-ref", "HEAD"])
         .output()
         .ok()
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            if s.is_empty() || !o.status.success() { None } else { Some(s) }
+            if s.is_empty() || !o.status.success() {
+                None
+            } else {
+                Some(s)
+            }
         })
         .unwrap_or_else(|| "unknown".to_owned())
 }
@@ -114,7 +133,7 @@ fn git_branch() -> String {
 fn git_is_dirty() -> bool {
     use std::process::Command;
     Command::new("git")
-        .args(&["diff", "--quiet", "HEAD"])
+        .args(["diff", "--quiet", "HEAD"])
         .status()
         .map(|s| !s.success())
         .unwrap_or(false)
@@ -129,7 +148,11 @@ fn rustc_version() -> String {
         .ok()
         .and_then(|o| {
             let s = String::from_utf8_lossy(&o.stdout).trim().to_owned();
-            if s.is_empty() { None } else { Some(s) }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s)
+            }
         })
         .unwrap_or_else(|| "unknown".to_owned())
 }

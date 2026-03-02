@@ -10,8 +10,8 @@
 //   - generate_synthetic_profile produces valid profile text
 //   - PGO hot/cold summary is emitted
 
+use iris::codegen::pgo::ProfileData;
 use iris::{compile, EmitKind};
-use iris::codegen::pgo::{ProfileData};
 
 // ── Test 1: PgoInstrument emits counter globals ────────────────────────────
 
@@ -128,7 +128,10 @@ fn test_pgo_hot_cold_summary() {
     let src = r#"def f() -> i64 { 99 }"#;
     let ir = compile(src, "test", EmitKind::PgoOptimize).unwrap();
     assert!(
-        ir.contains("HOT") || ir.contains("WARM") || ir.contains("COLD") || ir.contains("UNPROFILE"),
+        ir.contains("HOT")
+            || ir.contains("WARM")
+            || ir.contains("COLD")
+            || ir.contains("UNPROFILE"),
         "expected hot/cold summary in PGO optimized output:\n{}",
         ir
     );

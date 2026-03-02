@@ -18,7 +18,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "true", "contains should be true, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "true",
+        "contains should be true, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -32,7 +37,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "false", "contains should be false, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "false",
+        "contains should be false, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +56,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "true", "starts_with should be true, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "true",
+        "starts_with should be true, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -60,7 +75,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "true", "ends_with should be true, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "true",
+        "ends_with should be true, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -74,7 +94,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("HELLO"), "to_upper should produce HELLO, got: {}", out.trim());
+    assert!(
+        out.contains("HELLO"),
+        "to_upper should produce HELLO, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -88,7 +112,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("world"), "to_lower should produce world, got: {}", out.trim());
+    assert!(
+        out.contains("world"),
+        "to_lower should produce world, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +130,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("hello"), "trim should produce hello, got: {}", out.trim());
+    assert!(
+        out.contains("hello"),
+        "trim should produce hello, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -116,5 +148,9 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("ababab"), "repeat should produce ababab, got: {}", out.trim());
+    assert!(
+        out.contains("ababab"),
+        "repeat should produce ababab, got: {}",
+        out.trim()
+    );
 }

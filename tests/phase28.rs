@@ -16,8 +16,16 @@ def train() -> i64 {
 async def fetch(id: i64) -> i64 { id * 2 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(out.contains("fetch"), "IR should contain fetch function, got:\n{}", out);
-    assert!(out.contains("train"), "IR should contain train function, got:\n{}", out);
+    assert!(
+        out.contains("fetch"),
+        "IR should contain fetch function, got:\n{}",
+        out
+    );
+    assert!(
+        out.contains("train"),
+        "IR should contain train function, got:\n{}",
+        out
+    );
 }
 
 // 2. await call returns correct value
@@ -31,7 +39,12 @@ def train() -> i64 {
 async def fetch(id: i64) -> i64 { id * 2 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "6", "await fetch(3) should return 6, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "6",
+        "await fetch(3) should return 6, got: {}",
+        out.trim()
+    );
 }
 
 // 3. await with arithmetic in async body
@@ -44,7 +57,12 @@ def run() -> i64 {
 async def compute(x: i64) -> i64 { x + 10 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "15", "await compute(5) should return 15, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "15",
+        "await compute(5) should return 15, got: {}",
+        out.trim()
+    );
 }
 
 // 4. multiple awaits in one function
@@ -60,7 +78,12 @@ async def double(x: i64) -> i64 { x * 2 }
 async def triple(x: i64) -> i64 { x * 3 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "13", "double(2)+triple(3) should return 13, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "13",
+        "double(2)+triple(3) should return 13, got: {}",
+        out.trim()
+    );
 }
 
 // 5. async function can be called without await
@@ -73,7 +96,12 @@ def run() -> i64 {
 async def pure_fn(x: i64) -> i64 { x * x }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "16", "pure_fn(4) should return 16, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "16",
+        "pure_fn(4) should return 16, got: {}",
+        out.trim()
+    );
 }
 
 // 6. await in let binding with subsequent use
@@ -87,7 +115,12 @@ def run() -> i64 {
 async def get_val() -> i64 { 42 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "43", "await value() + 1 should return 43, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "43",
+        "await value() + 1 should return 43, got: {}",
+        out.trim()
+    );
 }
 
 // 7. async with conditional body
@@ -102,7 +135,12 @@ async def fetch_cond(flag: i64) -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "100", "async with conditional should return 100, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "100",
+        "async with conditional should return 100, got: {}",
+        out.trim()
+    );
 }
 
 // 8. chained async calls
@@ -117,5 +155,10 @@ async def step1(x: i64) -> i64 { x + 1 }
 async def step2(x: i64) -> i64 { x * 2 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "12", "pipeline should return 12, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "12",
+        "pipeline should return 12, got: {}",
+        out.trim()
+    );
 }

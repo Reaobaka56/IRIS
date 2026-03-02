@@ -26,13 +26,14 @@ pub fn lower_graph_to_ir(
     shapes: &HashMap<NodeId, IrType>,
 ) -> Result<IrFunction, LowerError> {
     // Determine the function return type from the first output node's source.
-    let first_output = graph.outputs().next().ok_or_else(|| LowerError::UnknownOp {
-        op: "model has no outputs".into(),
-    })?;
+    let first_output = graph
+        .outputs()
+        .next()
+        .ok_or_else(|| LowerError::UnknownOp {
+            op: "model has no outputs".into(),
+        })?;
     let return_ty = match first_output {
-        GraphNode::Output { from, .. } => {
-            shapes.get(from).cloned().unwrap_or(IrType::Infer)
-        }
+        GraphNode::Output { from, .. } => shapes.get(from).cloned().unwrap_or(IrType::Infer),
         _ => unreachable!(),
     };
 
@@ -92,7 +93,12 @@ pub fn lower_graph_to_ir(
         })
         .collect();
 
-    builder.push_instr(IrInstr::Return { values: return_vals }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: return_vals,
+        },
+        None,
+    );
 
     Ok(builder.build())
 }

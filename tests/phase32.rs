@@ -17,7 +17,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 2.0).abs() < 1e-9, "sqrt(4.0) should be 2.0, got: {}", v);
+    assert!(
+        (v - 2.0).abs() < 1e-9,
+        "sqrt(4.0) should be 2.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -32,7 +36,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 7.0).abs() < 1e-9, "abs(-7.0) should be 7.0, got: {}", v);
+    assert!(
+        (v - 7.0).abs() < 1e-9,
+        "abs(-7.0) should be 7.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -61,7 +69,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 3.0).abs() < 1e-9, "floor(3.7) should be 3.0, got: {}", v);
+    assert!(
+        (v - 3.0).abs() < 1e-9,
+        "floor(3.7) should be 3.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +88,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 4.0).abs() < 1e-9, "ceil(3.2) should be 4.0, got: {}", v);
+    assert!(
+        (v - 4.0).abs() < 1e-9,
+        "ceil(3.2) should be 4.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -91,7 +107,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 1024.0).abs() < 1e-6, "pow(2.0,10.0) should be 1024.0, got: {}", v);
+    assert!(
+        (v - 1024.0).abs() < 1e-6,
+        "pow(2.0,10.0) should be 1024.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -120,5 +140,9 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 9.1).abs() < 1e-9, "max(3.5,9.1) should be 9.1, got: {}", v);
+    assert!(
+        (v - 9.1).abs() < 1e-9,
+        "max(3.5,9.1) should be 9.1, got: {}",
+        v
+    );
 }

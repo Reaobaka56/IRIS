@@ -48,7 +48,13 @@ fn compute_stats(values: &[f64]) -> Stats {
     };
     let variance = sorted.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n;
     let std_dev = variance.sqrt();
-    Stats { min, max, mean, median, std_dev }
+    Stats {
+        min,
+        max,
+        mean,
+        median,
+        std_dev,
+    }
 }
 
 fn format_us(us: f64) -> String {
@@ -65,12 +71,13 @@ fn format_us(us: f64) -> String {
 fn bench_file(path: &Path, iterations: usize) -> Result<(), String> {
     let source = std::fs::read_to_string(path)
         .map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
-    let module_name = path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("bench");
+    let module_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("bench");
 
     eprintln!("\x1b[1;36mBenchmarking\x1b[0m {}", path.display());
-    eprintln!("  {} warm-up iterations, {} measured iterations\n", WARMUP_ITERS, iterations);
+    eprintln!(
+        "  {} warm-up iterations, {} measured iterations\n",
+        WARMUP_ITERS, iterations
+    );
 
     // Warm-up
     for _ in 0..WARMUP_ITERS {
@@ -97,22 +104,50 @@ fn bench_file(path: &Path, iterations: usize) -> Result<(), String> {
     let eval = compute_stats(&eval_vals);
     let total = compute_stats(&total_vals);
 
-    eprintln!("  \x1b[1mPhase          Min          Mean         Median       Max          StdDev\x1b[0m");
-    eprintln!("  {:<14} {:<12} {:<12} {:<12} {:<12} {}",
-        "Parse", format_us(parse.min), format_us(parse.mean),
-        format_us(parse.median), format_us(parse.max), format_us(parse.std_dev));
-    eprintln!("  {:<14} {:<12} {:<12} {:<12} {:<12} {}",
-        "Compile", format_us(compile.min), format_us(compile.mean),
-        format_us(compile.median), format_us(compile.max), format_us(compile.std_dev));
-    eprintln!("  {:<14} {:<12} {:<12} {:<12} {:<12} {}",
-        "Eval", format_us(eval.min), format_us(eval.mean),
-        format_us(eval.median), format_us(eval.max), format_us(eval.std_dev));
-    eprintln!("  \x1b[1m{:<14} {:<12} {:<12} {:<12} {:<12} {}\x1b[0m",
-        "Total", format_us(total.min), format_us(total.mean),
-        format_us(total.median), format_us(total.max), format_us(total.std_dev));
+    eprintln!(
+        "  \x1b[1mPhase          Min          Mean         Median       Max          StdDev\x1b[0m"
+    );
+    eprintln!(
+        "  {:<14} {:<12} {:<12} {:<12} {:<12} {}",
+        "Parse",
+        format_us(parse.min),
+        format_us(parse.mean),
+        format_us(parse.median),
+        format_us(parse.max),
+        format_us(parse.std_dev)
+    );
+    eprintln!(
+        "  {:<14} {:<12} {:<12} {:<12} {:<12} {}",
+        "Compile",
+        format_us(compile.min),
+        format_us(compile.mean),
+        format_us(compile.median),
+        format_us(compile.max),
+        format_us(compile.std_dev)
+    );
+    eprintln!(
+        "  {:<14} {:<12} {:<12} {:<12} {:<12} {}",
+        "Eval",
+        format_us(eval.min),
+        format_us(eval.mean),
+        format_us(eval.median),
+        format_us(eval.max),
+        format_us(eval.std_dev)
+    );
+    eprintln!(
+        "  \x1b[1m{:<14} {:<12} {:<12} {:<12} {:<12} {}\x1b[0m",
+        "Total",
+        format_us(total.min),
+        format_us(total.mean),
+        format_us(total.median),
+        format_us(total.max),
+        format_us(total.std_dev)
+    );
 
-    eprintln!("\n  throughput: \x1b[1;32m{:.0}\x1b[0m iterations/sec",
-        1_000_000.0 / total.mean);
+    eprintln!(
+        "\n  throughput: \x1b[1;32m{:.0}\x1b[0m iterations/sec",
+        1_000_000.0 / total.mean
+    );
 
     Ok(())
 }
@@ -125,14 +160,17 @@ fn run_single(source: &str, module_name: &str) -> Result<Sample, String> {
     let t0 = Instant::now();
 
     // Parse
-    let tokens = Lexer::new(source).tokenize().map_err(|e| format!("{}", e))?;
-    let ast = Parser::new(&tokens).parse_module().map_err(|e| format!("{}", e))?;
+    let tokens = Lexer::new(source)
+        .tokenize()
+        .map_err(|e| format!("{}", e))?;
+    let ast = Parser::new(&tokens)
+        .parse_module()
+        .map_err(|e| format!("{}", e))?;
     let t_parse = t0.elapsed();
 
     // Compile (lower + passes)
     let t1 = Instant::now();
-    let ir = crate::compile_ast_to_module(&ast, module_name, None)
-        .map_err(|e| format!("{}", e))?;
+    let ir = crate::compile_ast_to_module(&ast, module_name, None).map_err(|e| format!("{}", e))?;
     let t_compile = t1.elapsed();
 
     // Eval
@@ -163,7 +201,8 @@ pub fn run_bench_command(args: &[String]) -> Result<(), String> {
         match args[i].as_str() {
             "--iterations" | "-n" => {
                 i += 1;
-                iterations = args.get(i)
+                iterations = args
+                    .get(i)
                     .ok_or("--iterations requires a number")?
                     .parse::<usize>()
                     .map_err(|_| "--iterations: not a valid number")?;

@@ -11,7 +11,7 @@
 //! - `Transpose` — axes must be a valid permutation; output rank must equal input rank
 //! - `Reduce`    — output rank must equal `input_rank − |axes|` (or same if keepdims)
 //! - `Einsum`    — input count matches spec count; spec lengths match input ranks;
-//!                  output indices are a subset of all input indices
+//!   output indices are a subset of all input indices
 
 use std::collections::HashSet;
 
@@ -32,7 +32,13 @@ impl Pass for ShapeCheckPass {
         for func in module.functions() {
             for block in func.blocks() {
                 for instr in &block.instrs {
-                    if let IrInstr::TensorOp { op, inputs, result_ty, .. } = instr {
+                    if let IrInstr::TensorOp {
+                        op,
+                        inputs,
+                        result_ty,
+                        ..
+                    } = instr
+                    {
                         let input_tys: Vec<&IrType> =
                             inputs.iter().filter_map(|v| func.value_type(*v)).collect();
                         check_tensor_op(op, &input_tys, result_ty, &func.name)?;
@@ -69,8 +75,12 @@ fn check_tensor_op(
         TensorOp::Reshape => {
             // If all dimensions are literal, the total element count must be preserved.
             if let (
-                Some(IrType::Tensor { shape: in_shape, .. }),
-                IrType::Tensor { shape: out_shape, .. },
+                Some(IrType::Tensor {
+                    shape: in_shape, ..
+                }),
+                IrType::Tensor {
+                    shape: out_shape, ..
+                },
             ) = (inputs.first(), result_ty)
             {
                 if in_shape.is_fully_concrete() && out_shape.is_fully_concrete() {
@@ -117,7 +127,10 @@ fn check_tensor_op(
                     });
                 }
                 // Output rank must match input rank.
-                if let IrType::Tensor { shape: out_shape, .. } = result_ty {
+                if let IrType::Tensor {
+                    shape: out_shape, ..
+                } = result_ty
+                {
                     if out_shape.rank() != shape.rank() {
                         return Err(PassError::ShapeMismatch {
                             func: func.to_owned(),
@@ -134,8 +147,12 @@ fn check_tensor_op(
 
         TensorOp::Reduce { axes, keepdims, .. } => {
             if let (
-                Some(IrType::Tensor { shape: in_shape, .. }),
-                IrType::Tensor { shape: out_shape, .. },
+                Some(IrType::Tensor {
+                    shape: in_shape, ..
+                }),
+                IrType::Tensor {
+                    shape: out_shape, ..
+                },
             ) = (inputs.first(), result_ty)
             {
                 let expected_rank = if *keepdims {
@@ -167,10 +184,7 @@ fn check_tensor_op(
                 None => {
                     return Err(PassError::ShapeMismatch {
                         func: func.to_owned(),
-                        detail: format!(
-                            "einsum notation {:?} is missing '->'",
-                            notation
-                        ),
+                        detail: format!("einsum notation {:?} is missing '->'", notation),
                     });
                 }
             };

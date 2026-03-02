@@ -1,6 +1,6 @@
 //! Phase 93: Debugger — span table, trace-based step/breakpoint debugging.
 
-use iris::{DebugSession, compile_to_module};
+use iris::{compile_to_module, DebugSession};
 
 // Source with two let statements and a tail expression.
 // Line 1: def main() -> i64 {
@@ -17,15 +17,23 @@ const SRC_TWO_STMTS: &str = "def main() -> i64 {\n    val x = 10\n    val y = 20
 // Line 4:     val c = 3
 // Line 5:     a + b + c
 // Line 6: }
-const SRC_THREE_STMTS: &str = "def main() -> i64 {\n    val a = 1\n    val b = 2\n    val c = 3\n    a + b + c\n}";
+const SRC_THREE_STMTS: &str =
+    "def main() -> i64 {\n    val a = 1\n    val b = 2\n    val c = 3\n    a + b + c\n}";
 
 // ── 1. Span table populated after compile_to_module ─────────────────────────
 
 #[test]
 fn test_span_table_populated() {
     let module = compile_to_module(SRC_TWO_STMTS, "debug").unwrap();
-    let main_fn = module.functions().iter().find(|f| f.name == "main").unwrap();
-    assert!(!main_fn.span_table.is_empty(), "span_table should be non-empty after compile_to_module");
+    let main_fn = module
+        .functions()
+        .iter()
+        .find(|f| f.name == "main")
+        .unwrap();
+    assert!(
+        !main_fn.span_table.is_empty(),
+        "span_table should be non-empty after compile_to_module"
+    );
 }
 
 // ── 2. DebugSession compiles and starts without error ───────────────────────
@@ -34,7 +42,9 @@ fn test_span_table_populated() {
 fn test_debug_session_start() {
     let mut session = DebugSession::new();
     session.set_source(SRC_TWO_STMTS);
-    session.start().expect("DebugSession::start should not error on valid source");
+    session
+        .start()
+        .expect("DebugSession::start should not error on valid source");
     assert!(!session.is_finished(), "session should have trace entries");
 }
 
@@ -46,9 +56,14 @@ fn test_breakpoint_at_line_3() {
     session.set_source(SRC_TWO_STMTS);
     session.set_breakpoint(3, None);
     session.start().unwrap();
-    let frame = session.continue_to_breakpoint()
+    let frame = session
+        .continue_to_breakpoint()
         .expect("should hit breakpoint at line 3");
-    assert_eq!(frame.line, 3, "expected frame at line 3, got line {}", frame.line);
+    assert_eq!(
+        frame.line, 3,
+        "expected frame at line 3, got line {}",
+        frame.line
+    );
 }
 
 // ── 4. Frame has correct function name ───────────────────────────────────────
@@ -58,7 +73,9 @@ fn test_frame_func_name() {
     let mut session = DebugSession::new();
     session.set_source(SRC_TWO_STMTS);
     session.start().unwrap();
-    let frame = session.current_frame().expect("should have at least one frame");
+    let frame = session
+        .current_frame()
+        .expect("should have at least one frame");
     assert_eq!(frame.func_name, "main", "frame func_name should be 'main'");
 }
 
@@ -70,7 +87,10 @@ fn test_step_advances_cursor() {
     session.set_source(SRC_TWO_STMTS);
     session.start().unwrap();
     let total = session.all_frames().len();
-    assert!(total >= 2, "should have at least 2 trace entries (one per val stmt)");
+    assert!(
+        total >= 2,
+        "should have at least 2 trace entries (one per val stmt)"
+    );
     // Step once and confirm we advance.
     let advanced = session.step();
     assert!(advanced, "step() should return true when not at end");
@@ -91,9 +111,13 @@ fn test_two_breakpoints_in_order() {
     assert_eq!(first.line, 2, "initial frame should be at line 2");
 
     // Advance to next breakpoint: should hit line 3.
-    let second = session.continue_to_breakpoint()
+    let second = session
+        .continue_to_breakpoint()
         .expect("should hit second breakpoint at line 3");
-    assert_eq!(second.line, 3, "second breakpoint frame should be at line 3");
+    assert_eq!(
+        second.line, 3,
+        "second breakpoint frame should be at line 3"
+    );
 }
 
 // ── 7. is_finished() is true after continue_to_breakpoint() runs off the end ─
@@ -105,8 +129,14 @@ fn test_is_finished_after_all_frames() {
     // No breakpoints set — continue_to_breakpoint() will scan past all frames.
     session.start().unwrap();
     let result = session.continue_to_breakpoint();
-    assert!(result.is_none(), "expected None when no breakpoints are set");
-    assert!(session.is_finished(), "is_finished() should be true after running off end");
+    assert!(
+        result.is_none(),
+        "expected None when no breakpoints are set"
+    );
+    assert!(
+        session.is_finished(),
+        "is_finished() should be true after running off end"
+    );
 }
 
 // ── 8. Trace has ≥ 2 entries for source with 2 let statements ───────────────

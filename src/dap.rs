@@ -45,17 +45,25 @@ pub fn run_dap_server() -> std::io::Result<()> {
             let mut chars = String::new();
             loop {
                 stdin.lock().read_exact(&mut byte)?;
-                if byte[0] == b'\r' { continue; }
-                if byte[0] == b'\n' { break; }
+                if byte[0] == b'\r' {
+                    continue;
+                }
+                if byte[0] == b'\n' {
+                    break;
+                }
                 chars.push(byte[0] as char);
             }
-            if chars.is_empty() { break; }
+            if chars.is_empty() {
+                break;
+            }
             if chars.to_lowercase().starts_with("content-length:") {
                 let val = chars["content-length:".len()..].trim();
                 content_length = val.parse().unwrap_or(0);
             }
         }
-        if content_length == 0 { continue; }
+        if content_length == 0 {
+            continue;
+        }
 
         let mut body = vec![0u8; content_length];
         stdin.lock().read_exact(&mut body)?;
@@ -68,11 +76,19 @@ pub fn run_dap_server() -> std::io::Result<()> {
 
         let request_seq = msg["seq"].as_i64().unwrap_or(0);
         let command = msg["command"].as_str().unwrap_or("");
-        let arguments = msg.get("arguments").cloned().unwrap_or(serde_json::Value::Null);
+        let arguments = msg
+            .get("arguments")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         let send = |body: serde_json::Value| -> std::io::Result<()> {
             let text = serde_json::to_string(&body).unwrap_or_default();
-            write!(stdout.lock(), "Content-Length: {}\r\n\r\n{}", text.len(), text)?;
+            write!(
+                stdout.lock(),
+                "Content-Length: {}\r\n\r\n{}",
+                text.len(),
+                text
+            )?;
             stdout.lock().flush()
         };
 
@@ -148,7 +164,8 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 if !old_source.is_empty() {
                     session.set_source(&old_source);
                 }
-                let bps = arguments["breakpoints"].as_array()
+                let bps = arguments["breakpoints"]
+                    .as_array()
                     .cloned()
                     .unwrap_or_default();
                 let mut verified = Vec::new();
@@ -375,7 +392,9 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 }
             }
             "stackTrace" => {
-                let frames: Vec<serde_json::Value> = session.all_visible_frames().into_iter()
+                let frames: Vec<serde_json::Value> = session
+                    .all_visible_frames()
+                    .into_iter()
                     .enumerate()
                     .map(|(idx, f)| {
                         let mut frame = serde_json::json!({
@@ -415,20 +434,31 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 seq += 1;
             }
             "variables" => {
-                let vars: Vec<serde_json::Value> = session.current_frame()
-                    .map(|f| f.variables.iter().map(|(name, val)| {
-                        // Try to determine the type from the value string
-                        let ty = if val.parse::<i64>().is_ok() { "i64" }
-                            else if val.parse::<f64>().is_ok() { "f64" }
-                            else if val == "true" || val == "false" { "bool" }
-                            else { "str" };
-                        serde_json::json!({
-                            "name": name,
-                            "value": val,
-                            "type": ty,
-                            "variablesReference": 0,
-                        })
-                    }).collect())
+                let vars: Vec<serde_json::Value> = session
+                    .current_frame()
+                    .map(|f| {
+                        f.variables
+                            .iter()
+                            .map(|(name, val)| {
+                                // Try to determine the type from the value string
+                                let ty = if val.parse::<i64>().is_ok() {
+                                    "i64"
+                                } else if val.parse::<f64>().is_ok() {
+                                    "f64"
+                                } else if val == "true" || val == "false" {
+                                    "bool"
+                                } else {
+                                    "str"
+                                };
+                                serde_json::json!({
+                                    "name": name,
+                                    "value": val,
+                                    "type": ty,
+                                    "variablesReference": 0,
+                                })
+                            })
+                            .collect()
+                    })
                     .unwrap_or_default();
                 send(serde_json::json!({
                     "seq": seq, "type": "response", "request_seq": request_seq,
@@ -449,13 +479,15 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 let expr = arguments["expression"].as_str().unwrap_or("").to_owned();
                 let context = arguments["context"].as_str().unwrap_or("repl");
                 // Build an eval source from the current debug frame variables + expression.
-                let ctx_vars: Vec<(String, String)> = session.current_frame()
+                let ctx_vars: Vec<(String, String)> = session
+                    .current_frame()
                     .map(|f| f.variables.clone())
                     .unwrap_or_default();
                 let result = evaluate_in_context(&ctx_vars, &expr);
 
                 // For hover context, return a cleaner result
-                let display_result = if context == "hover" && result.starts_with("(cannot evaluate") {
+                let display_result = if context == "hover" && result.starts_with("(cannot evaluate")
+                {
                     // Don't show error on hover
                     String::new()
                 } else {
@@ -489,7 +521,9 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 seq += 1;
             }
             "exceptionInfo" => {
-                let desc = session.exception_message.clone()
+                let desc = session
+                    .exception_message
+                    .clone()
                     .unwrap_or_else(|| "IRIS runtime panic".to_owned());
                 send(serde_json::json!({
                     "seq": seq, "type": "response", "request_seq": request_seq,
@@ -525,12 +559,15 @@ pub fn run_dap_server() -> std::io::Result<()> {
             "completions" => {
                 let text = arguments["text"].as_str().unwrap_or("");
                 let all_vars = session.completions();
-                let items: Vec<serde_json::Value> = all_vars.iter()
+                let items: Vec<serde_json::Value> = all_vars
+                    .iter()
                     .filter(|n| text.is_empty() || n.starts_with(text))
-                    .map(|n| serde_json::json!({
-                        "label": n,
-                        "type": "variable",
-                    }))
+                    .map(|n| {
+                        serde_json::json!({
+                            "label": n,
+                            "type": "variable",
+                        })
+                    })
                     .collect();
                 send(serde_json::json!({
                     "seq": seq, "type": "response", "request_seq": request_seq,
@@ -588,7 +625,9 @@ pub fn run_dap_server() -> std::io::Result<()> {
                     Err(e) => {
                         let error_msg = if !source_content.is_empty() {
                             crate::diagnostics::render_error(&source_content, &e)
-                        } else { format!("error: {}\n", e) };
+                        } else {
+                            format!("error: {}\n", e)
+                        };
                         send(serde_json::json!({
                             "seq": seq, "type": "event", "event": "output",
                             "body": { "category": "stderr", "output": error_msg }
@@ -648,12 +687,12 @@ fn evaluate_in_context(vars: &[(String, String)], expr: &str) -> String {
     for (name, val_str) in vars {
         // Skip names that aren't valid identifiers.
         if name.chars().all(|c| c.is_alphanumeric() || c == '_') && !name.is_empty() {
-            // Heuristic: if the value looks like a number, use it directly; else wrap as str.
-            let v = if val_str.parse::<i64>().is_ok() {
-                val_str.clone()
-            } else if val_str.parse::<f64>().is_ok() {
-                val_str.clone()
-            } else if val_str == "true" || val_str == "false" {
+            // Heuristic: if the value looks like a number or bool, use it directly; else wrap as str.
+            let v = if val_str.parse::<i64>().is_ok()
+                || val_str.parse::<f64>().is_ok()
+                || val_str == "true"
+                || val_str == "false"
+            {
                 val_str.clone()
             } else {
                 format!("\"{}\"", val_str.replace('"', "\\\""))
@@ -685,7 +724,10 @@ fn send_step_result(
 ) -> std::io::Result<()> {
     if advanced {
         let line = session.current_frame().map(|f| f.line).unwrap_or(0);
-        let func = session.current_frame().map(|f| f.func_name.clone()).unwrap_or_default();
+        let func = session
+            .current_frame()
+            .map(|f| f.func_name.clone())
+            .unwrap_or_default();
         send(serde_json::json!({
             "seq": *seq, "type": "event", "event": "stopped",
             "body": {

@@ -61,7 +61,10 @@ fn run() {
         Ok(ParseArgsResult::Args(cli)) => {
             if cli.emit == iris::EmitKind::Binary {
                 let source = std::fs::read_to_string(&cli.path).unwrap_or_default();
-                let module = match iris::compile_file_to_module_with_opts(&cli.path, cli.dump_ir_after.as_deref()) {
+                let module = match iris::compile_file_to_module_with_opts(
+                    &cli.path,
+                    cli.dump_ir_after.as_deref(),
+                ) {
                     Ok(m) => m,
                     Err(e) => {
                         eprint!("{}", render_error(&source, &e));
@@ -69,7 +72,9 @@ fn run() {
                     }
                 };
                 let output_path = cli.output.unwrap_or_else(|| {
-                    let stem = cli.path.file_stem()
+                    let stem = cli
+                        .path
+                        .file_stem()
                         .and_then(|s| s.to_str())
                         .unwrap_or("iris_out");
                     PathBuf::from(format!("{}{}", stem, std::env::consts::EXE_SUFFIX))
@@ -81,8 +86,8 @@ fn run() {
                             // Canonicalize so Command finds the binary in the
                             // current directory on Windows (relative paths
                             // without ".\" are not searched).
-                            let run_path = std::fs::canonicalize(&path)
-                                .unwrap_or_else(|_| path.clone());
+                            let run_path =
+                                std::fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
                             let status = std::process::Command::new(&run_path)
                                 .status()
                                 .unwrap_or_else(|e| {
@@ -101,7 +106,13 @@ fn run() {
             }
 
             let source = std::fs::read_to_string(&cli.path).unwrap_or_default();
-            match iris::compile_file_with_full_opts(&cli.path, cli.emit, cli.max_steps, cli.max_depth, cli.dump_ir_after.as_deref()) {
+            match iris::compile_file_with_full_opts(
+                &cli.path,
+                cli.emit,
+                cli.max_steps,
+                cli.max_depth,
+                cli.dump_ir_after.as_deref(),
+            ) {
                 Ok(output) => {
                     if let Some(out_path) = cli.output {
                         if let Err(e) = std::fs::write(&out_path, &output) {
@@ -160,8 +171,12 @@ fn run_repl() {
 
         // Track brace depth for multiline input.
         for ch in line.chars() {
-            if ch == '{' { brace_depth += 1; }
-            if ch == '}' { brace_depth -= 1; }
+            if ch == '{' {
+                brace_depth += 1;
+            }
+            if ch == '}' {
+                brace_depth -= 1;
+            }
         }
         accumulator.push_str(&line);
 

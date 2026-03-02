@@ -55,7 +55,8 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     if !has_entry {
         return Err(CodegenError::Unsupported {
             backend: "binary".into(),
-            detail: "no entry point (define main() or a zero-argument function) for native binary".into(),
+            detail: "no entry point (define main() or a zero-argument function) for native binary"
+                .into(),
         });
     }
 
@@ -63,8 +64,7 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     let llvm_ir = emit_llvm_ir_for_binary(module)?;
 
     // 2. Set up a per-process temp directory so parallel builds don't collide.
-    let tmp_dir = std::env::temp_dir()
-        .join(format!("iris_build_{}", std::process::id()));
+    let tmp_dir = std::env::temp_dir().join(format!("iris_build_{}", std::process::id()));
     std::fs::create_dir_all(&tmp_dir).map_err(|e| CodegenError::Unsupported {
         backend: "binary".into(),
         detail: format!("failed to create temp dir '{}': {}", tmp_dir.display(), e),
@@ -110,19 +110,24 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     let mut compile_cmd = Command::new(&clang);
     compile_cmd.args(target_args);
     compile_cmd.args([
-        "-O2", "-c",
+        "-O2",
+        "-c",
         c_path.to_str().unwrap(),
-        "-o", rt_obj.to_str().unwrap(),
-        "-I", tmp_dir.to_str().unwrap(),
+        "-o",
+        rt_obj.to_str().unwrap(),
+        "-I",
+        tmp_dir.to_str().unwrap(),
         "-Wno-pragma-pack",
     ]);
     if let Some(ref inc) = msys2_inc {
         compile_cmd.arg("-I").arg(inc);
     }
-    let c_output = compile_cmd.output().map_err(|e| CodegenError::Unsupported {
-        backend: "binary".into(),
-        detail: format!("'{}' not found: {}", clang, e),
-    })?;
+    let c_output = compile_cmd
+        .output()
+        .map_err(|e| CodegenError::Unsupported {
+            backend: "binary".into(),
+            detail: format!("'{}' not found: {}", clang, e),
+        })?;
     if !c_output.status.success() {
         let stderr = String::from_utf8_lossy(&c_output.stderr);
         let stdout = String::from_utf8_lossy(&c_output.stdout);
@@ -130,7 +135,10 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
             backend: "binary".into(),
             detail: format!(
                 "'{}' failed to compile iris_runtime.c (exit: {:?})\nstderr: {}\nstdout: {}",
-                clang, c_output.status.code(), stderr, stdout
+                clang,
+                c_output.status.code(),
+                stderr,
+                stdout
             ),
         });
     }
@@ -140,9 +148,11 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     let mut ir_cmd = Command::new(&clang);
     ir_cmd.args(target_args);
     ir_cmd.args([
-        "-O2", "-c",
+        "-O2",
+        "-c",
         ll_path.to_str().unwrap(),
-        "-o", mod_obj.to_str().unwrap(),
+        "-o",
+        mod_obj.to_str().unwrap(),
         "-Wno-override-module",
     ]);
     let ir_status = ir_cmd.status().map_err(|e| CodegenError::Unsupported {
@@ -152,7 +162,11 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     if !ir_status.success() {
         return Err(CodegenError::Unsupported {
             backend: "binary".into(),
-            detail: format!("'{}' failed to compile LLVM IR (exit: {:?})", clang, ir_status.code()),
+            detail: format!(
+                "'{}' failed to compile LLVM IR (exit: {:?})",
+                clang,
+                ir_status.code()
+            ),
         });
     }
 
@@ -164,8 +178,10 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
         "-O2",
         mod_obj.to_str().unwrap(),
         rt_obj.to_str().unwrap(),
-        "-o", output_path.to_str().unwrap(),
-        "-lm", "-lpthread",
+        "-o",
+        output_path.to_str().unwrap(),
+        "-lm",
+        "-lpthread",
     ]);
     // Windows: link WinSock2 for TCP/HTTP builtins
     #[cfg(target_os = "windows")]
@@ -184,7 +200,12 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
         let stderr = String::from_utf8_lossy(&link_output.stderr);
         return Err(CodegenError::Unsupported {
             backend: "binary".into(),
-            detail: format!("'{}' failed to link binary (exit: {:?})\n{}", clang, link_output.status.code(), stderr),
+            detail: format!(
+                "'{}' failed to link binary (exit: {:?})\n{}",
+                clang,
+                link_output.status.code(),
+                stderr
+            ),
         });
     }
 
@@ -205,7 +226,10 @@ pub(crate) fn find_clang() -> String {
 
     // 2. Inno Setup default install dir  ({LOCALAPPDATA}\Programs\IRIS)
     if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-        candidates.push(format!(r"{}\Programs\IRIS\toolchain\llvm\bin\clang.exe", lad));
+        candidates.push(format!(
+            r"{}\Programs\IRIS\toolchain\llvm\bin\clang.exe",
+            lad
+        ));
     }
 
     // 3. System-wide LLVM installs

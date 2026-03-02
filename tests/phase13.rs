@@ -1,7 +1,7 @@
 //! Phase 13 integration tests: struct types and named records.
 
 use iris::interp::{eval_function, IrValue};
-use iris::ir::instr::{IrInstr};
+use iris::ir::instr::IrInstr;
 use iris::ir::module::IrFunctionBuilder;
 use iris::ir::types::{DType, IrType};
 use iris::{compile, EmitKind};
@@ -24,7 +24,11 @@ fn test_struct_keyword_lexed() {
     // Use a valid program to verify the lexer:
     let src2 = "record Point { x: f32, y: f32 } def zero() -> f32 { 0.0 }";
     let result = compile(src2, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "struct keyword should be recognized: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "struct keyword should be recognized: {:?}",
+        result.err()
+    );
     let _ = src; // just to use it
 }
 
@@ -51,9 +55,16 @@ def make_point() -> Point {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "struct literal should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "struct literal should compile: {:?}",
+        result.err()
+    );
     let out = result.unwrap();
-    assert!(out.contains("make_struct"), "expected make_struct instruction");
+    assert!(
+        out.contains("make_struct"),
+        "expected make_struct instruction"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +79,11 @@ def get_x(p: Point) -> f32 {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "field access should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "field access should compile: {:?}",
+        result.err()
+    );
     let out = result.unwrap();
     assert!(out.contains("get_field"), "expected get_field instruction");
 }
@@ -97,10 +112,7 @@ fn test_interp_make_struct() {
     // Build: fn pair() -> struct { 10, 20 }
     let struct_ty = IrType::Struct {
         name: "Pair".into(),
-        fields: vec![
-            ("a".into(), i64_ty()),
-            ("b".into(), i64_ty()),
-        ],
+        fields: vec![("a".into(), i64_ty()), ("b".into(), i64_ty())],
     };
     let mut b = IrFunctionBuilder::new("pair", vec![], struct_ty.clone());
     let entry = b.create_block(Some("entry"));
@@ -108,24 +120,39 @@ fn test_interp_make_struct() {
 
     let a = b.fresh_value();
     b.push_instr(
-        IrInstr::ConstInt { result: a, value: 10, ty: i64_ty() },
+        IrInstr::ConstInt {
+            result: a,
+            value: 10,
+            ty: i64_ty(),
+        },
         Some(i64_ty()),
     );
     let bv = b.fresh_value();
     b.push_instr(
-        IrInstr::ConstInt { result: bv, value: 20, ty: i64_ty() },
+        IrInstr::ConstInt {
+            result: bv,
+            value: 20,
+            ty: i64_ty(),
+        },
         Some(i64_ty()),
     );
     let s = b.fresh_value();
     b.push_instr(
-        IrInstr::MakeStruct { result: s, fields: vec![a, bv], result_ty: struct_ty.clone() },
+        IrInstr::MakeStruct {
+            result: s,
+            fields: vec![a, bv],
+            result_ty: struct_ty.clone(),
+        },
         Some(struct_ty),
     );
     b.push_instr(IrInstr::Return { values: vec![s] }, None);
     let func = b.build();
 
     let result = eval_function(&func, &[]).expect("should eval");
-    assert_eq!(result, vec![IrValue::Struct(vec![IrValue::I64(10), IrValue::I64(20)])]);
+    assert_eq!(
+        result,
+        vec![IrValue::Struct(vec![IrValue::I64(10), IrValue::I64(20)])]
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -135,10 +162,7 @@ fn test_interp_make_struct() {
 fn test_interp_get_field() {
     let struct_ty = IrType::Struct {
         name: "Pair".into(),
-        fields: vec![
-            ("a".into(), f32_ty()),
-            ("b".into(), f32_ty()),
-        ],
+        fields: vec![("a".into(), f32_ty()), ("b".into(), f32_ty())],
     };
 
     let mut b = IrFunctionBuilder::new("get_b", vec![], f32_ty());
@@ -147,25 +171,47 @@ fn test_interp_get_field() {
 
     let fa = b.fresh_value();
     b.push_instr(
-        IrInstr::ConstFloat { result: fa, value: 1.0, ty: f32_ty() },
+        IrInstr::ConstFloat {
+            result: fa,
+            value: 1.0,
+            ty: f32_ty(),
+        },
         Some(f32_ty()),
     );
     let fb = b.fresh_value();
     b.push_instr(
-        IrInstr::ConstFloat { result: fb, value: 99.0, ty: f32_ty() },
+        IrInstr::ConstFloat {
+            result: fb,
+            value: 99.0,
+            ty: f32_ty(),
+        },
         Some(f32_ty()),
     );
     let s = b.fresh_value();
     b.push_instr(
-        IrInstr::MakeStruct { result: s, fields: vec![fa, fb], result_ty: struct_ty.clone() },
+        IrInstr::MakeStruct {
+            result: s,
+            fields: vec![fa, fb],
+            result_ty: struct_ty.clone(),
+        },
         Some(struct_ty),
     );
     let field_val = b.fresh_value();
     b.push_instr(
-        IrInstr::GetField { result: field_val, base: s, field_index: 1, result_ty: f32_ty() },
+        IrInstr::GetField {
+            result: field_val,
+            base: s,
+            field_index: 1,
+            result_ty: f32_ty(),
+        },
         Some(f32_ty()),
     );
-    b.push_instr(IrInstr::Return { values: vec![field_val] }, None);
+    b.push_instr(
+        IrInstr::Return {
+            values: vec![field_val],
+        },
+        None,
+    );
     let func = b.build();
 
     let result = eval_function(&func, &[]).expect("should eval");

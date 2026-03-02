@@ -85,7 +85,11 @@ fn test_repl_choice_enum() {
     let mut repl = ReplState::new();
     // Defining a choice type returns a "defined: ..." acknowledgement.
     let ack = repl.eval("choice Color { Red, Green, Blue }").unwrap();
-    assert!(ack.contains("Color"), "expected 'Color' in ack, got: {}", ack);
+    assert!(
+        ack.contains("Color"),
+        "expected 'Color' in ack, got: {}",
+        ack
+    );
     // Subsequent arithmetic still works.
     let result = repl.eval("2 * 3").unwrap();
     assert_eq!(result.trim(), "6");

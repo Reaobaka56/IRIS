@@ -12,11 +12,13 @@ pub mod printer;
 pub mod simd;
 
 pub use build::{build_binary, emit_binary_ir, runtime_c_source, runtime_h_source};
-pub use ir_serial::{deserialize_module, serialize_module};
 pub use cuda::emit_cuda;
 pub use graph_printer::emit_graph_text;
+pub use ir_serial::{deserialize_module, serialize_module};
 pub use jit::emit_jit;
-pub use llvm_ir::{emit_llvm_ir, emit_llvm_ir_with_target, target_preset_to_triple, target_data_layout};
+pub use llvm_ir::{
+    emit_llvm_ir, emit_llvm_ir_with_target, target_data_layout, target_preset_to_triple,
+};
 pub use llvm_stub::emit_llvm_stub;
 pub use onnx::emit_onnx_text;
 pub use onnx_binary::emit_onnx_binary;

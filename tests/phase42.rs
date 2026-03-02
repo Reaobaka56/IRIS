@@ -20,7 +20,12 @@ def f() -> i64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // 'h' = 104 in ASCII
-    assert_eq!(out.trim(), "104", "str_index of 'h' should be 104, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "104",
+        "str_index of 'h' should be 104, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -35,7 +40,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("world"), "slice should return 'world', got: {}", out.trim());
+    assert!(
+        out.contains("world"),
+        "slice should return 'world', got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -51,7 +60,11 @@ def f() -> str {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // Empty string — output is blank (no quotes in eval mode)
-    assert!(out.trim().is_empty(), "slice of empty range, got: {}", out.trim());
+    assert!(
+        out.trim().is_empty(),
+        "slice of empty range, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -70,7 +83,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "6", "find should return index 6, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "6",
+        "find should return index 6, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -89,7 +107,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "-1", "find of missing sub should be none (-1), got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "-1",
+        "find of missing sub should be none (-1), got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +127,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("hell0 w0rld"), "str_replace should give 'hell0 w0rld', got: {}", out.trim());
+    assert!(
+        out.contains("hell0 w0rld"),
+        "str_replace should give 'hell0 w0rld', got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +145,11 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should emit IR");
-    assert!(out.contains("str_index"), "IR should contain str_index, got:\n{}", out);
+    assert!(
+        out.contains("str_index"),
+        "IR should contain str_index, got:\n{}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -136,5 +167,9 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Llvm).expect("should emit LLVM stub");
-    assert!(out.contains("iris_str_find"), "LLVM stub should call iris_str_find, got:\n{}", out);
+    assert!(
+        out.contains("iris_str_find"),
+        "LLVM stub should call iris_str_find, got:\n{}",
+        out
+    );
 }

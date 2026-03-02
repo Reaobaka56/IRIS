@@ -22,7 +22,10 @@ def main() -> i64 {
     let module = iris::compile_ast_to_module(&ast, "hello", None).expect("compile to module");
 
     assert!(
-        module.functions().iter().any(|f| f.name == "main" && f.params.is_empty()),
+        module
+            .functions()
+            .iter()
+            .any(|f| f.name == "main" && f.params.is_empty()),
         "module should have main() as entry"
     );
 

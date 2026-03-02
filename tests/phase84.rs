@@ -1,7 +1,6 @@
-/// Phase 84: Function inlining pass.
-
-use iris::{compile, compile_to_module, InlinePass, EmitKind};
 use iris::pass::Pass;
+/// Phase 84: Function inlining pass.
+use iris::{compile, compile_to_module, EmitKind, InlinePass};
 
 fn eval(src: &str) -> String {
     compile(src, "phase84", EmitKind::Eval).expect("eval failed")
@@ -40,8 +39,11 @@ def main() -> i64 { identity(7) }
 "#;
     let ir = ir_after_inline(src);
     // After inlining, the body of `main` should contain no Call to `identity`
-    assert!(!ir.contains("call @identity") && !ir.contains("call identity"),
-        "expected identity to be inlined:\n{}", ir);
+    assert!(
+        !ir.contains("call @identity") && !ir.contains("call identity"),
+        "expected identity to be inlined:\n{}",
+        ir
+    );
 }
 
 // ------------------------------------------------------------------
@@ -125,8 +127,11 @@ def main() -> i64 { big(0) }
 "#;
     let ir = ir_after_inline(src);
     // big should NOT be inlined since it has > 10 instrs
-    assert!(ir.contains("@big") || ir.contains("big"),
-        "expected 'big' call to remain in IR:\n{}", ir);
+    assert!(
+        ir.contains("@big") || ir.contains("big"),
+        "expected 'big' call to remain in IR:\n{}",
+        ir
+    );
 }
 
 // ------------------------------------------------------------------

@@ -9,11 +9,7 @@ use iris::ir::types::{DType, Dim, IrType, Shape};
 fn tensor_ty(dtype: DType, dims: &[&str]) -> IrType {
     IrType::Tensor {
         dtype,
-        shape: Shape(
-            dims.iter()
-                .map(|s| Dim::Symbolic(s.to_string()))
-                .collect(),
-        ),
+        shape: Shape(dims.iter().map(|s| Dim::Symbolic(s.to_string())).collect()),
     }
 }
 
@@ -49,7 +45,12 @@ fn test_build_scalar_add() {
         },
         Some(f32_ty),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let func = builder.build();
     assert_eq!(func.blocks().len(), 1);
@@ -192,7 +193,12 @@ fn test_multi_block_function() {
     );
 
     builder.set_current_block(merge);
-    builder.push_instr(IrInstr::Return { values: vec![merged_val] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![merged_val],
+        },
+        None,
+    );
 
     let func = builder.build();
     assert_eq!(func.blocks().len(), 2);

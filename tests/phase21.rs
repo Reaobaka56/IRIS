@@ -14,7 +14,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(out.contains("const.str"), "IR should contain const.str, got:\n{}", out);
+    assert!(
+        out.contains("const.str"),
+        "IR should contain const.str, got:\n{}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -28,7 +32,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("hello world"), "should get string value, got: {}", out.trim());
+    assert!(
+        out.contains("hello world"),
+        "should get string value, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -43,7 +51,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "5", "len(\"hello\") should be 5, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "5",
+        "len(\"hello\") should be 5, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -57,7 +70,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "0", "len(\"\") should be 0, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "0",
+        "len(\"\") should be 0, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -73,7 +91,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("hello world"), "concat should produce 'hello world', got: {}", out.trim());
+    assert!(
+        out.contains("hello world"),
+        "concat should produce 'hello world', got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +112,11 @@ def greet(name: str) -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("Hello, Alice"), "should greet Alice, got: {}", out.trim());
+    assert!(
+        out.contains("Hello, Alice"),
+        "should greet Alice, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -105,7 +131,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "5", "len of 'abcde' should be 5, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "5",
+        "len of 'abcde' should be 5, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -120,6 +151,14 @@ def f() -> i64 {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(ir.contains("const.str"), "IR should contain const.str, got:\n{}", ir);
-    assert!(ir.contains("str_len"), "IR should contain str_len, got:\n{}", ir);
+    assert!(
+        ir.contains("const.str"),
+        "IR should contain const.str, got:\n{}",
+        ir
+    );
+    assert!(
+        ir.contains("str_len"),
+        "IR should contain str_len, got:\n{}",
+        ir
+    );
 }

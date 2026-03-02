@@ -16,7 +16,11 @@ def helper() -> i64 { 42 }
 def main_fn() -> i64 { helper() }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "inter-function call should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "inter-function call should compile: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -29,7 +33,11 @@ def helper() -> i64 { 42 }
 def main_fn() -> i64 { helper() }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile");
-    assert!(!out.contains("Infer"), "IR should not contain Infer: {}", out);
+    assert!(
+        !out.contains("Infer"),
+        "IR should not contain Infer: {}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -42,7 +50,12 @@ def main_fn() -> i64 { helper() }
 def helper() -> i64 { 42 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "helper() should return 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "helper() should return 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -55,7 +68,11 @@ def add(a: i64, b: i64) -> i64 { a + b }
 def main_fn() -> i64 { add(10, 32) }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "call with args should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "call with args should compile: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +85,12 @@ def main_fn() -> i64 { add(10, 32) }
 def add(a: i64, b: i64) -> i64 { a + b }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "add(10, 32) should be 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "add(10, 32) should be 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +105,12 @@ def triple(x: i64) -> i64 { x * 3 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // double(triple(2)) = double(6) = 12
-    assert_eq!(out.trim(), "12", "double(triple(2)) = 12, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "12",
+        "double(triple(2)) = 12, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

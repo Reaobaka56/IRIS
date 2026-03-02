@@ -31,7 +31,11 @@ def f() -> bool {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
-    assert!(ir.contains("file_exists"), "expected file_exists in IR:\n{}", ir);
+    assert!(
+        ir.contains("file_exists"),
+        "expected file_exists in IR:\n{}",
+        ir
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -44,13 +48,15 @@ fn test_file_write_read_roundtrip() {
     let tmp = temp_dir().join("iris_test_phase56_rw.txt");
     let path = tmp.to_str().unwrap().replace('\\', "/");
 
-    let src = format!(r#"
+    let src = format!(
+        r#"
 def f() -> i64 {{
     val wr = file_write_all("{path}", "hello iris")
     val rd = file_read_all("{path}")
     42
 }}
-"#);
+"#
+    );
 
     let result = compile(&src, "test", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "42");
@@ -88,7 +94,11 @@ def f() -> i64 {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
-    assert!(ir.contains("file_lines"), "expected file_lines in IR:\n{}", ir);
+    assert!(
+        ir.contains("file_lines"),
+        "expected file_lines in IR:\n{}",
+        ir
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,13 +128,15 @@ fn test_file_lines_content() {
     let path = tmp.to_str().unwrap().replace('\\', "/");
 
     // Write two lines then read them back
-    let src = format!(r#"
+    let src = format!(
+        r#"
 def f() -> i64 {{
     val wr = file_write_all("{path}", "line1\nline2\nline3")
     val ls = file_lines("{path}")
     list_len(ls)
 }}
-"#);
+"#
+    );
 
     let result = compile(&src, "test", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "3");
@@ -144,7 +156,11 @@ def f() -> bool {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("iris_file_exists"), "expected iris_file_exists in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("iris_file_exists"),
+        "expected iris_file_exists in LLVM:\n{}",
+        ll
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -157,12 +173,14 @@ fn test_file_exists_after_write() {
     let tmp = temp_dir().join("iris_test_phase56_exists.txt");
     let path = tmp.to_str().unwrap().replace('\\', "/");
 
-    let src = format!(r#"
+    let src = format!(
+        r#"
 def f() -> bool {{
     val wr = file_write_all("{path}", "data")
     file_exists("{path}")
 }}
-"#);
+"#
+    );
 
     let result = compile(&src, "test", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "true");

@@ -148,5 +148,9 @@ fn test_llvm_complete_eval_still_works() {
     assert_eq!(result.trim(), "42");
     // Also verify LlvmComplete doesn't break the function definition.
     let ir = compile(src, "test", EmitKind::LlvmComplete).unwrap();
-    assert!(ir.contains("define i64 @f()"), "expected 'define i64 @f()':\n{}", ir);
+    assert!(
+        ir.contains("define i64 @f()"),
+        "expected 'define i64 @f()':\n{}",
+        ir
+    );
 }

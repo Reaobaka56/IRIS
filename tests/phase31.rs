@@ -76,7 +76,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "0", "all-zero array nnz should be 0, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "0",
+        "all-zero array nnz should be 0, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -92,7 +97,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "3", "all-nonzero array nnz should be 3, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "3",
+        "all-nonzero array nnz should be 3, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +134,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "1", "single non-zero nnz should be 1, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "1",
+        "single non-zero nnz should be 1, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

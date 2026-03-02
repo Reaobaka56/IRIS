@@ -66,13 +66,16 @@ fn test_proto_string_field() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_onnx_binary_starts_with_magic() {
-    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary)
-        .expect("should compile to ONNX binary");
+    let hex =
+        compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary).expect("should compile to ONNX binary");
     let bytes = hex_to_bytes(&hex);
     assert!(!bytes.is_empty(), "output should not be empty");
     // ModelProto field 1 (ir_version), wire type 0: tag = 0x08
     // ir_version = 7: encoded as 0x07
-    assert_eq!(bytes[0], 0x08, "first byte should be field-1 varint tag (0x08)");
+    assert_eq!(
+        bytes[0], 0x08,
+        "first byte should be field-1 varint tag (0x08)"
+    );
     assert_eq!(bytes[1], 0x07, "second byte should be ir_version = 7");
 }
 
@@ -81,13 +84,15 @@ fn test_onnx_binary_starts_with_magic() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_onnx_binary_matmul_node() {
-    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary)
-        .expect("should compile");
+    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary).expect("should compile");
     let bytes = hex_to_bytes(&hex);
     // Look for the ASCII bytes of "Gemm" in the output.
     let gemm = b"Gemm";
     let found = bytes.windows(gemm.len()).any(|w| w == gemm);
-    assert!(found, "expected 'Gemm' bytes in ONNX output (Linear → Gemm mapping)");
+    assert!(
+        found,
+        "expected 'Gemm' bytes in ONNX output (Linear → Gemm mapping)"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -95,8 +100,7 @@ fn test_onnx_binary_matmul_node() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_onnx_binary_has_graph() {
-    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary)
-        .expect("should compile");
+    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary).expect("should compile");
     let bytes = hex_to_bytes(&hex);
     // Graph name "MatMulNet" is encoded as a string field in GraphProto (field 2).
     let name = b"MatMulNet";
@@ -109,8 +113,7 @@ fn test_onnx_binary_has_graph() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_onnx_binary_opset() {
-    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary)
-        .expect("should compile");
+    let hex = compile(MATMUL_MODEL, "test", EmitKind::OnnxBinary).expect("should compile");
     let bytes = hex_to_bytes(&hex);
     // OperatorSetIdProto.version = 2, varint 17 = 0x11
     // field 2 tag (varint) = (2 << 3) | 0 = 0x10
@@ -125,8 +128,7 @@ fn test_onnx_binary_opset() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_onnx_binary_roundtrip_size() {
-    let hex = compile(TWO_LAYER_MODEL, "test", EmitKind::OnnxBinary)
-        .expect("should compile");
+    let hex = compile(TWO_LAYER_MODEL, "test", EmitKind::OnnxBinary).expect("should compile");
     let bytes = hex_to_bytes(&hex);
     assert!(
         bytes.len() > 20,

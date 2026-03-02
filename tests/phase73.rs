@@ -32,7 +32,11 @@ def f() -> i64 {
 "#;
     let (result, warnings) = compile_with_warnings(src, "test", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "42");
-    assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+    assert!(
+        warnings.is_empty(),
+        "expected no warnings, got: {:?}",
+        warnings
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -51,9 +55,18 @@ def f() -> i64 {
     let (_result, warnings) = compile_with_warnings(src, "test", EmitKind::Eval).unwrap();
     let msgs: Vec<&str> = warnings.iter().map(|w| w.message.as_str()).collect();
     // 'a' and 'b' are unused; 'c' is used as the return value
-    assert!(msgs.iter().any(|m| m.contains("'a'")), "expected warning for 'a'");
-    assert!(msgs.iter().any(|m| m.contains("'b'")), "expected warning for 'b'");
-    assert!(!msgs.iter().any(|m| m.contains("'c'")), "should NOT warn for used 'c'");
+    assert!(
+        msgs.iter().any(|m| m.contains("'a'")),
+        "expected warning for 'a'"
+    );
+    assert!(
+        msgs.iter().any(|m| m.contains("'b'")),
+        "expected warning for 'b'"
+    );
+    assert!(
+        !msgs.iter().any(|m| m.contains("'c'")),
+        "should NOT warn for used 'c'"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -69,7 +82,10 @@ def f() -> i64 {
 "#;
     let (result, warnings) = compile_with_warnings(src, "test", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "42");
-    assert!(warnings.is_empty(), "underscore-prefixed vars should not warn");
+    assert!(
+        warnings.is_empty(),
+        "underscore-prefixed vars should not warn"
+    );
 }
 
 // ---------------------------------------------------------------------------

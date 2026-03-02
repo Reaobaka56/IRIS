@@ -4,29 +4,29 @@ pub mod exhaustive;
 pub mod gc_annotate;
 pub mod graph_pass;
 pub mod inline;
-pub mod loop_unroll;
-pub mod type_infer_hm;
 pub mod lint;
+pub mod loop_unroll;
 pub mod opt;
 pub mod shape_check;
 pub mod shape_infer_graph;
 pub mod strength_reduce;
 pub mod type_infer;
+pub mod type_infer_hm;
 pub mod validate;
 
 pub use const_fold::ConstFoldPass;
 pub use dead_node::DeadNodePass;
 pub use exhaustive::ExhaustivePass;
 pub use gc_annotate::GcAnnotatePass;
-pub use inline::InlinePass;
-pub use loop_unroll::LoopUnrollPass;
-pub use type_infer_hm::HmTypeInferPass;
 pub use graph_pass::{GraphPass, GraphPassManager};
+pub use inline::InlinePass;
 pub use lint::{find_unused_vars, IrWarning};
+pub use loop_unroll::LoopUnrollPass;
 pub use opt::{CsePass, DcePass, OpExpandPass};
 pub use shape_check::ShapeCheckPass;
 pub use shape_infer_graph::infer_shapes;
 pub use strength_reduce::StrengthReducePass;
+pub use type_infer_hm::HmTypeInferPass;
 
 use crate::error::PassError;
 use crate::ir::module::IrModule;
@@ -59,7 +59,10 @@ pub struct PassManager {
 
 impl PassManager {
     pub fn new() -> Self {
-        Self { passes: Vec::new(), dump_after: None }
+        Self {
+            passes: Vec::new(),
+            dump_after: None,
+        }
     }
 
     /// Appends a pass to the end of the pipeline.

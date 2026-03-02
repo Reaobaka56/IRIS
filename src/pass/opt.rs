@@ -1,11 +1,11 @@
 //! IR-level optimization passes.
 //!
 //! - `DcePass`      — Dead Code Elimination: backward BFS from side-effecting
-//!                    instructions; removes pure instructions with no live uses.
+//!   instructions; removes pure instructions with no live uses.
 //! - `CsePass`      — Common Subexpression Elimination: per-block deduplication
-//!                    of pure instructions with identical operation + operands.
+//!   of pure instructions with identical operation + operands.
 //! - `OpExpandPass` — Op Expansion: replaces abstract `call @ReLU(x)` etc. with
-//!                    concrete `tensorop.unary.relu(x)` instructions.
+//!   concrete `tensorop.unary.relu(x)` instructions.
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
@@ -166,7 +166,7 @@ impl Pass for CsePass {
                 cse_block(block, &mut known, &mut replacements);
             }
             // Remove stale type/def entries for eliminated values.
-            for (old, _) in &replacements {
+            for old in replacements.keys() {
                 func.value_types.remove(old);
                 func.value_defs.remove(old);
             }
@@ -342,7 +342,9 @@ pub(crate) fn apply_replacements(instr: &mut IrInstr, reps: &HashMap<ValueId, Va
             replace(base);
         }
         IrInstr::MakeVariant { fields, .. } => {
-            for v in fields { replace(v); }
+            for v in fields {
+                replace(v);
+            }
         }
         IrInstr::SwitchVariant { scrutinee, .. } => {
             replace(scrutinee);
@@ -359,13 +361,19 @@ pub(crate) fn apply_replacements(instr: &mut IrInstr, reps: &HashMap<ValueId, Va
             replace(base);
         }
         IrInstr::AllocArray { init, .. } => {
-            for v in init { replace(v); }
+            for v in init {
+                replace(v);
+            }
         }
         IrInstr::ArrayLoad { array, index, .. } => {
             replace(array);
             replace(index);
         }
-        IrInstr::ArrayStore { array, index, value } => {
+        IrInstr::ArrayStore {
+            array,
+            index,
+            value,
+        } => {
             replace(array);
             replace(index);
             replace(value);
@@ -392,103 +400,326 @@ pub(crate) fn apply_replacements(instr: &mut IrInstr, reps: &HashMap<ValueId, Va
                 replace(v);
             }
         }
-        IrInstr::ParFor { start, end, args, .. } => { replace(start); replace(end); for v in args { replace(v); } }
+        IrInstr::ParFor {
+            start, end, args, ..
+        } => {
+            replace(start);
+            replace(end);
+            for v in args {
+                replace(v);
+            }
+        }
         IrInstr::ChanNew { .. } => {}
-        IrInstr::ChanSend { chan, value } => { replace(chan); replace(value); }
-        IrInstr::ChanRecv { chan, .. } => { replace(chan); }
-        IrInstr::Spawn { args, .. } => { for v in args { replace(v); } }
-        IrInstr::AtomicNew { value, .. } => { replace(value); }
-        IrInstr::AtomicLoad { atomic, .. } => { replace(atomic); }
-        IrInstr::AtomicStore { atomic, value } => { replace(atomic); replace(value); }
-        IrInstr::AtomicAdd { atomic, value, .. } => { replace(atomic); replace(value); }
-        IrInstr::MutexNew { value, .. } => { replace(value); }
-        IrInstr::MutexLock { mutex, .. } => { replace(mutex); }
-        IrInstr::MutexUnlock { mutex } => { replace(mutex); }
-        IrInstr::MakeSome { value, .. } => { replace(value); }
+        IrInstr::ChanSend { chan, value } => {
+            replace(chan);
+            replace(value);
+        }
+        IrInstr::ChanRecv { chan, .. } => {
+            replace(chan);
+        }
+        IrInstr::Spawn { args, .. } => {
+            for v in args {
+                replace(v);
+            }
+        }
+        IrInstr::AtomicNew { value, .. } => {
+            replace(value);
+        }
+        IrInstr::AtomicLoad { atomic, .. } => {
+            replace(atomic);
+        }
+        IrInstr::AtomicStore { atomic, value } => {
+            replace(atomic);
+            replace(value);
+        }
+        IrInstr::AtomicAdd { atomic, value, .. } => {
+            replace(atomic);
+            replace(value);
+        }
+        IrInstr::MutexNew { value, .. } => {
+            replace(value);
+        }
+        IrInstr::MutexLock { mutex, .. } => {
+            replace(mutex);
+        }
+        IrInstr::MutexUnlock { mutex } => {
+            replace(mutex);
+        }
+        IrInstr::MakeSome { value, .. } => {
+            replace(value);
+        }
         IrInstr::MakeNone { .. } => {}
-        IrInstr::IsSome { operand, .. } => { replace(operand); }
-        IrInstr::OptionUnwrap { operand, .. } => { replace(operand); }
-        IrInstr::MakeOk { value, .. } => { replace(value); }
-        IrInstr::MakeErr { value, .. } => { replace(value); }
-        IrInstr::IsOk { operand, .. } => { replace(operand); }
-        IrInstr::ResultUnwrap { operand, .. } => { replace(operand); }
-        IrInstr::ResultUnwrapErr { operand, .. } => { replace(operand); }
+        IrInstr::IsSome { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::OptionUnwrap { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::MakeOk { value, .. } => {
+            replace(value);
+        }
+        IrInstr::MakeErr { value, .. } => {
+            replace(value);
+        }
+        IrInstr::IsOk { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::ResultUnwrap { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::ResultUnwrapErr { operand, .. } => {
+            replace(operand);
+        }
         IrInstr::Barrier => {}
-        IrInstr::Sparsify { operand, .. } => { replace(operand); }
-        IrInstr::Densify { operand, .. } => { replace(operand); }
-        IrInstr::MakeGrad { value, tangent, .. } => { replace(value); replace(tangent); }
-        IrInstr::GradValue { operand, .. } => { replace(operand); }
-        IrInstr::GradTangent { operand, .. } => { replace(operand); }
-        IrInstr::StrContains { haystack, needle, .. } => { replace(haystack); replace(needle); }
-        IrInstr::StrStartsWith { haystack, prefix, .. } => { replace(haystack); replace(prefix); }
-        IrInstr::StrEndsWith { haystack, suffix, .. } => { replace(haystack); replace(suffix); }
-        IrInstr::StrToUpper { operand, .. } => { replace(operand); }
-        IrInstr::StrToLower { operand, .. } => { replace(operand); }
-        IrInstr::StrTrim { operand, .. } => { replace(operand); }
-        IrInstr::StrRepeat { operand, count, .. } => { replace(operand); replace(count); }
-        IrInstr::Panic { msg } => { replace(msg); }
-        IrInstr::ValueToStr { operand, .. } => { replace(operand); }
+        IrInstr::Sparsify { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::Densify { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::MakeGrad { value, tangent, .. } => {
+            replace(value);
+            replace(tangent);
+        }
+        IrInstr::GradValue { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::GradTangent { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::StrContains {
+            haystack, needle, ..
+        } => {
+            replace(haystack);
+            replace(needle);
+        }
+        IrInstr::StrStartsWith {
+            haystack, prefix, ..
+        } => {
+            replace(haystack);
+            replace(prefix);
+        }
+        IrInstr::StrEndsWith {
+            haystack, suffix, ..
+        } => {
+            replace(haystack);
+            replace(suffix);
+        }
+        IrInstr::StrToUpper { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::StrToLower { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::StrTrim { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::StrRepeat { operand, count, .. } => {
+            replace(operand);
+            replace(count);
+        }
+        IrInstr::Panic { msg } => {
+            replace(msg);
+        }
+        IrInstr::ValueToStr { operand, .. } => {
+            replace(operand);
+        }
         IrInstr::ReadLine { .. } => {}
         IrInstr::ReadI64 { .. } => {}
         IrInstr::ReadF64 { .. } => {}
-        IrInstr::ParseI64 { operand, .. } => { replace(operand); }
-        IrInstr::ParseF64 { operand, .. } => { replace(operand); }
-        IrInstr::StrIndex { string, index, .. } => { replace(string); replace(index); }
-        IrInstr::StrSlice { string, start, end, .. } => { replace(string); replace(start); replace(end); }
-        IrInstr::StrFind { haystack, needle, .. } => { replace(haystack); replace(needle); }
-        IrInstr::StrReplace { string, from, to, .. } => { replace(string); replace(from); replace(to); }
+        IrInstr::ParseI64 { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::ParseF64 { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::StrIndex { string, index, .. } => {
+            replace(string);
+            replace(index);
+        }
+        IrInstr::StrSlice {
+            string, start, end, ..
+        } => {
+            replace(string);
+            replace(start);
+            replace(end);
+        }
+        IrInstr::StrFind {
+            haystack, needle, ..
+        } => {
+            replace(haystack);
+            replace(needle);
+        }
+        IrInstr::StrReplace {
+            string, from, to, ..
+        } => {
+            replace(string);
+            replace(from);
+            replace(to);
+        }
         IrInstr::ListNew { .. } => {}
-        IrInstr::ListPush { list, value } => { replace(list); replace(value); }
-        IrInstr::ListLen { list, .. } => { replace(list); }
-        IrInstr::ListGet { list, index, .. } => { replace(list); replace(index); }
-        IrInstr::ListSet { list, index, value } => { replace(list); replace(index); replace(value); }
-        IrInstr::ListPop { list, .. } => { replace(list); }
+        IrInstr::ListPush { list, value } => {
+            replace(list);
+            replace(value);
+        }
+        IrInstr::ListLen { list, .. } => {
+            replace(list);
+        }
+        IrInstr::ListGet { list, index, .. } => {
+            replace(list);
+            replace(index);
+        }
+        IrInstr::ListSet { list, index, value } => {
+            replace(list);
+            replace(index);
+            replace(value);
+        }
+        IrInstr::ListPop { list, .. } => {
+            replace(list);
+        }
         IrInstr::MapNew { .. } => {}
-        IrInstr::MapSet { map, key, value } => { replace(map); replace(key); replace(value); }
-        IrInstr::MapGet { map, key, .. } => { replace(map); replace(key); }
-        IrInstr::MapContains { map, key, .. } => { replace(map); replace(key); }
-        IrInstr::MapRemove { map, key } => { replace(map); replace(key); }
-        IrInstr::MapLen { map, .. } => { replace(map); }
+        IrInstr::MapSet { map, key, value } => {
+            replace(map);
+            replace(key);
+            replace(value);
+        }
+        IrInstr::MapGet { map, key, .. } => {
+            replace(map);
+            replace(key);
+        }
+        IrInstr::MapContains { map, key, .. } => {
+            replace(map);
+            replace(key);
+        }
+        IrInstr::MapRemove { map, key } => {
+            replace(map);
+            replace(key);
+        }
+        IrInstr::MapLen { map, .. } => {
+            replace(map);
+        }
         // Phase 56: File I/O
-        IrInstr::FileReadAll { path, .. } => { replace(path); }
-        IrInstr::FileWriteAll { path, content, .. } => { replace(path); replace(content); }
-        IrInstr::FileExists { path, .. } => { replace(path); }
-        IrInstr::FileLines { path, .. } => { replace(path); }
+        IrInstr::FileReadAll { path, .. } => {
+            replace(path);
+        }
+        IrInstr::FileWriteAll { path, content, .. } => {
+            replace(path);
+            replace(content);
+        }
+        IrInstr::FileExists { path, .. } => {
+            replace(path);
+        }
+        IrInstr::FileLines { path, .. } => {
+            replace(path);
+        }
         // Database
-        IrInstr::DbOpen { path, .. } => { replace(path); }
-        IrInstr::DbExec { db, sql, .. } => { replace(db); replace(sql); }
-        IrInstr::DbQuery { db, sql, .. } => { replace(db); replace(sql); }
-        IrInstr::DbClose { db, .. } => { replace(db); }
+        IrInstr::DbOpen { path, .. } => {
+            replace(path);
+        }
+        IrInstr::DbExec { db, sql, .. } => {
+            replace(db);
+            replace(sql);
+        }
+        IrInstr::DbQuery { db, sql, .. } => {
+            replace(db);
+            replace(sql);
+        }
+        IrInstr::DbClose { db, .. } => {
+            replace(db);
+        }
         // Phase 58: Extended collections
-        IrInstr::ListContains { list, value, .. } => { replace(list); replace(value); }
-        IrInstr::ListSort { list } => { replace(list); }
-        IrInstr::MapKeys { map, .. } => { replace(map); }
-        IrInstr::MapValues { map, .. } => { replace(map); }
-        IrInstr::ListConcat { lhs, rhs, .. } => { replace(lhs); replace(rhs); }
-        IrInstr::ListSlice { list, start, end, .. } => { replace(list); replace(start); replace(end); }
+        IrInstr::ListContains { list, value, .. } => {
+            replace(list);
+            replace(value);
+        }
+        IrInstr::ListSort { list } => {
+            replace(list);
+        }
+        IrInstr::MapKeys { map, .. } => {
+            replace(map);
+        }
+        IrInstr::MapValues { map, .. } => {
+            replace(map);
+        }
+        IrInstr::ListConcat { lhs, rhs, .. } => {
+            replace(lhs);
+            replace(rhs);
+        }
+        IrInstr::ListSlice {
+            list, start, end, ..
+        } => {
+            replace(list);
+            replace(start);
+            replace(end);
+        }
         // Phase 59: Process / environment
-        IrInstr::ProcessExit { code } => { replace(code); }
+        IrInstr::ProcessExit { code } => {
+            replace(code);
+        }
         IrInstr::ProcessArgs { .. } => {}
-        IrInstr::EnvVar { name, .. } => { replace(name); }
+        IrInstr::EnvVar { name, .. } => {
+            replace(name);
+        }
         // Phase 61: Pattern matching helpers
-        IrInstr::GetVariantTag { operand, .. } => { replace(operand); }
-        IrInstr::StrEq { lhs, rhs, .. } => { replace(lhs); replace(rhs); }
+        IrInstr::GetVariantTag { operand, .. } => {
+            replace(operand);
+        }
+        IrInstr::StrEq { lhs, rhs, .. } => {
+            replace(lhs);
+            replace(rhs);
+        }
         // Phase 81: FFI
-        IrInstr::CallExtern { args, .. } => { for a in args { replace(a); } }
+        IrInstr::CallExtern { args, .. } => {
+            for a in args {
+                replace(a);
+            }
+        }
         // Phase 83: GC
-        IrInstr::Retain { ptr } => { replace(ptr); }
-        IrInstr::Release { ptr, .. } => { replace(ptr); }
-        IrInstr::TcpConnect { host, port, .. } => { replace(host); replace(port); }
-        IrInstr::TcpListen { port, .. } => { replace(port); }
-        IrInstr::TcpAccept { listener, .. } => { replace(listener); }
-        IrInstr::TcpRead { conn, .. } => { replace(conn); }
-        IrInstr::TcpWrite { conn, data } => { replace(conn); replace(data); }
-        IrInstr::TcpClose { conn } => { replace(conn); }
-        IrInstr::StrSplit { str_val, delim, .. } => { replace(str_val); replace(delim); }
-        IrInstr::StrJoin { list_val, delim, .. } => { replace(list_val); replace(delim); }
+        IrInstr::Retain { ptr } => {
+            replace(ptr);
+        }
+        IrInstr::Release { ptr, .. } => {
+            replace(ptr);
+        }
+        IrInstr::TcpConnect { host, port, .. } => {
+            replace(host);
+            replace(port);
+        }
+        IrInstr::TcpListen { port, .. } => {
+            replace(port);
+        }
+        IrInstr::TcpAccept { listener, .. } => {
+            replace(listener);
+        }
+        IrInstr::TcpRead { conn, .. } => {
+            replace(conn);
+        }
+        IrInstr::TcpWrite { conn, data } => {
+            replace(conn);
+            replace(data);
+        }
+        IrInstr::TcpClose { conn } => {
+            replace(conn);
+        }
+        IrInstr::StrSplit { str_val, delim, .. } => {
+            replace(str_val);
+            replace(delim);
+        }
+        IrInstr::StrJoin {
+            list_val, delim, ..
+        } => {
+            replace(list_val);
+            replace(delim);
+        }
         IrInstr::NowMs { .. } => {}
-        IrInstr::SleepMs { ms, .. } => { replace(ms); }
-        IrInstr::BuiltinCall { args, .. } => { for a in args { replace(a); } }
+        IrInstr::SleepMs { ms, .. } => {
+            replace(ms);
+        }
+        IrInstr::BuiltinCall { args, .. } => {
+            for a in args {
+                replace(a);
+            }
+        }
     }
 }
 

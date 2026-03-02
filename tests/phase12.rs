@@ -90,8 +90,10 @@ fn test_help_flag() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_output_flag() {
-    let args: Vec<String> =
-        ["iris", "-o", "out.ll", "file.iris"].iter().map(|s| s.to_string()).collect();
+    let args: Vec<String> = ["iris", "-o", "out.ll", "file.iris"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     let result = parse_args(&args).expect("parse_args should succeed");
     if let ParseArgsResult::Args(cli) = result {
         assert_eq!(cli.output, Some(PathBuf::from("out.ll")));
@@ -114,9 +116,9 @@ fn test_span_to_line_col_multiline() {
     // line 5: "baz"           bytes 20-22 (3 bytes)
     let src = "hello\nworld\nfoo\nbar\nbaz";
 
-    assert_eq!(span_to_line_col(src, 0), (1, 1));  // 'h'
-    assert_eq!(span_to_line_col(src, 5), (1, 6));  // '\n' position
-    assert_eq!(span_to_line_col(src, 6), (2, 1));  // 'w'
+    assert_eq!(span_to_line_col(src, 0), (1, 1)); // 'h'
+    assert_eq!(span_to_line_col(src, 5), (1, 6)); // '\n' position
+    assert_eq!(span_to_line_col(src, 6), (2, 1)); // 'w'
     assert_eq!(span_to_line_col(src, 11), (2, 6)); // '\n'
     assert_eq!(span_to_line_col(src, 12), (3, 1)); // 'f'
     assert_eq!(span_to_line_col(src, 16), (4, 1)); // 'b'

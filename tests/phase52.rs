@@ -95,7 +95,10 @@ fn test_jit_pipeline_documented() {
     let out = compile(src, "test", EmitKind::Jit).unwrap();
     // Should mention the JIT pipeline steps.
     assert!(
-        out.contains("LLVM IR") || out.contains("llvm") || out.contains("clang") || out.contains("JIT"),
+        out.contains("LLVM IR")
+            || out.contains("llvm")
+            || out.contains("clang")
+            || out.contains("JIT"),
         "expected JIT pipeline description:\n{}",
         out
     );
@@ -109,7 +112,13 @@ fn test_jit_stable_hash() {
     let out1 = compile(src, "test", EmitKind::Jit).unwrap();
     let out2 = compile(src, "test", EmitKind::Jit).unwrap();
     // Extract the hash lines and compare them.
-    let hash1: Vec<&str> = out1.lines().filter(|l| l.contains("hash") || l.contains("Hash")).collect();
-    let hash2: Vec<&str> = out2.lines().filter(|l| l.contains("hash") || l.contains("Hash")).collect();
+    let hash1: Vec<&str> = out1
+        .lines()
+        .filter(|l| l.contains("hash") || l.contains("Hash"))
+        .collect();
+    let hash2: Vec<&str> = out2
+        .lines()
+        .filter(|l| l.contains("hash") || l.contains("Hash"))
+        .collect();
     assert_eq!(hash1, hash2, "JIT hash should be stable across calls");
 }

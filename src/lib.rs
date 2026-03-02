@@ -43,7 +43,10 @@ pub use error::Error;
 pub use ir::module::IrModule;
 pub use lsp::{LspDiagnostic, LspState};
 pub use parser::ast::{AstBring, BringPath};
-pub use pass::{ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning, LoopUnrollPass, StrengthReducePass};
+pub use pass::{
+    ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning, LoopUnrollPass,
+    StrengthReducePass,
+};
 pub use repl::ReplState;
 
 /// Compiles an IRIS source string with error recovery, returning a partial AST
@@ -62,18 +65,21 @@ pub fn compile_with_recovery(
         }
         Err(e) => {
             // Lexer error — return empty module + the lex error.
-            (crate::parser::ast::AstModule {
-                enums: vec![],
-                structs: vec![],
-                functions: vec![],
-                models: vec![],
-                consts: vec![],
-                type_aliases: vec![],
-                traits: vec![],
-                impls: vec![],
-                brings: vec![],
-                extern_fns: vec![],
-            }, vec![e])
+            (
+                crate::parser::ast::AstModule {
+                    enums: vec![],
+                    structs: vec![],
+                    functions: vec![],
+                    models: vec![],
+                    consts: vec![],
+                    type_aliases: vec![],
+                    traits: vec![],
+                    impls: vec![],
+                    brings: vec![],
+                    extern_fns: vec![],
+                },
+                vec![e],
+            )
         }
     }
 }
@@ -115,7 +121,11 @@ pub enum EmitKind {
 ///
 /// `sources` is a slice of `(module_name, source_code)` pairs.
 /// `main_module` is the name of the entry-point module.
-pub fn compile_multi(sources: &[(&str, &str)], main_module: &str, emit: EmitKind) -> Result<String, Error> {
+pub fn compile_multi(
+    sources: &[(&str, &str)],
+    main_module: &str,
+    emit: EmitKind,
+) -> Result<String, Error> {
     let main_ast = compile_multi_to_ast(sources, main_module)?;
     compile_ast(&main_ast, main_module, emit, 1_000_000, 500, None)
 }
@@ -138,12 +148,13 @@ pub fn compile_multi_to_ast(
     }
 
     // Remove the main module.
-    let mut main_ast = parsed.remove(main_module)
-        .ok_or_else(|| Error::Parse(crate::error::ParseError::UnexpectedToken {
+    let mut main_ast = parsed.remove(main_module).ok_or_else(|| {
+        Error::Parse(crate::error::ParseError::UnexpectedToken {
             expected: format!("module named '{}'", main_module),
             found: "not found".to_owned(),
             span: crate::parser::lexer::Span::at(0),
-        }))?;
+        })
+    })?;
 
     // BFS over brings; handles transitivity.
     let mut visited: HashSet<String> = HashSet::new();
@@ -159,18 +170,18 @@ pub fn compile_multi_to_ast(
 
     while let Some(key) = queue.pop_front() {
         // Try to resolve: first by File stem (look up in `parsed`), then by Stdlib.
-        let dep_ast_opt: Option<crate::parser::ast::AstModule> = if key.starts_with("std:") {
-            let lib_name = &key["std:".len()..];
-            crate::stdlib::stdlib_source(lib_name)
-                .map(|src| -> Result<_, Error> {
-                    let tokens = Lexer::new(src).tokenize()?;
-                    Ok(Parser::new(&tokens).parse_module()?)
-                })
-                .transpose()?
-        } else {
-            // Key is the stem name (e.g., "utils" from "utils.iris" or legacy "utils").
-            parsed.remove(key.as_str())
-        };
+        let dep_ast_opt: Option<crate::parser::ast::AstModule> =
+            if let Some(lib_name) = key.strip_prefix("std:") {
+                crate::stdlib::stdlib_source(lib_name)
+                    .map(|src| -> Result<_, Error> {
+                        let tokens = Lexer::new(src).tokenize()?;
+                        Ok(Parser::new(&tokens).parse_module()?)
+                    })
+                    .transpose()?
+            } else {
+                // Key is the stem name (e.g., "utils" from "utils.iris" or legacy "utils").
+                parsed.remove(key.as_str())
+            };
 
         if let Some(dep) = dep_ast_opt {
             // Enqueue dep's own brings.
@@ -190,7 +201,9 @@ pub fn compile_multi_to_ast(
             main_ast.structs.extend(dep.structs.iter().cloned());
             main_ast.enums.extend(dep.enums.iter().cloned());
             main_ast.consts.extend(dep.consts.iter().cloned());
-            main_ast.type_aliases.extend(dep.type_aliases.iter().cloned());
+            main_ast
+                .type_aliases
+                .extend(dep.type_aliases.iter().cloned());
             main_ast.traits.extend(dep.traits.iter().cloned());
             main_ast.impls.extend(dep.impls.iter().cloned());
         }
@@ -222,7 +235,10 @@ pub fn compile_ast_to_module(
     use crate::pass::infer_shapes;
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
-    use crate::pass::{ConstFoldPass, CsePass, DcePass, OpExpandPass, PassManager, ShapeCheckPass, StrengthReducePass};
+    use crate::pass::{
+        ConstFoldPass, CsePass, DcePass, OpExpandPass, PassManager, ShapeCheckPass,
+        StrengthReducePass,
+    };
 
     let mut ir_module = lower(ast_module, module_name)?;
     for model in &ast_module.models {
@@ -274,7 +290,10 @@ fn compile_ast(
     use crate::pass::infer_shapes;
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
-    use crate::pass::{ConstFoldPass, CsePass, DcePass, DeadNodePass, GraphPassManager, OpExpandPass, PassManager, ShapeCheckPass, StrengthReducePass};
+    use crate::pass::{
+        ConstFoldPass, CsePass, DcePass, DeadNodePass, GraphPassManager, OpExpandPass, PassManager,
+        ShapeCheckPass, StrengthReducePass,
+    };
 
     if emit == EmitKind::Graph {
         let mut out = String::new();
@@ -353,7 +372,10 @@ fn compile_ast(
                         detail: "no zero-argument function in module to evaluate".into(),
                     })
                 })?;
-            let opts = interp::InterpOptions { max_steps, max_depth };
+            let opts = interp::InterpOptions {
+                max_steps,
+                max_depth,
+            };
             let results = interp::eval_function_in_module_opts(&ir_module, func, &[], opts)?;
             let mut out = String::new();
             for val in &results {
@@ -387,7 +409,10 @@ pub fn compile_to_module(source: &str, module_name: &str) -> Result<IrModule, Er
     // Run passes identical to compile_ast.
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
-    use crate::pass::{ConstFoldPass, CsePass, DcePass, OpExpandPass, PassManager, ShapeCheckPass, StrengthReducePass};
+    use crate::pass::{
+        ConstFoldPass, CsePass, DcePass, OpExpandPass, PassManager, ShapeCheckPass,
+        StrengthReducePass,
+    };
     let mut pm = PassManager::new();
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
@@ -415,7 +440,10 @@ pub fn eval_ir_module(module: &IrModule) -> Result<String, Error> {
                 detail: "no zero-argument function in module".into(),
             })
         })?;
-    let opts = interp::InterpOptions { max_steps: 1_000_000, max_depth: 500 };
+    let opts = interp::InterpOptions {
+        max_steps: 1_000_000,
+        max_depth: 500,
+    };
     let results = interp::eval_function_in_module_opts(module, func, &[], opts)?;
     let mut out = String::new();
     for val in &results {
@@ -442,7 +470,11 @@ pub fn compile(source: &str, module_name: &str, emit: EmitKind) -> Result<String
 /// Compiles an IRIS source string and also returns dead-variable warnings.
 ///
 /// Returns `(output, warnings)` on success, or an `Error` on failure.
-pub fn compile_with_warnings(source: &str, module_name: &str, emit: EmitKind) -> Result<(String, Vec<IrWarning>), Error> {
+pub fn compile_with_warnings(
+    source: &str,
+    module_name: &str,
+    emit: EmitKind,
+) -> Result<(String, Vec<IrWarning>), Error> {
     use crate::parser::lexer::Lexer;
     use crate::parser::parse::Parser;
 
@@ -474,9 +506,12 @@ pub fn compile_with_opts(
 ///
 /// On success returns `Ok(output)`.  On failure returns `Err(diagnostic_string)`
 /// instead of a structured `Error`, making it easy to display to end-users.
-pub fn compile_with_diagnostics(source: &str, module_name: &str, emit: EmitKind) -> Result<String, String> {
-    compile(source, module_name, emit)
-        .map_err(|e| diagnostics::render_error(source, &e))
+pub fn compile_with_diagnostics(
+    source: &str,
+    module_name: &str,
+    emit: EmitKind,
+) -> Result<String, String> {
+    compile(source, module_name, emit).map_err(|e| diagnostics::render_error(source, &e))
 }
 
 /// Compiles an `.iris` file from disk, resolving all `bring` declarations
@@ -485,18 +520,22 @@ pub fn compile_with_diagnostics(source: &str, module_name: &str, emit: EmitKind)
 /// Uses `FileCompiler` from `src/compiler.rs` internally.
 pub fn compile_file(path: &std::path::Path, emit: EmitKind) -> Result<String, Error> {
     let main_ast = compiler::FileCompiler::new().compile_file_to_ast(path, &[])?;
-    let module_name = path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main");
+    let module_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("main");
     compile_ast(&main_ast, module_name, emit, 1_000_000, 500, None)
 }
 
 /// Compiles an `.iris` file with bring resolution, using the provided `source`
 /// text for the main file instead of reading it from disk.  Brings are still
 /// resolved from disk relative to `file_path`'s directory.
-pub fn compile_file_text(source: &str, file_path: &std::path::Path, emit: EmitKind) -> Result<String, Error> {
-    let main_ast = compiler::FileCompiler::new().compile_file_to_ast_with_text(file_path, source, &[])?;
-    let module_name = file_path.file_stem()
+pub fn compile_file_text(
+    source: &str,
+    file_path: &std::path::Path,
+    emit: EmitKind,
+) -> Result<String, Error> {
+    let main_ast =
+        compiler::FileCompiler::new().compile_file_to_ast_with_text(file_path, source, &[])?;
+    let module_name = file_path
+        .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("main");
     compile_ast(&main_ast, module_name, emit, 1_000_000, 500, None)
@@ -505,9 +544,7 @@ pub fn compile_file_text(source: &str, file_path: &std::path::Path, emit: EmitKi
 /// Like [`compile_file`] but returns the merged `IrModule` for further processing.
 pub fn compile_file_to_module(path: &std::path::Path) -> Result<IrModule, Error> {
     let main_ast = compiler::FileCompiler::new().compile_file_to_ast(path, &[])?;
-    let module_name = path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main");
+    let module_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("main");
     compile_ast_to_module(&main_ast, module_name, None)
 }
 
@@ -520,10 +557,15 @@ pub fn compile_file_with_full_opts(
     dump_ir_after: Option<&str>,
 ) -> Result<String, Error> {
     let main_ast = compiler::FileCompiler::new().compile_file_to_ast(path, &[])?;
-    let module_name = path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main");
-    compile_ast(&main_ast, module_name, emit, max_steps, max_depth, dump_ir_after)
+    let module_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("main");
+    compile_ast(
+        &main_ast,
+        module_name,
+        emit,
+        max_steps,
+        max_depth,
+        dump_ir_after,
+    )
 }
 
 /// Like [`compile_file_to_module`] but passes through `dump_ir_after`.
@@ -532,9 +574,7 @@ pub fn compile_file_to_module_with_opts(
     dump_ir_after: Option<&str>,
 ) -> Result<IrModule, Error> {
     let main_ast = compiler::FileCompiler::new().compile_file_to_ast(path, &[])?;
-    let module_name = path.file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("main");
+    let module_name = path.file_stem().and_then(|s| s.to_str()).unwrap_or("main");
     compile_ast_to_module(&main_ast, module_name, dump_ir_after)
 }
 
@@ -552,5 +592,12 @@ pub fn compile_with_full_opts(
 
     let tokens = Lexer::new(source).tokenize()?;
     let ast_module = Parser::new(&tokens).parse_module()?;
-    compile_ast(&ast_module, module_name, emit, max_steps, max_depth, dump_ir_after)
+    compile_ast(
+        &ast_module,
+        module_name,
+        emit,
+        max_steps,
+        max_depth,
+        dump_ir_after,
+    )
 }

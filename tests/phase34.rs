@@ -115,5 +115,9 @@ def f(a: i64, b: i64) -> i64 {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).expect("should compile");
-    assert!(ir.contains("band") || ir.contains("and"), "IR should contain band/and, got:\n{}", ir);
+    assert!(
+        ir.contains("band") || ir.contains("and"),
+        "IR should contain band/and, got:\n{}",
+        ir
+    );
 }

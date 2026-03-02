@@ -129,7 +129,10 @@ def gt(a: f32, b: f32) -> bool {
 
 #[test]
 fn test_type_infer_neg_on_bool_rejected() {
-    let params = vec![Param { name: "b".into(), ty: IrType::Scalar(DType::Bool) }];
+    let params = vec![Param {
+        name: "b".into(),
+        ty: IrType::Scalar(DType::Bool),
+    }];
     let mut builder = IrFunctionBuilder::new("bad", params, IrType::Scalar(DType::Bool));
     let entry = builder.create_block(Some("entry"));
     builder.set_current_block(entry);
@@ -144,7 +147,12 @@ fn test_type_infer_neg_on_bool_rejected() {
         },
         Some(IrType::Scalar(DType::Bool)),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let mut module = IrModule::new("test");
     module.add_function(builder.build()).unwrap();
@@ -152,7 +160,10 @@ fn test_type_infer_neg_on_bool_rejected() {
     let mut pm = PassManager::new();
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
-    assert!(pm.run(&mut module).is_err(), "TypeInferPass must reject neg on bool");
+    assert!(
+        pm.run(&mut module).is_err(),
+        "TypeInferPass must reject neg on bool"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -161,7 +172,10 @@ fn test_type_infer_neg_on_bool_rejected() {
 
 #[test]
 fn test_type_infer_not_on_float_rejected() {
-    let params = vec![Param { name: "x".into(), ty: IrType::Scalar(DType::F32) }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: IrType::Scalar(DType::F32),
+    }];
     let mut builder = IrFunctionBuilder::new("bad", params, IrType::Scalar(DType::Bool));
     let entry = builder.create_block(Some("entry"));
     builder.set_current_block(entry);
@@ -176,7 +190,12 @@ fn test_type_infer_not_on_float_rejected() {
         },
         Some(IrType::Scalar(DType::Bool)),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let mut module = IrModule::new("test");
     module.add_function(builder.build()).unwrap();
@@ -184,7 +203,10 @@ fn test_type_infer_not_on_float_rejected() {
     let mut pm = PassManager::new();
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
-    assert!(pm.run(&mut module).is_err(), "TypeInferPass must reject not on float");
+    assert!(
+        pm.run(&mut module).is_err(),
+        "TypeInferPass must reject not on float"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -197,7 +219,10 @@ fn test_einsum_shape_check_missing_arrow() {
         dtype: DType::F32,
         shape: Shape(vec![Dim::Literal(4), Dim::Literal(4)]),
     };
-    let params = vec![Param { name: "x".into(), ty: tensor_ty.clone() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: tensor_ty.clone(),
+    }];
     let mut builder = IrFunctionBuilder::new("bad", params, tensor_ty.clone());
     let entry = builder.create_block(Some("entry"));
     builder.set_current_block(entry);
@@ -206,13 +231,20 @@ fn test_einsum_shape_check_missing_arrow() {
     builder.push_instr(
         IrInstr::TensorOp {
             result,
-            op: TensorOp::Einsum { notation: "ij,jk".into() }, // missing "->"
+            op: TensorOp::Einsum {
+                notation: "ij,jk".into(),
+            }, // missing "->"
             inputs: vec![x_val],
             result_ty: tensor_ty.clone(),
         },
         Some(tensor_ty),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let mut module = IrModule::new("test");
     module.add_function(builder.build()).unwrap();
@@ -225,7 +257,10 @@ fn test_einsum_shape_check_missing_arrow() {
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
-    assert!(pm.run(&mut module).is_err(), "ShapeCheckPass must reject einsum without '->'");
+    assert!(
+        pm.run(&mut module).is_err(),
+        "ShapeCheckPass must reject einsum without '->'"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -238,7 +273,10 @@ fn test_einsum_shape_check_wrong_input_count() {
         dtype: DType::F32,
         shape: Shape(vec![Dim::Literal(4), Dim::Literal(4)]),
     };
-    let params = vec![Param { name: "x".into(), ty: tensor_ty.clone() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: tensor_ty.clone(),
+    }];
     let mut builder = IrFunctionBuilder::new("bad", params, tensor_ty.clone());
     let entry = builder.create_block(Some("entry"));
     builder.set_current_block(entry);
@@ -247,13 +285,20 @@ fn test_einsum_shape_check_wrong_input_count() {
     builder.push_instr(
         IrInstr::TensorOp {
             result,
-            op: TensorOp::Einsum { notation: "ij,jk->ik".into() }, // 2 specs, 1 input
+            op: TensorOp::Einsum {
+                notation: "ij,jk->ik".into(),
+            }, // 2 specs, 1 input
             inputs: vec![x_val],
             result_ty: tensor_ty.clone(),
         },
         Some(tensor_ty),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let mut module = IrModule::new("test");
     module.add_function(builder.build()).unwrap();
@@ -266,7 +311,10 @@ fn test_einsum_shape_check_wrong_input_count() {
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
-    assert!(pm.run(&mut module).is_err(), "ShapeCheckPass must reject einsum with wrong input count");
+    assert!(
+        pm.run(&mut module).is_err(),
+        "ShapeCheckPass must reject einsum with wrong input count"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -282,11 +330,16 @@ fn test_llvm_load_no_undef() {
         shape: Shape(vec![Dim::Literal(8)]),
     };
     let params = vec![
-        Param { name: "t".into(), ty: tensor_ty.clone() },
-        Param { name: "i".into(), ty: IrType::Scalar(DType::I64) },
+        Param {
+            name: "t".into(),
+            ty: tensor_ty.clone(),
+        },
+        Param {
+            name: "i".into(),
+            ty: IrType::Scalar(DType::I64),
+        },
     ];
-    let mut builder =
-        IrFunctionBuilder::new("loadtest", params, IrType::Scalar(DType::F32));
+    let mut builder = IrFunctionBuilder::new("loadtest", params, IrType::Scalar(DType::F32));
     let entry = builder.create_block(Some("entry"));
     builder.set_current_block(entry);
     let t_val = builder.add_block_param(entry, Some("t"), tensor_ty);
@@ -301,7 +354,12 @@ fn test_llvm_load_no_undef() {
         },
         Some(IrType::Scalar(DType::F32)),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let mut module = IrModule::new("test");
     module.add_function(builder.build()).unwrap();

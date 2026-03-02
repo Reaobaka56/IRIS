@@ -8,7 +8,11 @@ use iris::compile_to_module;
 fn test_data_layout_x86_64() {
     let layout = target_data_layout("x86_64-unknown-linux-gnu");
     assert!(!layout.is_empty());
-    assert!(layout.contains("i64:64"), "x86_64 layout should specify i64:64, got: {}", layout);
+    assert!(
+        layout.contains("i64:64"),
+        "x86_64 layout should specify i64:64, got: {}",
+        layout
+    );
 }
 
 // ── 2. data_layout for macos-arm64 is different from x86_64 ─────────────────
@@ -16,7 +20,10 @@ fn test_data_layout_x86_64() {
 fn test_data_layout_macos_arm64_differs() {
     let x64 = target_data_layout("x86_64-unknown-linux-gnu");
     let arm = target_data_layout("aarch64-apple-macosx14.0");
-    assert_ne!(x64, arm, "aarch64-apple and x86_64 should have different data layouts");
+    assert_ne!(
+        x64, arm,
+        "aarch64-apple and x86_64 should have different data layouts"
+    );
 }
 
 // ── 3. LLVM IR for linux-x64 contains x86_64 triple ─────────────────────────
@@ -80,8 +87,11 @@ fn test_all_presets_distinct() {
         "windows-arm64",
         "riscv64-linux",
     ];
-    let triples: Vec<&str> = presets.iter()
-        .map(|p| target_preset_to_triple(p).expect(&format!("preset '{}' should resolve", p)))
+    let triples: Vec<&str> = presets
+        .iter()
+        .map(|p| {
+            target_preset_to_triple(p).unwrap_or_else(|| panic!("preset '{}' should resolve", p))
+        })
         .collect();
     // All 7 triples must be distinct.
     let mut seen = std::collections::HashSet::new();

@@ -193,7 +193,7 @@ impl std::fmt::Display for Token {
             Token::Async => write!(f, "async"),
             Token::Await => write!(f, "await"),
             Token::Const => write!(f, "const"),
-            Token::Type  => write!(f, "type"),
+            Token::Type => write!(f, "type"),
             Token::Model => write!(f, "model"),
             Token::Layer => write!(f, "layer"),
             Token::Input => write!(f, "input"),
@@ -380,7 +380,10 @@ impl<'src> Lexer<'src> {
         }
 
         // `..=` inclusive range — must come before `..`
-        if ch == b'.' && self.peek2() == Some(b'.') && self.src.as_bytes().get(self.pos + 2) == Some(&b'=') {
+        if ch == b'.'
+            && self.peek2() == Some(b'.')
+            && self.src.as_bytes().get(self.pos + 2) == Some(&b'=')
+        {
             self.pos += 3;
             return Ok(Spanned {
                 node: Token::DotDotEq,
@@ -521,11 +524,26 @@ impl<'src> Lexer<'src> {
                 Some(b'\\') => {
                     self.advance();
                     match self.peek() {
-                        Some(b'n') => { self.advance(); raw.push('\n'); }
-                        Some(b't') => { self.advance(); raw.push('\t'); }
-                        Some(b'r') => { self.advance(); raw.push('\r'); }
-                        Some(b'"') => { self.advance(); raw.push('"'); }
-                        Some(b'\\') => { self.advance(); raw.push('\\'); }
+                        Some(b'n') => {
+                            self.advance();
+                            raw.push('\n');
+                        }
+                        Some(b't') => {
+                            self.advance();
+                            raw.push('\t');
+                        }
+                        Some(b'r') => {
+                            self.advance();
+                            raw.push('\r');
+                        }
+                        Some(b'"') => {
+                            self.advance();
+                            raw.push('"');
+                        }
+                        Some(b'\\') => {
+                            self.advance();
+                            raw.push('\\');
+                        }
                         other => {
                             return Err(ParseError::InvalidEscape {
                                 ch: other.map(|b| b as char),
@@ -547,23 +565,23 @@ impl<'src> Lexer<'src> {
     }
 
     fn lex_number(&mut self, start: u32) -> Result<Spanned<Token>, ParseError> {
-        while self.peek().map_or(false, |b| b.is_ascii_digit()) {
+        while self.peek().is_some_and(|b| b.is_ascii_digit()) {
             self.advance();
         }
         let is_float =
-            self.peek() == Some(b'.') && self.peek2().map_or(false, |b| b.is_ascii_digit());
+            self.peek() == Some(b'.') && self.peek2().is_some_and(|b| b.is_ascii_digit());
         if is_float {
             self.advance(); // consume '.'
-            while self.peek().map_or(false, |b| b.is_ascii_digit()) {
+            while self.peek().is_some_and(|b| b.is_ascii_digit()) {
                 self.advance();
             }
             // Optional exponent: e/E followed by optional +/- and digits
-            if self.peek().map_or(false, |b| b == b'e' || b == b'E') {
+            if self.peek().is_some_and(|b| b == b'e' || b == b'E') {
                 self.advance();
-                if self.peek().map_or(false, |b| b == b'+' || b == b'-') {
+                if self.peek().is_some_and(|b| b == b'+' || b == b'-') {
                     self.advance();
                 }
-                while self.peek().map_or(false, |b| b.is_ascii_digit()) {
+                while self.peek().is_some_and(|b| b.is_ascii_digit()) {
                     self.advance();
                 }
             }
@@ -592,7 +610,7 @@ impl<'src> Lexer<'src> {
     fn lex_ident_or_keyword(&mut self, start: u32) -> Spanned<Token> {
         while self
             .peek()
-            .map_or(false, |b| b.is_ascii_alphanumeric() || b == b'_')
+            .is_some_and(|b| b.is_ascii_alphanumeric() || b == b'_')
         {
             self.advance();
         }
@@ -620,10 +638,10 @@ impl<'src> Lexer<'src> {
             "async" => Token::Async,
             "await" => Token::Await,
             "const" => Token::Const,
-            "type"  => Token::Type,
+            "type" => Token::Type,
             "trait" => Token::Trait,
-            "impl"   => Token::Impl,
-            "pub"    => Token::Pub,
+            "impl" => Token::Impl,
+            "pub" => Token::Pub,
             "extern" => Token::Extern,
             "model" => Token::Model,
             "layer" => Token::Layer,

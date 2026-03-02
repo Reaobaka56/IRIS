@@ -59,7 +59,13 @@ fn strength_reduce_func(func: &mut IrFunction) {
                     known_consts.insert(*result, *value);
                     new_instrs.push(instr);
                 }
-                IrInstr::BinOp { result, op, lhs, rhs, ty } => {
+                IrInstr::BinOp {
+                    result,
+                    op,
+                    lhs,
+                    rhs,
+                    ty,
+                } => {
                     let lhs_const = known_consts.get(lhs).copied();
                     let rhs_const = known_consts.get(rhs).copied();
                     let ty = ty.clone();
@@ -108,7 +114,13 @@ fn strength_reduce_func(func: &mut IrFunction) {
                                     continue;
                                 }
                             }
-                            new_instrs.push(IrInstr::BinOp { result, op: BinOp::Mul, lhs, rhs, ty });
+                            new_instrs.push(IrInstr::BinOp {
+                                result,
+                                op: BinOp::Mul,
+                                lhs,
+                                rhs,
+                                ty,
+                            });
                         }
                         BinOp::Div => {
                             // x / 2^n → x >> n  (integer divide by positive power-of-2)
@@ -131,7 +143,13 @@ fn strength_reduce_func(func: &mut IrFunction) {
                                     continue;
                                 }
                             }
-                            new_instrs.push(IrInstr::BinOp { result, op: BinOp::Div, lhs, rhs, ty });
+                            new_instrs.push(IrInstr::BinOp {
+                                result,
+                                op: BinOp::Div,
+                                lhs,
+                                rhs,
+                                ty,
+                            });
                         }
                         BinOp::Sub => {
                             // x - x → 0
@@ -143,10 +161,22 @@ fn strength_reduce_func(func: &mut IrFunction) {
                                 });
                                 continue;
                             }
-                            new_instrs.push(IrInstr::BinOp { result, op: BinOp::Sub, lhs, rhs, ty });
+                            new_instrs.push(IrInstr::BinOp {
+                                result,
+                                op: BinOp::Sub,
+                                lhs,
+                                rhs,
+                                ty,
+                            });
                         }
                         _ => {
-                            new_instrs.push(IrInstr::BinOp { result, op: *op, lhs, rhs, ty });
+                            new_instrs.push(IrInstr::BinOp {
+                                result,
+                                op: *op,
+                                lhs,
+                                rhs,
+                                ty,
+                            });
                         }
                     }
                 }

@@ -166,6 +166,14 @@ def f() -> str {
 "#;
     let result = compile_multi(&[("main", src)], "main", EmitKind::Eval).unwrap();
     let trimmed = result.trim();
-    assert!(trimmed.starts_with("x,y"), "expected CSV starting with 'x,y', got: {}", trimmed);
-    assert!(trimmed.contains("1,2"), "expected row data '1,2' in CSV, got: {}", trimmed);
+    assert!(
+        trimmed.starts_with("x,y"),
+        "expected CSV starting with 'x,y', got: {}",
+        trimmed
+    );
+    assert!(
+        trimmed.contains("1,2"),
+        "expected row data '1,2' in CSV, got: {}",
+        trimmed
+    );
 }

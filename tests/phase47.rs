@@ -21,7 +21,8 @@ def f() -> i64 { add(3, 4) }
         &[("math", math_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "7");
 }
 
@@ -43,7 +44,8 @@ def f() -> i64 { double(21) }
         &[("util", util_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "42");
 }
 
@@ -65,7 +67,8 @@ def f() -> i64 { sum_of_squares(3, 4) }
         &[("math", math_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "25");
 }
 
@@ -91,7 +94,8 @@ def f() -> i64 {
         &[("types", types_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "11");
 }
 
@@ -116,7 +120,8 @@ def f() -> i64 { add(2, mul(3, 4)) }
         &[("math", math_src), ("utils", utils_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "14");
 }
 
@@ -137,7 +142,8 @@ def f() -> i64 { helper(9) }
         &[("math", math_src), ("main", main_src)],
         "main",
         EmitKind::Ir,
-    ).unwrap();
+    )
+    .unwrap();
     assert!(ir.contains("helper"), "expected 'helper' in IR:\n{}", ir);
 }
 
@@ -158,7 +164,8 @@ def f() -> i64 { helper(9) }
         &[("math", math_src), ("main", main_src)],
         "main",
         EmitKind::Llvm,
-    ).unwrap();
+    )
+    .unwrap();
     assert!(ll.contains("helper"), "expected 'helper' in LLVM:\n{}", ll);
 }
 
@@ -180,6 +187,7 @@ def f() -> i64 { get_max() }
         &[("config", config_src), ("main", main_src)],
         "main",
         EmitKind::Eval,
-    ).unwrap();
+    )
+    .unwrap();
     assert_eq!(result.trim(), "100");
 }

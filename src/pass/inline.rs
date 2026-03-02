@@ -1,54 +1,89 @@
-/// Phase 84: Function inlining pass.
-use std::collections::HashMap;
 use crate::ir::instr::IrInstr;
 use crate::ir::module::IrModule;
 use crate::ir::value::ValueId;
-use crate::pass::PassError;
 use crate::pass::opt::apply_replacements;
+use crate::pass::PassError;
+/// Phase 84: Function inlining pass.
+use std::collections::HashMap;
 
 pub struct InlinePass {
     pub max_instrs: usize,
 }
 
 impl Default for InlinePass {
-    fn default() -> Self { Self { max_instrs: 10 } }
+    fn default() -> Self {
+        Self { max_instrs: 10 }
+    }
 }
 
 impl super::Pass for InlinePass {
-    fn name(&self) -> &'static str { "inline" }
+    fn name(&self) -> &'static str {
+        "inline"
+    }
 
     fn run(&mut self, module: &mut IrModule) -> Result<(), PassError> {
         let threshold = self.max_instrs;
-        let inlineable: HashMap<String, usize> = module.functions.iter().enumerate()
+        let inlineable: HashMap<String, usize> = module
+            .functions
+            .iter()
+            .enumerate()
             .filter(|(_, f)| {
                 f.blocks.len() == 1 && {
-                    let non_term = f.blocks[0].instrs.iter().filter(|i| !i.is_terminator()).count();
+                    let non_term = f.blocks[0]
+                        .instrs
+                        .iter()
+                        .filter(|i| !i.is_terminator())
+                        .count();
                     non_term <= threshold
                 }
             })
             .map(|(idx, f)| (f.name.clone(), idx))
             .collect();
-        if inlineable.is_empty() { return Ok(()); }
+        if inlineable.is_empty() {
+            return Ok(());
+        }
 
         let num_functions = module.functions.len();
         for caller_idx in 0..num_functions {
             let num_blocks = module.functions[caller_idx].blocks.len();
             for block_idx in 0..num_blocks {
-                let instrs: Vec<IrInstr> =
-                    module.functions[caller_idx].blocks[block_idx].instrs.clone();
+                let instrs: Vec<IrInstr> = module.functions[caller_idx].blocks[block_idx]
+                    .instrs
+                    .clone();
                 let mut alias_map: HashMap<ValueId, ValueId> = HashMap::new();
                 let mut new_instrs: Vec<IrInstr> = Vec::new();
 
                 for mut instr in instrs {
-                    if !alias_map.is_empty() { apply_replacements(&mut instr, &alias_map); }
+                    if !alias_map.is_empty() {
+                        apply_replacements(&mut instr, &alias_map);
+                    }
 
-                    let inlined = if let IrInstr::Call { result: call_result, callee, args, .. } = &instr {
+                    let inlined = if let IrInstr::Call {
+                        result: call_result,
+                        callee,
+                        args,
+                        ..
+                    } = &instr
+                    {
                         if let Some(&callee_idx) = inlineable.get(callee) {
                             if callee_idx != caller_idx {
-                                Some(inline_call(module, caller_idx, callee_idx, args, call_result, &mut alias_map))
-                            } else { None }
-                        } else { None }
-                    } else { None };
+                                Some(inline_call(
+                                    module,
+                                    caller_idx,
+                                    callee_idx,
+                                    args,
+                                    call_result,
+                                    &mut alias_map,
+                                ))
+                            } else {
+                                None
+                            }
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
 
                     if let Some(mut extra) = inlined {
                         new_instrs.append(&mut extra);
@@ -73,14 +108,31 @@ fn inline_call(
 ) -> Vec<IrInstr> {
     let mut val_map: HashMap<ValueId, ValueId> = HashMap::new();
     let callee_params: Vec<ValueId> = module.functions[callee_idx].blocks[0]
-        .params.iter().map(|p| p.id).collect();
+        .params
+        .iter()
+        .map(|p| p.id)
+        .collect();
     for (i, pid) in callee_params.iter().enumerate() {
-        if i < args.len() { val_map.insert(*pid, args[i]); }
+        if i < args.len() {
+            val_map.insert(*pid, args[i]);
+        }
     }
-    let callee_instrs: Vec<IrInstr> = module.functions[callee_idx].blocks[0].instrs.iter()
-        .filter(|i| !i.is_terminator()).cloned().collect();
-    let callee_ret: Vec<ValueId> = module.functions[callee_idx].blocks[0].instrs.last()
-        .and_then(|i| if let IrInstr::Return { values } = i { Some(values.clone()) } else { None })
+    let callee_instrs: Vec<IrInstr> = module.functions[callee_idx].blocks[0]
+        .instrs
+        .iter()
+        .filter(|i| !i.is_terminator())
+        .cloned()
+        .collect();
+    let callee_ret: Vec<ValueId> = module.functions[callee_idx].blocks[0]
+        .instrs
+        .last()
+        .and_then(|i| {
+            if let IrInstr::Return { values } = i {
+                Some(values.clone())
+            } else {
+                None
+            }
+        })
         .unwrap_or_default();
 
     let mut emitted: Vec<IrInstr> = Vec::new();

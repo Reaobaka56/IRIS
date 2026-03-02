@@ -157,5 +157,9 @@ def f() -> bool {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
-    assert!(ir.contains("list_contains"), "expected list_contains in IR:\n{}", ir);
+    assert!(
+        ir.contains("list_contains"),
+        "expected list_contains in IR:\n{}",
+        ir
+    );
 }

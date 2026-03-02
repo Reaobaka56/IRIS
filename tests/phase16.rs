@@ -19,7 +19,11 @@ def f() -> i64 {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "var keyword should be accepted: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "var keyword should be accepted: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -35,8 +39,16 @@ def f() -> i64 { val x = 42; x }
 "#;
     let out_var = compile(src_var, "test", EmitKind::Ir).expect("var should compile");
     let out_val = compile(src_val, "test", EmitKind::Ir).expect("val should compile");
-    assert!(out_var.contains("const.i 42"), "var IR missing const: {}", out_var);
-    assert!(out_val.contains("const.i 42"), "val IR missing const: {}", out_val);
+    assert!(
+        out_var.contains("const.i 42"),
+        "var IR missing const: {}",
+        out_var
+    );
+    assert!(
+        out_val.contains("const.i 42"),
+        "val IR missing const: {}",
+        out_val
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -52,7 +64,11 @@ def f() -> i64 {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "ident assign should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "ident assign should compile: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -68,7 +84,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "2", "rebind should yield 2, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "2",
+        "rebind should yield 2, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +106,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "30", "last rebind should be 30, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "30",
+        "last rebind should be 30, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -120,7 +146,12 @@ def count() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "5", "counter should reach 5, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "5",
+        "counter should reach 5, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -18,8 +18,11 @@ def f() -> f64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile");
-    assert!(out.contains("make_grad") || out.contains("grad"),
-        "IR should contain grad instruction, got:\n{}", out);
+    assert!(
+        out.contains("make_grad") || out.contains("grad"),
+        "IR should contain grad instruction, got:\n{}",
+        out
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -34,7 +37,12 @@ def f() -> f64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "3", "grad(3.0).value should be 3, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "3",
+        "grad(3.0).value should be 3, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +57,12 @@ def f() -> f64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "1", "grad(5.0).grad should be 1 (seed), got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "1",
+        "grad(5.0).grad should be 1 (seed), got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -66,7 +79,12 @@ def f() -> f64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "7", "grad(3)+grad(4) value = 7, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "7",
+        "grad(3)+grad(4) value = 7, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -83,7 +101,12 @@ def f() -> f64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "2", "grad+grad tangent = 2, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "2",
+        "grad+grad tangent = 2, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -116,7 +139,12 @@ def f() -> f64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "16", "grad(4)*grad(4) value = 16, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "16",
+        "grad(4)*grad(4) value = 16, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

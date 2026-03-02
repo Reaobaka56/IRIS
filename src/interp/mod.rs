@@ -51,7 +51,10 @@ pub enum IrValue {
     /// Unit (void) value for side-effecting calls with no return.
     Unit,
     /// A dual number for forward-mode automatic differentiation.
-    Grad { value: f64, tangent: f64 },
+    Grad {
+        value: f64,
+        tangent: f64,
+    },
     /// A sparse representation: stores (index, value) pairs.
     Sparse(Vec<(usize, IrValue)>),
     /// A dynamic growable list (shared mutable).
@@ -115,7 +118,9 @@ impl fmt::Display for IrValue {
             IrValue::Array(elems) => {
                 write!(f, "[")?;
                 for (i, v) in elems.iter().enumerate() {
-                    if i > 0 { write!(f, ", ")?; }
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
                     write!(f, "{}", v)?;
                 }
                 write!(f, "]")
@@ -157,7 +162,16 @@ impl PartialEq for IrValue {
             (IrValue::Chan(a), IrValue::Chan(b)) => std::rc::Rc::ptr_eq(a, b),
             (IrValue::Atomic(a), IrValue::Atomic(b)) => std::rc::Rc::ptr_eq(a, b),
             (IrValue::Unit, IrValue::Unit) => true,
-            (IrValue::Grad { value: av, tangent: at }, IrValue::Grad { value: bv, tangent: bt }) => av == bv && at == bt,
+            (
+                IrValue::Grad {
+                    value: av,
+                    tangent: at,
+                },
+                IrValue::Grad {
+                    value: bv,
+                    tangent: bt,
+                },
+            ) => av == bv && at == bt,
             (IrValue::Sparse(a), IrValue::Sparse(b)) => a.len() == b.len(),
             (IrValue::List(a), IrValue::List(b)) => std::rc::Rc::ptr_eq(a, b),
             (IrValue::Map(a), IrValue::Map(b)) => std::rc::Rc::ptr_eq(a, b),
@@ -177,7 +191,10 @@ pub struct InterpOptions {
 
 impl Default for InterpOptions {
     fn default() -> Self {
-        Self { max_steps: 1_000_000, max_depth: 500 }
+        Self {
+            max_steps: 1_000_000,
+            max_depth: 500,
+        }
     }
 }
 
@@ -367,11 +384,11 @@ impl<'m> Interpreter<'m> {
                             IrType::Scalar(DType::I32) => IrValue::I32(*value as i32),
                             IrType::Scalar(DType::I64) => IrValue::I64(*value),
                             // Extended integer types: stored as I64 for interpreter purposes.
-                            IrType::Scalar(DType::U8)   => IrValue::I64((*value as u8) as i64),
-                            IrType::Scalar(DType::I8)   => IrValue::I64((*value as i8) as i64),
-                            IrType::Scalar(DType::U32)  => IrValue::I64((*value as u32) as i64),
-                            IrType::Scalar(DType::U64)  => IrValue::I64(*value),
-                            IrType::Scalar(DType::USize)=> IrValue::I64(*value),
+                            IrType::Scalar(DType::U8) => IrValue::I64((*value as u8) as i64),
+                            IrType::Scalar(DType::I8) => IrValue::I64((*value as i8) as i64),
+                            IrType::Scalar(DType::U32) => IrValue::I64((*value as u32) as i64),
+                            IrType::Scalar(DType::U64) => IrValue::I64(*value),
+                            IrType::Scalar(DType::USize) => IrValue::I64(*value),
                             _ => {
                                 return Err(InterpError::TypeError {
                                     detail: format!("ConstInt with type {}", ty),
@@ -553,7 +570,8 @@ impl<'m> Interpreter<'m> {
                                         ),
                                     });
                                 }
-                                let mut sub = Interpreter::new(self.module, self.opts, self.depth + 1);
+                                let mut sub =
+                                    Interpreter::new(self.module, self.opts, self.depth + 1);
                                 let ret = sub.run(callee_func, &call_args)?;
                                 if let Some(r) = result {
                                     if let Some(v) = ret.into_iter().next() {
@@ -615,7 +633,8 @@ impl<'m> Interpreter<'m> {
                             .iter()
                             .map(|&v| self.get(v))
                             .collect::<Result<Vec<_>, _>>()?;
-                        self.values.insert(*result, IrValue::Enum(*variant_idx, field_vals));
+                        self.values
+                            .insert(*result, IrValue::Enum(*variant_idx, field_vals));
                     }
 
                     IrInstr::SwitchVariant {
@@ -734,14 +753,22 @@ impl<'m> Interpreter<'m> {
                         self.values.insert(*result, IrValue::Array(vals));
                     }
 
-                    IrInstr::ArrayLoad { result, array, index, .. } => {
+                    IrInstr::ArrayLoad {
+                        result,
+                        array,
+                        index,
+                        ..
+                    } => {
                         let arr = self.get(*array)?;
                         let idx = match self.get(*index)? {
                             IrValue::I64(n) => n as usize,
                             IrValue::I32(n) => n as usize,
                             other => {
                                 return Err(InterpError::TypeError {
-                                    detail: format!("ArrayLoad index must be integer, got {:?}", other),
+                                    detail: format!(
+                                        "ArrayLoad index must be integer, got {:?}",
+                                        other
+                                    ),
                                 });
                             }
                         };
@@ -749,7 +776,11 @@ impl<'m> Interpreter<'m> {
                             IrValue::Array(elems) => {
                                 let val = elems.get(idx).cloned().ok_or_else(|| {
                                     InterpError::Unsupported {
-                                        detail: format!("array index {} out of bounds ({} elements)", idx, elems.len()),
+                                        detail: format!(
+                                            "array index {} out of bounds ({} elements)",
+                                            idx,
+                                            elems.len()
+                                        ),
                                     }
                                 })?;
                                 self.values.insert(*result, val);
@@ -762,14 +793,21 @@ impl<'m> Interpreter<'m> {
                         }
                     }
 
-                    IrInstr::ArrayStore { array, index, value } => {
+                    IrInstr::ArrayStore {
+                        array,
+                        index,
+                        value,
+                    } => {
                         let arr = self.get(*array)?;
                         let idx = match self.get(*index)? {
                             IrValue::I64(n) => n as usize,
                             IrValue::I32(n) => n as usize,
                             other => {
                                 return Err(InterpError::TypeError {
-                                    detail: format!("ArrayStore index must be integer, got {:?}", other),
+                                    detail: format!(
+                                        "ArrayStore index must be integer, got {:?}",
+                                        other
+                                    ),
                                 });
                             }
                         };
@@ -778,7 +816,11 @@ impl<'m> Interpreter<'m> {
                             IrValue::Array(mut elems) => {
                                 if idx >= elems.len() {
                                     return Err(InterpError::Unsupported {
-                                        detail: format!("array index {} out of bounds ({} elements)", idx, elems.len()),
+                                        detail: format!(
+                                            "array index {} out of bounds ({} elements)",
+                                            idx,
+                                            elems.len()
+                                        ),
                                     });
                                 }
                                 elems[idx] = val;
@@ -834,89 +876,155 @@ impl<'m> Interpreter<'m> {
                         }
                     }
 
-                    IrInstr::StrContains { result, haystack, needle } => {
+                    IrInstr::StrContains {
+                        result,
+                        haystack,
+                        needle,
+                    } => {
                         let h = self.get(*haystack)?;
                         let n = self.get(*needle)?;
                         match (h, n) {
                             (IrValue::Str(hs), IrValue::Str(ns)) => {
-                                self.values.insert(*result, IrValue::Bool(hs.contains(ns.as_str())));
+                                self.values
+                                    .insert(*result, IrValue::Bool(hs.contains(ns.as_str())));
                             }
-                            other => return Err(InterpError::TypeError { detail: format!("StrContains on non-strings: {:?}", other) }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrContains on non-strings: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::StrStartsWith { result, haystack, prefix } => {
+                    IrInstr::StrStartsWith {
+                        result,
+                        haystack,
+                        prefix,
+                    } => {
                         let h = self.get(*haystack)?;
                         let p = self.get(*prefix)?;
                         match (h, p) {
                             (IrValue::Str(hs), IrValue::Str(ps)) => {
-                                self.values.insert(*result, IrValue::Bool(hs.starts_with(ps.as_str())));
+                                self.values
+                                    .insert(*result, IrValue::Bool(hs.starts_with(ps.as_str())));
                             }
-                            other => return Err(InterpError::TypeError { detail: format!("StrStartsWith on non-strings: {:?}", other) }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrStartsWith on non-strings: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::StrEndsWith { result, haystack, suffix } => {
+                    IrInstr::StrEndsWith {
+                        result,
+                        haystack,
+                        suffix,
+                    } => {
                         let h = self.get(*haystack)?;
                         let s = self.get(*suffix)?;
                         match (h, s) {
                             (IrValue::Str(hs), IrValue::Str(ss)) => {
-                                self.values.insert(*result, IrValue::Bool(hs.ends_with(ss.as_str())));
+                                self.values
+                                    .insert(*result, IrValue::Bool(hs.ends_with(ss.as_str())));
                             }
-                            other => return Err(InterpError::TypeError { detail: format!("StrEndsWith on non-strings: {:?}", other) }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrEndsWith on non-strings: {:?}", other),
+                                })
+                            }
                         }
                     }
 
                     IrInstr::StrToUpper { result, operand } => {
                         let v = self.get(*operand)?;
                         match v {
-                            IrValue::Str(s) => { self.values.insert(*result, IrValue::Str(s.to_uppercase())); }
-                            other => return Err(InterpError::TypeError { detail: format!("StrToUpper on non-string: {:?}", other) }),
+                            IrValue::Str(s) => {
+                                self.values.insert(*result, IrValue::Str(s.to_uppercase()));
+                            }
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrToUpper on non-string: {:?}", other),
+                                })
+                            }
                         }
                     }
 
                     IrInstr::StrToLower { result, operand } => {
                         let v = self.get(*operand)?;
                         match v {
-                            IrValue::Str(s) => { self.values.insert(*result, IrValue::Str(s.to_lowercase())); }
-                            other => return Err(InterpError::TypeError { detail: format!("StrToLower on non-string: {:?}", other) }),
+                            IrValue::Str(s) => {
+                                self.values.insert(*result, IrValue::Str(s.to_lowercase()));
+                            }
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrToLower on non-string: {:?}", other),
+                                })
+                            }
                         }
                     }
 
                     IrInstr::StrTrim { result, operand } => {
                         let v = self.get(*operand)?;
                         match v {
-                            IrValue::Str(s) => { self.values.insert(*result, IrValue::Str(s.trim().to_string())); }
-                            other => return Err(InterpError::TypeError { detail: format!("StrTrim on non-string: {:?}", other) }),
+                            IrValue::Str(s) => {
+                                self.values
+                                    .insert(*result, IrValue::Str(s.trim().to_string()));
+                            }
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrTrim on non-string: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::StrRepeat { result, operand, count } => {
+                    IrInstr::StrRepeat {
+                        result,
+                        operand,
+                        count,
+                    } => {
                         let sv = self.get(*operand)?;
                         let cv = self.get(*count)?;
                         match (sv, cv) {
                             (IrValue::Str(s), IrValue::I64(n)) => {
-                                self.values.insert(*result, IrValue::Str(s.repeat(n.max(0) as usize)));
+                                self.values
+                                    .insert(*result, IrValue::Str(s.repeat(n.max(0) as usize)));
                             }
-                            other => return Err(InterpError::TypeError { detail: format!("StrRepeat invalid args: {:?}", other) }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("StrRepeat invalid args: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::ParFor { start, end, body_fn, args, .. } => {
+                    IrInstr::ParFor {
+                        start,
+                        end,
+                        body_fn,
+                        args,
+                        ..
+                    } => {
                         // Sequential simulation of par for.
                         let s = match self.get(*start)? {
                             IrValue::I64(n) => n,
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("ParFor start must be i64, got {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("ParFor start must be i64, got {:?}", other),
+                                })
+                            }
                         };
                         let e = match self.get(*end)? {
                             IrValue::I64(n) => n,
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("ParFor end must be i64, got {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("ParFor end must be i64, got {:?}", other),
+                                })
+                            }
                         };
-                        let callee = self.module
+                        let callee = self
+                            .module
                             .and_then(|m| m.function_by_name(body_fn))
                             .ok_or_else(|| InterpError::Unsupported {
                                 detail: format!("undefined par_for function: {}", body_fn),
@@ -936,7 +1044,9 @@ impl<'m> Interpreter<'m> {
                     }
 
                     IrInstr::ChanNew { result, .. } => {
-                        let q = std::rc::Rc::new(std::cell::RefCell::new(std::collections::VecDeque::new()));
+                        let q = std::rc::Rc::new(std::cell::RefCell::new(
+                            std::collections::VecDeque::new(),
+                        ));
                         self.values.insert(*result, IrValue::Chan(q));
                     }
 
@@ -945,9 +1055,11 @@ impl<'m> Interpreter<'m> {
                         let v = self.get(*value)?;
                         match ch {
                             IrValue::Chan(q) => q.borrow_mut().push_back(v),
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("ChanSend on non-channel: {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("ChanSend on non-channel: {:?}", other),
+                                })
+                            }
                         }
                     }
 
@@ -955,20 +1067,25 @@ impl<'m> Interpreter<'m> {
                         let ch = self.get(*chan)?;
                         match ch {
                             IrValue::Chan(q) => {
-                                let v = q.borrow_mut().pop_front().ok_or_else(|| InterpError::Unsupported {
-                                    detail: "recv on empty channel".into(),
+                                let v = q.borrow_mut().pop_front().ok_or_else(|| {
+                                    InterpError::Unsupported {
+                                        detail: "recv on empty channel".into(),
+                                    }
                                 })?;
                                 self.values.insert(*result, v);
                             }
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("ChanRecv on non-channel: {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("ChanRecv on non-channel: {:?}", other),
+                                })
+                            }
                         }
                     }
 
                     IrInstr::Spawn { body_fn, args } => {
                         // Simulate spawn sequentially.
-                        let callee = self.module
+                        let callee = self
+                            .module
                             .and_then(|m| m.function_by_name(body_fn))
                             .ok_or_else(|| InterpError::Unsupported {
                                 detail: format!("undefined spawn function: {}", body_fn),
@@ -982,7 +1099,11 @@ impl<'m> Interpreter<'m> {
                         sub.run(&callee, &call_args)?;
                     }
 
-                    IrInstr::AtomicNew { result, value, result_ty } => {
+                    IrInstr::AtomicNew {
+                        result,
+                        value,
+                        result_ty,
+                    } => {
                         let v = self.get(*value)?;
                         let cell = std::rc::Rc::new(std::cell::RefCell::new(v));
                         let _ = result_ty;
@@ -995,9 +1116,11 @@ impl<'m> Interpreter<'m> {
                             IrValue::Atomic(cell) => {
                                 self.values.insert(*result, cell.borrow().clone());
                             }
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("AtomicLoad on non-atomic: {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("AtomicLoad on non-atomic: {:?}", other),
+                                })
+                            }
                         }
                     }
 
@@ -1005,14 +1128,23 @@ impl<'m> Interpreter<'m> {
                         let v = self.get(*value)?;
                         let a = self.get(*atomic)?;
                         match a {
-                            IrValue::Atomic(cell) => { *cell.borrow_mut() = v; }
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("AtomicStore on non-atomic: {:?}", other),
-                            }),
+                            IrValue::Atomic(cell) => {
+                                *cell.borrow_mut() = v;
+                            }
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("AtomicStore on non-atomic: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::AtomicAdd { result, atomic, value, .. } => {
+                    IrInstr::AtomicAdd {
+                        result,
+                        atomic,
+                        value,
+                        ..
+                    } => {
                         let v = self.get(*value)?;
                         let a = self.get(*atomic)?;
                         match a {
@@ -1023,20 +1155,28 @@ impl<'m> Interpreter<'m> {
                                     (IrValue::I32(a), IrValue::I32(b)) => IrValue::I32(a + b),
                                     (IrValue::F32(a), IrValue::F32(b)) => IrValue::F32(a + b),
                                     (IrValue::F64(a), IrValue::F64(b)) => IrValue::F64(a + b),
-                                    _ => return Err(InterpError::TypeError {
-                                        detail: "AtomicAdd on non-numeric".into(),
-                                    }),
+                                    _ => {
+                                        return Err(InterpError::TypeError {
+                                            detail: "AtomicAdd on non-numeric".into(),
+                                        })
+                                    }
                                 };
                                 *cell.borrow_mut() = new_val.clone();
                                 self.values.insert(*result, new_val);
                             }
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("AtomicAdd on non-atomic: {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("AtomicAdd on non-atomic: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::MutexNew { result, value, result_ty } => {
+                    IrInstr::MutexNew {
+                        result,
+                        value,
+                        result_ty,
+                    } => {
                         let v = self.get(*value)?;
                         let cell = std::rc::Rc::new(std::cell::RefCell::new(v));
                         let _ = result_ty;
@@ -1049,9 +1189,11 @@ impl<'m> Interpreter<'m> {
                             IrValue::Atomic(cell) => {
                                 self.values.insert(*result, cell.borrow().clone());
                             }
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("MutexLock on non-mutex: {:?}", other),
-                            }),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("MutexLock on non-mutex: {:?}", other),
+                                })
+                            }
                         }
                     }
 
@@ -1059,11 +1201,15 @@ impl<'m> Interpreter<'m> {
                         // No-op in single-threaded interpreter.
                     }
 
-                    IrInstr::Sparsify { result, operand, .. } => {
+                    IrInstr::Sparsify {
+                        result, operand, ..
+                    } => {
                         // Convert an Array to sparse (index, value) pairs of non-zero elements.
                         let v = self.get(*operand)?;
                         let pairs = match v {
-                            IrValue::Array(elems) => elems.iter().enumerate()
+                            IrValue::Array(elems) => elems
+                                .iter()
+                                .enumerate()
                                 .filter(|(_, e)| match e {
                                     IrValue::I64(0) | IrValue::I32(0) => false,
                                     IrValue::F32(f) => *f != 0.0,
@@ -1077,7 +1223,9 @@ impl<'m> Interpreter<'m> {
                         self.values.insert(*result, IrValue::Sparse(pairs));
                     }
 
-                    IrInstr::Densify { result, operand, .. } => {
+                    IrInstr::Densify {
+                        result, operand, ..
+                    } => {
                         // Convert sparse back to an i64 count of non-zero elements (simplified).
                         let v = self.get(*operand)?;
                         let count = match v {
@@ -1092,33 +1240,87 @@ impl<'m> Interpreter<'m> {
                         // No-op in single-threaded interpreter.
                     }
 
-                    IrInstr::MakeGrad { result, value, tangent, .. } => {
+                    IrInstr::MakeGrad {
+                        result,
+                        value,
+                        tangent,
+                        ..
+                    } => {
                         let v = self.get(*value)?;
                         let t = self.get(*tangent)?;
-                        let vf = match v { IrValue::F64(x) => x, IrValue::F32(x) => x as f64, IrValue::I64(x) => x as f64, IrValue::I32(x) => x as f64, other => return Err(InterpError::TypeError { detail: format!("MakeGrad value must be numeric, got {:?}", other) }) };
-                        let tf = match t { IrValue::F64(x) => x, IrValue::F32(x) => x as f64, IrValue::I64(x) => x as f64, IrValue::I32(x) => x as f64, other => return Err(InterpError::TypeError { detail: format!("MakeGrad tangent must be numeric, got {:?}", other) }) };
-                        self.values.insert(*result, IrValue::Grad { value: vf, tangent: tf });
+                        let vf = match v {
+                            IrValue::F64(x) => x,
+                            IrValue::F32(x) => x as f64,
+                            IrValue::I64(x) => x as f64,
+                            IrValue::I32(x) => x as f64,
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!(
+                                        "MakeGrad value must be numeric, got {:?}",
+                                        other
+                                    ),
+                                })
+                            }
+                        };
+                        let tf = match t {
+                            IrValue::F64(x) => x,
+                            IrValue::F32(x) => x as f64,
+                            IrValue::I64(x) => x as f64,
+                            IrValue::I32(x) => x as f64,
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!(
+                                        "MakeGrad tangent must be numeric, got {:?}",
+                                        other
+                                    ),
+                                })
+                            }
+                        };
+                        self.values.insert(
+                            *result,
+                            IrValue::Grad {
+                                value: vf,
+                                tangent: tf,
+                            },
+                        );
                     }
 
-                    IrInstr::GradValue { result, operand, .. } => {
+                    IrInstr::GradValue {
+                        result, operand, ..
+                    } => {
                         let v = self.get(*operand)?;
                         match v {
-                            IrValue::Grad { value, .. } => { self.values.insert(*result, IrValue::F64(value)); }
-                            other => return Err(InterpError::TypeError { detail: format!("GradValue on non-grad: {:?}", other) }),
+                            IrValue::Grad { value, .. } => {
+                                self.values.insert(*result, IrValue::F64(value));
+                            }
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("GradValue on non-grad: {:?}", other),
+                                })
+                            }
                         }
                     }
 
-                    IrInstr::GradTangent { result, operand, .. } => {
+                    IrInstr::GradTangent {
+                        result, operand, ..
+                    } => {
                         let v = self.get(*operand)?;
                         match v {
-                            IrValue::Grad { tangent, .. } => { self.values.insert(*result, IrValue::F64(tangent)); }
-                            other => return Err(InterpError::TypeError { detail: format!("GradTangent on non-grad: {:?}", other) }),
+                            IrValue::Grad { tangent, .. } => {
+                                self.values.insert(*result, IrValue::F64(tangent));
+                            }
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("GradTangent on non-grad: {:?}", other),
+                                })
+                            }
                         }
                     }
 
                     IrInstr::MakeSome { result, value, .. } => {
                         let v = self.get(*value)?;
-                        self.values.insert(*result, IrValue::OptionVal(Some(Box::new(v))));
+                        self.values
+                            .insert(*result, IrValue::OptionVal(Some(Box::new(v))));
                     }
 
                     IrInstr::MakeNone { result, .. } => {
@@ -1131,32 +1333,34 @@ impl<'m> Interpreter<'m> {
                         self.values.insert(*result, IrValue::Bool(b));
                     }
 
-                    IrInstr::OptionUnwrap { result, operand, .. } => {
-                        match self.get(*operand)? {
-                            IrValue::OptionVal(Some(inner)) => {
-                                self.values.insert(*result, *inner);
-                            }
-                            IrValue::OptionVal(None) => {
-                                return Err(InterpError::Unsupported {
-                                    detail: "unwrap called on none".into(),
-                                });
-                            }
-                            other => {
-                                return Err(InterpError::TypeError {
-                                    detail: format!("OptionUnwrap on non-option: {:?}", other),
-                                });
-                            }
+                    IrInstr::OptionUnwrap {
+                        result, operand, ..
+                    } => match self.get(*operand)? {
+                        IrValue::OptionVal(Some(inner)) => {
+                            self.values.insert(*result, *inner);
                         }
-                    }
+                        IrValue::OptionVal(None) => {
+                            return Err(InterpError::Unsupported {
+                                detail: "unwrap called on none".into(),
+                            });
+                        }
+                        other => {
+                            return Err(InterpError::TypeError {
+                                detail: format!("OptionUnwrap on non-option: {:?}", other),
+                            });
+                        }
+                    },
 
                     IrInstr::MakeOk { result, value, .. } => {
                         let v = self.get(*value)?;
-                        self.values.insert(*result, IrValue::ResultVal(Ok(Box::new(v))));
+                        self.values
+                            .insert(*result, IrValue::ResultVal(Ok(Box::new(v))));
                     }
 
                     IrInstr::MakeErr { result, value, .. } => {
                         let v = self.get(*value)?;
-                        self.values.insert(*result, IrValue::ResultVal(Err(Box::new(v))));
+                        self.values
+                            .insert(*result, IrValue::ResultVal(Err(Box::new(v))));
                     }
 
                     IrInstr::IsOk { result, operand } => {
@@ -1165,43 +1369,48 @@ impl<'m> Interpreter<'m> {
                         self.values.insert(*result, IrValue::Bool(b));
                     }
 
-                    IrInstr::ResultUnwrap { result, operand, .. } => {
-                        match self.get(*operand)? {
-                            IrValue::ResultVal(Ok(inner)) => {
-                                self.values.insert(*result, *inner);
-                            }
-                            IrValue::ResultVal(Err(_)) => {
-                                return Err(InterpError::Unsupported {
-                                    detail: "result_unwrap called on err".into(),
-                                });
-                            }
-                            other => {
-                                return Err(InterpError::TypeError {
-                                    detail: format!("ResultUnwrap on non-result: {:?}", other),
-                                });
-                            }
+                    IrInstr::ResultUnwrap {
+                        result, operand, ..
+                    } => match self.get(*operand)? {
+                        IrValue::ResultVal(Ok(inner)) => {
+                            self.values.insert(*result, *inner);
                         }
-                    }
-
-                    IrInstr::ResultUnwrapErr { result, operand, .. } => {
-                        match self.get(*operand)? {
-                            IrValue::ResultVal(Err(inner)) => {
-                                self.values.insert(*result, *inner);
-                            }
-                            IrValue::ResultVal(Ok(_)) => {
-                                return Err(InterpError::Unsupported {
-                                    detail: "result_unwrap_err called on ok".into(),
-                                });
-                            }
-                            other => {
-                                return Err(InterpError::TypeError {
-                                    detail: format!("ResultUnwrapErr on non-result: {:?}", other),
-                                });
-                            }
+                        IrValue::ResultVal(Err(_)) => {
+                            return Err(InterpError::Unsupported {
+                                detail: "result_unwrap called on err".into(),
+                            });
                         }
-                    }
+                        other => {
+                            return Err(InterpError::TypeError {
+                                detail: format!("ResultUnwrap on non-result: {:?}", other),
+                            });
+                        }
+                    },
 
-                    IrInstr::MakeClosure { result, fn_name, captures, result_ty } => {
+                    IrInstr::ResultUnwrapErr {
+                        result, operand, ..
+                    } => match self.get(*operand)? {
+                        IrValue::ResultVal(Err(inner)) => {
+                            self.values.insert(*result, *inner);
+                        }
+                        IrValue::ResultVal(Ok(_)) => {
+                            return Err(InterpError::Unsupported {
+                                detail: "result_unwrap_err called on ok".into(),
+                            });
+                        }
+                        other => {
+                            return Err(InterpError::TypeError {
+                                detail: format!("ResultUnwrapErr on non-result: {:?}", other),
+                            });
+                        }
+                    },
+
+                    IrInstr::MakeClosure {
+                        result,
+                        fn_name,
+                        captures,
+                        result_ty,
+                    } => {
                         let captured_vals: Vec<IrValue> = captures
                             .iter()
                             .map(|v| self.get(*v))
@@ -1216,15 +1425,25 @@ impl<'m> Interpreter<'m> {
                         );
                     }
 
-                    IrInstr::CallClosure { result, closure, args, result_ty } => {
+                    IrInstr::CallClosure {
+                        result,
+                        closure,
+                        args,
+                        result_ty,
+                    } => {
                         let closure_val = self.get(*closure)?;
                         let (fn_name, captured) = match closure_val {
-                            IrValue::Closure { fn_name, captured, .. } => (fn_name, captured),
-                            other => return Err(InterpError::TypeError {
-                                detail: format!("CallClosure on non-closure: {:?}", other),
-                            }),
+                            IrValue::Closure {
+                                fn_name, captured, ..
+                            } => (fn_name, captured),
+                            other => {
+                                return Err(InterpError::TypeError {
+                                    detail: format!("CallClosure on non-closure: {:?}", other),
+                                })
+                            }
                         };
-                        let callee = self.module
+                        let callee = self
+                            .module
                             .and_then(|m| m.function_by_name(&fn_name))
                             .ok_or_else(|| InterpError::Unsupported {
                                 detail: format!("undefined closure function: {}", fn_name),
@@ -1245,7 +1464,8 @@ impl<'m> Interpreter<'m> {
                         let mut sub = Interpreter::new(self.module, self.opts, self.depth + 1);
                         let ret = sub.run(&callee, &call_args)?;
                         if let Some(r) = result {
-                            self.values.insert(*r, ret.into_iter().next().unwrap_or(IrValue::Unit));
+                            self.values
+                                .insert(*r, ret.into_iter().next().unwrap_or(IrValue::Unit));
                         }
                         let _ = result_ty;
                     }
@@ -1302,7 +1522,9 @@ impl<'m> Interpreter<'m> {
                     }
 
                     IrInstr::Panic { msg } => {
-                        let msg_val = self.values.get(msg)
+                        let msg_val = self
+                            .values
+                            .get(msg)
                             .cloned()
                             .ok_or(InterpError::UndefinedValue { id: msg.0 })?;
                         let msg_str = match &msg_val {
@@ -1339,10 +1561,8 @@ impl<'m> Interpreter<'m> {
                                 detail: format!("read_i64 failed: {}", e),
                             }
                         })?;
-                        let n: i64 = line.trim().parse().map_err(|e| {
-                            InterpError::Unsupported {
-                                detail: format!("read_i64 parse error: {}", e),
-                            }
+                        let n: i64 = line.trim().parse().map_err(|e| InterpError::Unsupported {
+                            detail: format!("read_i64 parse error: {}", e),
                         })?;
                         self.values.insert(*result, IrValue::I64(n));
                     }
@@ -1354,10 +1574,8 @@ impl<'m> Interpreter<'m> {
                                 detail: format!("read_f64 failed: {}", e),
                             }
                         })?;
-                        let x: f64 = line.trim().parse().map_err(|e| {
-                            InterpError::Unsupported {
-                                detail: format!("read_f64 parse error: {}", e),
-                            }
+                        let x: f64 = line.trim().parse().map_err(|e| InterpError::Unsupported {
+                            detail: format!("read_f64 parse error: {}", e),
                         })?;
                         self.values.insert(*result, IrValue::F64(x));
                     }
@@ -1368,7 +1586,9 @@ impl<'m> Interpreter<'m> {
                             IrValue::Str(s) => s.clone(),
                             other => format!("{}", other),
                         };
-                        let opt = s.trim().parse::<i64>()
+                        let opt = s
+                            .trim()
+                            .parse::<i64>()
                             .ok()
                             .map(|n| Box::new(IrValue::I64(n)));
                         self.values.insert(*result, IrValue::OptionVal(opt));
@@ -1380,50 +1600,115 @@ impl<'m> Interpreter<'m> {
                             IrValue::Str(s) => s.clone(),
                             other => format!("{}", other),
                         };
-                        let opt = s.trim().parse::<f64>()
+                        let opt = s
+                            .trim()
+                            .parse::<f64>()
                             .ok()
                             .map(|x| Box::new(IrValue::F64(x)));
                         self.values.insert(*result, IrValue::OptionVal(opt));
                     }
 
-                    IrInstr::StrIndex { result, string, index } => {
+                    IrInstr::StrIndex {
+                        result,
+                        string,
+                        index,
+                    } => {
                         let sv = self.get(*string)?;
                         let iv = self.get(*index)?;
-                        let s = match &sv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
-                        let idx = match &iv { IrValue::I64(n) => *n, _ => return Err(InterpError::TypeError { detail: "str_index index must be i64".into() }) };
-                        let byte = s.as_bytes().get(idx as usize)
+                        let s = match &sv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let idx = match &iv {
+                            IrValue::I64(n) => *n,
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "str_index index must be i64".into(),
+                                })
+                            }
+                        };
+                        let byte = s
+                            .as_bytes()
+                            .get(idx as usize)
                             .ok_or(InterpError::IndexOutOfBounds { idx, len: s.len() })?;
                         self.values.insert(*result, IrValue::I64(*byte as i64));
                     }
 
-                    IrInstr::StrSlice { result, string, start, end } => {
+                    IrInstr::StrSlice {
+                        result,
+                        string,
+                        start,
+                        end,
+                    } => {
                         let sv = self.get(*string)?;
                         let startv = self.get(*start)?;
                         let endv = self.get(*end)?;
-                        let s = match &sv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
-                        let start_idx = match &startv { IrValue::I64(n) => *n as usize, _ => return Err(InterpError::TypeError { detail: "slice start must be i64".into() }) };
-                        let end_idx = match &endv { IrValue::I64(n) => *n as usize, _ => return Err(InterpError::TypeError { detail: "slice end must be i64".into() }) };
+                        let s = match &sv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let start_idx = match &startv {
+                            IrValue::I64(n) => *n as usize,
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "slice start must be i64".into(),
+                                })
+                            }
+                        };
+                        let end_idx = match &endv {
+                            IrValue::I64(n) => *n as usize,
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "slice end must be i64".into(),
+                                })
+                            }
+                        };
                         let slice = s.get(start_idx..end_idx).unwrap_or("").to_owned();
                         self.values.insert(*result, IrValue::Str(slice));
                     }
 
-                    IrInstr::StrFind { result, haystack, needle } => {
+                    IrInstr::StrFind {
+                        result,
+                        haystack,
+                        needle,
+                    } => {
                         let hv = self.get(*haystack)?;
                         let nv = self.get(*needle)?;
-                        let h = match &hv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
-                        let n = match &nv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
+                        let h = match &hv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let n = match &nv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
                         let opt = h.find(&*n).map(|i| Box::new(IrValue::I64(i as i64)));
                         self.values.insert(*result, IrValue::OptionVal(opt));
                     }
 
-                    IrInstr::StrReplace { result, string, from, to } => {
+                    IrInstr::StrReplace {
+                        result,
+                        string,
+                        from,
+                        to,
+                    } => {
                         let sv = self.get(*string)?;
                         let fv = self.get(*from)?;
                         let tv = self.get(*to)?;
-                        let s = match &sv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
-                        let f = match &fv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
-                        let t = match &tv { IrValue::Str(s) => s.clone(), other => format!("{}", other) };
-                        self.values.insert(*result, IrValue::Str(s.replace(&*f, &*t)));
+                        let s = match &sv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let f = match &fv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        let t = match &tv {
+                            IrValue::Str(s) => s.clone(),
+                            other => format!("{}", other),
+                        };
+                        self.values
+                            .insert(*result, IrValue::Str(s.replace(&*f, &t)));
                     }
 
                     IrInstr::ListNew { result, .. } => {
@@ -1437,60 +1722,105 @@ impl<'m> Interpreter<'m> {
                             cells.borrow_mut().push(v);
                             self.values.insert(*list, IrValue::List(cells));
                         } else {
-                            return Err(InterpError::TypeError { detail: "list_push: not a list".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "list_push: not a list".into(),
+                            });
                         }
                     }
                     IrInstr::ListLen { result, list } => {
                         let lv = self.get(*list)?;
-                        let len = if let IrValue::List(cells) = &lv { cells.borrow().len() as i64 } else {
-                            return Err(InterpError::TypeError { detail: "list_len: not a list".into() });
+                        let len = if let IrValue::List(cells) = &lv {
+                            cells.borrow().len() as i64
+                        } else {
+                            return Err(InterpError::TypeError {
+                                detail: "list_len: not a list".into(),
+                            });
                         };
                         self.values.insert(*result, IrValue::I64(len));
                     }
-                    IrInstr::ListGet { result, list, index, elem_ty } => {
+                    IrInstr::ListGet {
+                        result,
+                        list,
+                        index,
+                        elem_ty,
+                    } => {
                         let lv = self.get(*list)?;
                         let iv = self.get(*index)?;
-                        let idx = match iv { IrValue::I64(n) => n as usize, _ => return Err(InterpError::TypeError { detail: "list_get: index must be i64".into() }) };
+                        let idx = match iv {
+                            IrValue::I64(n) => n as usize,
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "list_get: index must be i64".into(),
+                                })
+                            }
+                        };
                         if let IrValue::List(cells) = lv {
-                            let raw = cells.borrow().get(idx).cloned().ok_or_else(|| InterpError::TypeError { detail: format!("list_get: index {} out of bounds", idx) })?;
+                            let raw = cells.borrow().get(idx).cloned().ok_or_else(|| {
+                                InterpError::TypeError {
+                                    detail: format!("list_get: index {} out of bounds", idx),
+                                }
+                            })?;
                             // Coerce to declared element type (e.g. f32 stored → f64 expected)
                             let elem = eval_cast(&raw, elem_ty).unwrap_or(raw);
                             self.values.insert(*result, elem);
                         } else {
-                            return Err(InterpError::TypeError { detail: "list_get: not a list".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "list_get: not a list".into(),
+                            });
                         }
                     }
                     IrInstr::ListSet { list, index, value } => {
                         let lv = self.get(*list)?;
                         let iv = self.get(*index)?;
                         let v = self.get(*value)?;
-                        let idx = match iv { IrValue::I64(n) => n as usize, _ => return Err(InterpError::TypeError { detail: "list_set: index must be i64".into() }) };
+                        let idx = match iv {
+                            IrValue::I64(n) => n as usize,
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "list_set: index must be i64".into(),
+                                })
+                            }
+                        };
                         if let IrValue::List(cells) = lv {
                             {
                                 let mut borrow = cells.borrow_mut();
                                 if idx >= borrow.len() {
-                                    return Err(InterpError::TypeError { detail: format!("list_set: index {} out of bounds", idx) });
+                                    return Err(InterpError::TypeError {
+                                        detail: format!("list_set: index {} out of bounds", idx),
+                                    });
                                 }
                                 borrow[idx] = v;
                             }
                             self.values.insert(*list, IrValue::List(cells));
                         } else {
-                            return Err(InterpError::TypeError { detail: "list_set: not a list".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "list_set: not a list".into(),
+                            });
                         }
                     }
                     IrInstr::ListPop { result, list, .. } => {
                         let lv = self.get(*list)?;
                         if let IrValue::List(cells) = lv {
-                            let elem = cells.borrow_mut().pop().ok_or_else(|| InterpError::TypeError { detail: "list_pop: empty list".into() })?;
+                            let elem =
+                                cells
+                                    .borrow_mut()
+                                    .pop()
+                                    .ok_or_else(|| InterpError::TypeError {
+                                        detail: "list_pop: empty list".into(),
+                                    })?;
                             self.values.insert(*list, IrValue::List(cells));
                             self.values.insert(*result, elem);
                         } else {
-                            return Err(InterpError::TypeError { detail: "list_pop: not a list".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "list_pop: not a list".into(),
+                            });
                         }
                     }
 
                     IrInstr::MapNew { result, .. } => {
-                        let map = std::rc::Rc::new(std::cell::RefCell::new(std::collections::HashMap::new()));
+                        let map = std::rc::Rc::new(std::cell::RefCell::new(
+                            std::collections::HashMap::new(),
+                        ));
                         self.values.insert(*result, IrValue::Map(map));
                     }
                     IrInstr::MapSet { map, key, value } => {
@@ -1502,18 +1832,24 @@ impl<'m> Interpreter<'m> {
                             entries.borrow_mut().insert(key_str, v);
                             self.values.insert(*map, IrValue::Map(entries));
                         } else {
-                            return Err(InterpError::TypeError { detail: "map_set: not a map".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "map_set: not a map".into(),
+                            });
                         }
                     }
-                    IrInstr::MapGet { result, map, key, .. } => {
+                    IrInstr::MapGet {
+                        result, map, key, ..
+                    } => {
                         let mv = self.get(*map)?;
                         let kv = self.get(*key)?;
                         let key_str = format!("{}", kv);
                         if let IrValue::Map(entries) = mv {
-                            let opt = entries.borrow().get(&key_str).cloned().map(|v| Box::new(v));
+                            let opt = entries.borrow().get(&key_str).cloned().map(Box::new);
                             self.values.insert(*result, IrValue::OptionVal(opt));
                         } else {
-                            return Err(InterpError::TypeError { detail: "map_get: not a map".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "map_get: not a map".into(),
+                            });
                         }
                     }
                     IrInstr::MapContains { result, map, key } => {
@@ -1524,7 +1860,9 @@ impl<'m> Interpreter<'m> {
                             let contains = entries.borrow().contains_key(&key_str);
                             self.values.insert(*result, IrValue::Bool(contains));
                         } else {
-                            return Err(InterpError::TypeError { detail: "map_contains: not a map".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "map_contains: not a map".into(),
+                            });
                         }
                     }
                     IrInstr::MapRemove { map, key } => {
@@ -1535,13 +1873,19 @@ impl<'m> Interpreter<'m> {
                             entries.borrow_mut().remove(&key_str);
                             self.values.insert(*map, IrValue::Map(entries));
                         } else {
-                            return Err(InterpError::TypeError { detail: "map_remove: not a map".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "map_remove: not a map".into(),
+                            });
                         }
                     }
                     IrInstr::MapLen { result, map } => {
                         let mv = self.get(*map)?;
-                        let len = if let IrValue::Map(entries) = &mv { entries.borrow().len() as i64 } else {
-                            return Err(InterpError::TypeError { detail: "map_len: not a map".into() });
+                        let len = if let IrValue::Map(entries) = &mv {
+                            entries.borrow().len() as i64
+                        } else {
+                            return Err(InterpError::TypeError {
+                                detail: "map_len: not a map".into(),
+                            });
                         };
                         self.values.insert(*result, IrValue::I64(len));
                     }
@@ -1549,50 +1893,93 @@ impl<'m> Interpreter<'m> {
                     // ── Phase 56: File I/O ────────────────────────────────
                     IrInstr::FileReadAll { result, path } => {
                         let p = self.get(*path)?;
-                        let path_str = if let IrValue::Str(s) = p { s } else { String::new() };
+                        let path_str = if let IrValue::Str(s) = p {
+                            s
+                        } else {
+                            String::new()
+                        };
                         match std::fs::read_to_string(&path_str) {
                             Ok(s) => {
-                                self.values.insert(*result, IrValue::ResultVal(Ok(Box::new(IrValue::Str(s)))));
+                                self.values.insert(
+                                    *result,
+                                    IrValue::ResultVal(Ok(Box::new(IrValue::Str(s)))),
+                                );
                             }
                             Err(e) => {
-                                self.values.insert(*result, IrValue::ResultVal(Err(Box::new(IrValue::Str(e.to_string())))));
+                                self.values.insert(
+                                    *result,
+                                    IrValue::ResultVal(Err(Box::new(IrValue::Str(e.to_string())))),
+                                );
                             }
                         }
                     }
-                    IrInstr::FileWriteAll { result, path, content } => {
+                    IrInstr::FileWriteAll {
+                        result,
+                        path,
+                        content,
+                    } => {
                         let p = self.get(*path)?;
                         let c = self.get(*content)?;
-                        let path_str = if let IrValue::Str(s) = p { s } else { String::new() };
-                        let content_str = if let IrValue::Str(s) = c { s } else { String::new() };
+                        let path_str = if let IrValue::Str(s) = p {
+                            s
+                        } else {
+                            String::new()
+                        };
+                        let content_str = if let IrValue::Str(s) = c {
+                            s
+                        } else {
+                            String::new()
+                        };
                         match std::fs::write(&path_str, &content_str) {
                             Ok(()) => {
-                                self.values.insert(*result, IrValue::ResultVal(Ok(Box::new(IrValue::Unit))));
+                                self.values.insert(
+                                    *result,
+                                    IrValue::ResultVal(Ok(Box::new(IrValue::Unit))),
+                                );
                             }
                             Err(e) => {
-                                self.values.insert(*result, IrValue::ResultVal(Err(Box::new(IrValue::Str(e.to_string())))));
+                                self.values.insert(
+                                    *result,
+                                    IrValue::ResultVal(Err(Box::new(IrValue::Str(e.to_string())))),
+                                );
                             }
                         }
                     }
                     IrInstr::FileExists { result, path } => {
                         let p = self.get(*path)?;
-                        let path_str = if let IrValue::Str(s) = p { s } else { String::new() };
+                        let path_str = if let IrValue::Str(s) = p {
+                            s
+                        } else {
+                            String::new()
+                        };
                         let exists = std::path::Path::new(&path_str).exists();
                         self.values.insert(*result, IrValue::Bool(exists));
                     }
                     IrInstr::FileLines { result, path } => {
                         let p = self.get(*path)?;
-                        let path_str = if let IrValue::Str(s) = p { s } else { String::new() };
+                        let path_str = if let IrValue::Str(s) = p {
+                            s
+                        } else {
+                            String::new()
+                        };
                         let lines: Vec<IrValue> = match std::fs::read_to_string(&path_str) {
                             Ok(s) => s.lines().map(|l| IrValue::Str(l.to_string())).collect(),
                             Err(_) => vec![],
                         };
-                        self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(lines))));
+                        self.values.insert(
+                            *result,
+                            IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(lines))),
+                        );
                     }
 
                     // ── Database operations ─────────────────────────────────
                     IrInstr::DbOpen { result, path } => {
                         let p = self.get(*path)?;
-                        let path_str = if let IrValue::Str(s) = p { s } else { String::new() };
+                        let path_str = if let IrValue::Str(s) = p {
+                            s
+                        } else {
+                            String::new()
+                        };
                         match rusqlite::Connection::open(&path_str) {
                             Ok(conn) => {
                                 let handle = Box::into_raw(Box::new(conn)) as i64;
@@ -1604,8 +1991,16 @@ impl<'m> Interpreter<'m> {
                         }
                     }
                     IrInstr::DbExec { result, db, sql } => {
-                        let db_handle = if let IrValue::I64(h) = self.get(*db)? { h } else { 0 };
-                        let sql_str = if let IrValue::Str(s) = self.get(*sql)? { s } else { String::new() };
+                        let db_handle = if let IrValue::I64(h) = self.get(*db)? {
+                            h
+                        } else {
+                            0
+                        };
+                        let sql_str = if let IrValue::Str(s) = self.get(*sql)? {
+                            s
+                        } else {
+                            String::new()
+                        };
                         if db_handle != 0 {
                             let conn = unsafe { &*(db_handle as *const rusqlite::Connection) };
                             match conn.execute_batch(&sql_str) {
@@ -1617,8 +2012,16 @@ impl<'m> Interpreter<'m> {
                         }
                     }
                     IrInstr::DbQuery { result, db, sql } => {
-                        let db_handle = if let IrValue::I64(h) = self.get(*db)? { h } else { 0 };
-                        let sql_str = if let IrValue::Str(s) = self.get(*sql)? { s } else { String::new() };
+                        let db_handle = if let IrValue::I64(h) = self.get(*db)? {
+                            h
+                        } else {
+                            0
+                        };
+                        let sql_str = if let IrValue::Str(s) = self.get(*sql)? {
+                            s
+                        } else {
+                            String::new()
+                        };
                         let rows: Vec<IrValue> = if db_handle != 0 {
                             let conn = unsafe { &*(db_handle as *const rusqlite::Connection) };
                             match conn.prepare(&sql_str) {
@@ -1628,15 +2031,16 @@ impl<'m> Interpreter<'m> {
                                     if let Ok(iter) = stmt.query_map([], |row| {
                                         let mut cols = Vec::new();
                                         for i in 0..col_count {
-                                            let val: String = row.get::<_, String>(i).unwrap_or_default();
+                                            let val: String =
+                                                row.get::<_, String>(i).unwrap_or_default();
                                             cols.push(IrValue::Str(val));
                                         }
                                         Ok(cols)
                                     }) {
-                                        for row_result in iter {
-                                            if let Ok(cols) = row_result {
-                                                all_rows.push(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(cols))));
-                                            }
+                                        for cols in iter.flatten() {
+                                            all_rows.push(IrValue::List(std::rc::Rc::new(
+                                                std::cell::RefCell::new(cols),
+                                            )));
                                         }
                                     }
                                     all_rows
@@ -1646,18 +2050,31 @@ impl<'m> Interpreter<'m> {
                         } else {
                             vec![]
                         };
-                        self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(rows))));
+                        self.values.insert(
+                            *result,
+                            IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(rows))),
+                        );
                     }
                     IrInstr::DbClose { result, db } => {
-                        let db_handle = if let IrValue::I64(h) = self.get(*db)? { h } else { 0 };
+                        let db_handle = if let IrValue::I64(h) = self.get(*db)? {
+                            h
+                        } else {
+                            0
+                        };
                         if db_handle != 0 {
-                            unsafe { drop(Box::from_raw(db_handle as *mut rusqlite::Connection)); }
+                            unsafe {
+                                drop(Box::from_raw(db_handle as *mut rusqlite::Connection));
+                            }
                         }
                         self.values.insert(*result, IrValue::I64(0));
                     }
 
                     // ── Phase 58: Extended collections ─────────────────────
-                    IrInstr::ListContains { result, list, value } => {
+                    IrInstr::ListContains {
+                        result,
+                        list,
+                        value,
+                    } => {
                         let v = self.get(*value)?;
                         let lst = self.get(*list)?;
                         if let IrValue::List(rc) = lst {
@@ -1670,54 +2087,99 @@ impl<'m> Interpreter<'m> {
                     IrInstr::ListSort { list } => {
                         let lst = self.get(*list)?;
                         if let IrValue::List(rc) = lst {
-                            rc.borrow_mut().sort_by(|a, b| {
-                                match (a, b) {
-                                    (IrValue::I64(x), IrValue::I64(y)) => x.cmp(y),
-                                    (IrValue::F64(x), IrValue::F64(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-                                    (IrValue::F32(x), IrValue::F32(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
-                                    (IrValue::Str(x), IrValue::Str(y)) => x.cmp(y),
-                                    _ => std::cmp::Ordering::Equal,
+                            rc.borrow_mut().sort_by(|a, b| match (a, b) {
+                                (IrValue::I64(x), IrValue::I64(y)) => x.cmp(y),
+                                (IrValue::F64(x), IrValue::F64(y)) => {
+                                    x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
                                 }
+                                (IrValue::F32(x), IrValue::F32(y)) => {
+                                    x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal)
+                                }
+                                (IrValue::Str(x), IrValue::Str(y)) => x.cmp(y),
+                                _ => std::cmp::Ordering::Equal,
                             });
                         }
                     }
                     IrInstr::MapKeys { result, map } => {
                         let m = self.get(*map)?;
                         if let IrValue::Map(rc) = m {
-                            let keys: Vec<IrValue> = rc.borrow().keys().map(|k| IrValue::Str(k.clone())).collect();
-                            self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(keys))));
+                            let keys: Vec<IrValue> = rc
+                                .borrow()
+                                .keys()
+                                .map(|k| IrValue::Str(k.clone()))
+                                .collect();
+                            self.values.insert(
+                                *result,
+                                IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(keys))),
+                            );
                         } else {
-                            self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vec![]))));
+                            self.values.insert(
+                                *result,
+                                IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vec![]))),
+                            );
                         }
                     }
                     IrInstr::MapValues { result, map } => {
                         let m = self.get(*map)?;
                         if let IrValue::Map(rc) = m {
                             let vals: Vec<IrValue> = rc.borrow().values().cloned().collect();
-                            self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vals))));
+                            self.values.insert(
+                                *result,
+                                IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vals))),
+                            );
                         } else {
-                            self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vec![]))));
+                            self.values.insert(
+                                *result,
+                                IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vec![]))),
+                            );
                         }
                     }
                     IrInstr::ListConcat { result, lhs, rhs } => {
                         let l = self.get(*lhs)?;
                         let r = self.get(*rhs)?;
                         let mut combined = vec![];
-                        if let IrValue::List(rc) = l { combined.extend(rc.borrow().iter().cloned()); }
-                        if let IrValue::List(rc) = r { combined.extend(rc.borrow().iter().cloned()); }
-                        self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(combined))));
+                        if let IrValue::List(rc) = l {
+                            combined.extend(rc.borrow().iter().cloned());
+                        }
+                        if let IrValue::List(rc) = r {
+                            combined.extend(rc.borrow().iter().cloned());
+                        }
+                        self.values.insert(
+                            *result,
+                            IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(combined))),
+                        );
                     }
-                    IrInstr::ListSlice { result, list, start, end } => {
+                    IrInstr::ListSlice {
+                        result,
+                        list,
+                        start,
+                        end,
+                    } => {
                         let lst = self.get(*list)?;
                         let s = self.get(*start)?;
                         let e = self.get(*end)?;
-                        let si = if let IrValue::I64(n) = s { n as usize } else { 0 };
-                        let ei = if let IrValue::I64(n) = e { n as usize } else { 0 };
-                        if let IrValue::List(rc) = lst {
-                            let sliced: Vec<IrValue> = rc.borrow().get(si..ei).unwrap_or(&[]).to_vec();
-                            self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(sliced))));
+                        let si = if let IrValue::I64(n) = s {
+                            n as usize
                         } else {
-                            self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vec![]))));
+                            0
+                        };
+                        let ei = if let IrValue::I64(n) = e {
+                            n as usize
+                        } else {
+                            0
+                        };
+                        if let IrValue::List(rc) = lst {
+                            let sliced: Vec<IrValue> =
+                                rc.borrow().get(si..ei).unwrap_or(&[]).to_vec();
+                            self.values.insert(
+                                *result,
+                                IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(sliced))),
+                            );
+                        } else {
+                            self.values.insert(
+                                *result,
+                                IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(vec![]))),
+                            );
                         }
                     }
 
@@ -1728,15 +2190,25 @@ impl<'m> Interpreter<'m> {
                         std::process::exit(code_val);
                     }
                     IrInstr::ProcessArgs { result } => {
-                        let args: Vec<IrValue> = std::env::args().map(|a| IrValue::Str(a)).collect();
-                        self.values.insert(*result, IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(args))));
+                        let args: Vec<IrValue> = std::env::args().map(IrValue::Str).collect();
+                        self.values.insert(
+                            *result,
+                            IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(args))),
+                        );
                     }
                     IrInstr::EnvVar { result, name } => {
                         let n = self.get(*name)?;
-                        let name_str = if let IrValue::Str(s) = n { s } else { String::new() };
+                        let name_str = if let IrValue::Str(s) = n {
+                            s
+                        } else {
+                            String::new()
+                        };
                         match std::env::var(&name_str) {
                             Ok(v) => {
-                                self.values.insert(*result, IrValue::OptionVal(Some(Box::new(IrValue::Str(v)))));
+                                self.values.insert(
+                                    *result,
+                                    IrValue::OptionVal(Some(Box::new(IrValue::Str(v)))),
+                                );
                             }
                             Err(_) => {
                                 self.values.insert(*result, IrValue::OptionVal(None));
@@ -1770,8 +2242,14 @@ impl<'m> Interpreter<'m> {
                     IrInstr::Retain { .. } => {}
                     IrInstr::Release { .. } => {}
                     // Phase 81: FFI extern calls — interpreter dispatches known names to Rust stubs
-                    IrInstr::CallExtern { result, name, args, ret_ty } => {
-                        let arg_vals: Vec<IrValue> = args.iter()
+                    IrInstr::CallExtern {
+                        result,
+                        name,
+                        args,
+                        ret_ty,
+                    } => {
+                        let arg_vals: Vec<IrValue> = args
+                            .iter()
                             .map(|a| self.get(*a))
                             .collect::<Result<Vec<_>, _>>()?;
                         let ret = self.dispatch_extern(name, &arg_vals, ret_ty)?;
@@ -1794,33 +2272,62 @@ impl<'m> Interpreter<'m> {
                     }
                     IrInstr::TcpWrite { .. } => {}
                     IrInstr::TcpClose { .. } => {}
-                    IrInstr::StrSplit { result, str_val, delim } => {
+                    IrInstr::StrSplit {
+                        result,
+                        str_val,
+                        delim,
+                    } => {
                         let sv = self.get(*str_val)?;
                         let dv = self.get(*delim)?;
                         let (s, d) = match (&sv, &dv) {
                             (IrValue::Str(s), IrValue::Str(d)) => (s.clone(), d.clone()),
-                            _ => return Err(InterpError::TypeError { detail: "str_split: expected str".into() }),
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "str_split: expected str".into(),
+                                })
+                            }
                         };
                         let parts: Vec<IrValue> = if d.is_empty() {
                             s.chars().map(|c| IrValue::Str(c.to_string())).collect()
                         } else {
-                            s.split(d.as_str()).map(|p| IrValue::Str(p.to_owned())).collect()
+                            s.split(d.as_str())
+                                .map(|p| IrValue::Str(p.to_owned()))
+                                .collect()
                         };
                         let list = IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(parts)));
                         self.values.insert(*result, list);
                     }
-                    IrInstr::StrJoin { result, list_val, delim } => {
+                    IrInstr::StrJoin {
+                        result,
+                        list_val,
+                        delim,
+                    } => {
                         let lv = self.get(*list_val)?;
                         let dv = self.get(*delim)?;
-                        let d = if let IrValue::Str(s) = &dv { s.clone() } else {
-                            return Err(InterpError::TypeError { detail: "str_join: delim must be str".into() });
+                        let d = if let IrValue::Str(s) = &dv {
+                            s.clone()
+                        } else {
+                            return Err(InterpError::TypeError {
+                                detail: "str_join: delim must be str".into(),
+                            });
                         };
                         let joined = if let IrValue::List(cells) = &lv {
-                            cells.borrow().iter().map(|v| {
-                                if let IrValue::Str(s) = v { s.clone() } else { format!("{}", v) }
-                            }).collect::<Vec<_>>().join(&d)
+                            cells
+                                .borrow()
+                                .iter()
+                                .map(|v| {
+                                    if let IrValue::Str(s) = v {
+                                        s.clone()
+                                    } else {
+                                        format!("{}", v)
+                                    }
+                                })
+                                .collect::<Vec<_>>()
+                                .join(&d)
                         } else {
-                            return Err(InterpError::TypeError { detail: "str_join: expected list<str>".into() });
+                            return Err(InterpError::TypeError {
+                                detail: "str_join: expected list<str>".into(),
+                            });
                         };
                         self.values.insert(*result, IrValue::Str(joined));
                     }
@@ -1835,28 +2342,32 @@ impl<'m> Interpreter<'m> {
                     IrInstr::SleepMs { result, ms } => {
                         let n = match self.get(*ms)? {
                             IrValue::I64(n) => n,
-                            _ => return Err(InterpError::TypeError { detail: "sleep_ms: expected i64".into() }),
+                            _ => {
+                                return Err(InterpError::TypeError {
+                                    detail: "sleep_ms: expected i64".into(),
+                                })
+                            }
                         };
                         std::thread::sleep(std::time::Duration::from_millis(n as u64));
                         self.values.insert(*result, IrValue::I64(0));
                     }
                     // Phase 104: BuiltinCall — unified dispatch for new builtins
-                    IrInstr::BuiltinCall { result, name, args, result_ty: _ } => {
-                        let arg_vals: Vec<IrValue> = args.iter()
+                    IrInstr::BuiltinCall {
+                        result,
+                        name,
+                        args,
+                        result_ty: _,
+                    } => {
+                        let arg_vals: Vec<IrValue> = args
+                            .iter()
                             .map(|a| self.get(*a))
                             .collect::<Result<Vec<_>, _>>()?;
 
                         // Handle closure-invoking builtins here (need `self` for function dispatch).
                         let ret = match name.as_str() {
-                            "list_map" => {
-                                self.builtin_list_map(&arg_vals)?
-                            }
-                            "list_filter" => {
-                                self.builtin_list_filter(&arg_vals)?
-                            }
-                            "list_reduce" => {
-                                self.builtin_list_reduce(&arg_vals)?
-                            }
+                            "list_map" => self.builtin_list_map(&arg_vals)?,
+                            "list_filter" => self.builtin_list_filter(&arg_vals)?,
+                            "list_reduce" => self.builtin_list_reduce(&arg_vals)?,
                             _ => interp_builtin(name, &arg_vals)?,
                         };
                         self.values.insert(*result, ret);
@@ -1953,14 +2464,23 @@ impl<'m> Interpreter<'m> {
     // ------------------------------------------------------------------
 
     /// Calls a closure value with the given arguments, returning the result.
-    fn call_closure_val(&mut self, closure: &IrValue, call_args: &[IrValue]) -> Result<IrValue, InterpError> {
+    fn call_closure_val(
+        &mut self,
+        closure: &IrValue,
+        call_args: &[IrValue],
+    ) -> Result<IrValue, InterpError> {
         let (fn_name, captured) = match closure {
-            IrValue::Closure { fn_name, captured, .. } => (fn_name.clone(), captured.clone()),
-            other => return Err(InterpError::TypeError {
-                detail: format!("expected closure, got {:?}", other),
-            }),
+            IrValue::Closure {
+                fn_name, captured, ..
+            } => (fn_name.clone(), captured.clone()),
+            other => {
+                return Err(InterpError::TypeError {
+                    detail: format!("expected closure, got {:?}", other),
+                })
+            }
         };
-        let callee = self.module
+        let callee = self
+            .module
             .and_then(|m| m.function_by_name(&fn_name))
             .ok_or_else(|| InterpError::Unsupported {
                 detail: format!("undefined closure function: {}", fn_name),
@@ -1970,7 +2490,10 @@ impl<'m> Interpreter<'m> {
         args_full.extend_from_slice(call_args);
         if self.depth >= self.opts.max_depth {
             return Err(InterpError::Unsupported {
-                detail: format!("call depth exceeded {} (infinite recursion?)", self.opts.max_depth),
+                detail: format!(
+                    "call depth exceeded {} (infinite recursion?)",
+                    self.opts.max_depth
+                ),
             });
         }
         let mut sub = Interpreter::new(self.module, self.opts, self.depth + 1);
@@ -1981,34 +2504,48 @@ impl<'m> Interpreter<'m> {
     /// list_map(list, closure) — apply closure to each element, return new list.
     fn builtin_list_map(&mut self, args: &[IrValue]) -> Result<IrValue, InterpError> {
         if args.len() < 2 {
-            return Err(InterpError::TypeError { detail: "list_map: expected 2 arguments (list, closure)".into() });
+            return Err(InterpError::TypeError {
+                detail: "list_map: expected 2 arguments (list, closure)".into(),
+            });
         }
         let items = match &args[0] {
             IrValue::List(rc) => rc.borrow().clone(),
-            _ => return Err(InterpError::TypeError { detail: "list_map: first argument must be a list".into() }),
+            _ => {
+                return Err(InterpError::TypeError {
+                    detail: "list_map: first argument must be a list".into(),
+                })
+            }
         };
         let closure = &args[1];
         let mut result = Vec::with_capacity(items.len());
         for item in &items {
-            let mapped = self.call_closure_val(closure, &[item.clone()])?;
+            let mapped = self.call_closure_val(closure, std::slice::from_ref(item))?;
             result.push(mapped);
         }
-        Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(result))))
+        Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+            result,
+        ))))
     }
 
     /// list_filter(list, closure) — keep elements where closure returns true.
     fn builtin_list_filter(&mut self, args: &[IrValue]) -> Result<IrValue, InterpError> {
         if args.len() < 2 {
-            return Err(InterpError::TypeError { detail: "list_filter: expected 2 arguments (list, closure)".into() });
+            return Err(InterpError::TypeError {
+                detail: "list_filter: expected 2 arguments (list, closure)".into(),
+            });
         }
         let items = match &args[0] {
             IrValue::List(rc) => rc.borrow().clone(),
-            _ => return Err(InterpError::TypeError { detail: "list_filter: first argument must be a list".into() }),
+            _ => {
+                return Err(InterpError::TypeError {
+                    detail: "list_filter: first argument must be a list".into(),
+                })
+            }
         };
         let closure = &args[1];
         let mut result = Vec::new();
         for item in &items {
-            let keep = self.call_closure_val(closure, &[item.clone()])?;
+            let keep = self.call_closure_val(closure, std::slice::from_ref(item))?;
             let truthy = match &keep {
                 IrValue::Bool(b) => *b,
                 IrValue::I64(n) => *n != 0,
@@ -2019,17 +2556,25 @@ impl<'m> Interpreter<'m> {
                 result.push(item.clone());
             }
         }
-        Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(result))))
+        Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+            result,
+        ))))
     }
 
     /// list_reduce(list, initial, closure) — fold list with closure(accumulator, element).
     fn builtin_list_reduce(&mut self, args: &[IrValue]) -> Result<IrValue, InterpError> {
         if args.len() < 3 {
-            return Err(InterpError::TypeError { detail: "list_reduce: expected 3 arguments (list, initial, closure)".into() });
+            return Err(InterpError::TypeError {
+                detail: "list_reduce: expected 3 arguments (list, initial, closure)".into(),
+            });
         }
         let items = match &args[0] {
             IrValue::List(rc) => rc.borrow().clone(),
-            _ => return Err(InterpError::TypeError { detail: "list_reduce: first argument must be a list".into() }),
+            _ => {
+                return Err(InterpError::TypeError {
+                    detail: "list_reduce: first argument must be a list".into(),
+                })
+            }
         };
         let mut acc = args[1].clone();
         let closure = &args[2];
@@ -2051,18 +2596,41 @@ impl<'m> Interpreter<'m> {
             // Math stubs mirroring common C/CBLAS names
             "cblas_ddot" | "iris_blas_ddot" => {
                 // (n: i64, x: list<f64>, y: list<f64>) -> f64
-                let n = match args.get(0) { Some(IrValue::I64(n)) => *n as usize, _ => 0 };
-                let xs = match args.get(1) { Some(IrValue::List(l)) => l.borrow().clone(), _ => vec![] };
-                let ys = match args.get(2) { Some(IrValue::List(l)) => l.borrow().clone(), _ => vec![] };
-                let dot: f64 = (0..n.min(xs.len()).min(ys.len())).map(|i| {
-                    let a = match &xs[i] { IrValue::F64(v) => *v, IrValue::F32(v) => *v as f64, _ => 0.0 };
-                    let b = match &ys[i] { IrValue::F64(v) => *v, IrValue::F32(v) => *v as f64, _ => 0.0 };
-                    a * b
-                }).sum();
+                let n = match args.first() {
+                    Some(IrValue::I64(n)) => *n as usize,
+                    _ => 0,
+                };
+                let xs = match args.get(1) {
+                    Some(IrValue::List(l)) => l.borrow().clone(),
+                    _ => vec![],
+                };
+                let ys = match args.get(2) {
+                    Some(IrValue::List(l)) => l.borrow().clone(),
+                    _ => vec![],
+                };
+                let dot: f64 = (0..n.min(xs.len()).min(ys.len()))
+                    .map(|i| {
+                        let a = match &xs[i] {
+                            IrValue::F64(v) => *v,
+                            IrValue::F32(v) => *v as f64,
+                            _ => 0.0,
+                        };
+                        let b = match &ys[i] {
+                            IrValue::F64(v) => *v,
+                            IrValue::F32(v) => *v as f64,
+                            _ => 0.0,
+                        };
+                        a * b
+                    })
+                    .sum();
                 Ok(IrValue::F64(dot))
             }
             "sqrt" | "cblas_sqrt" => {
-                let x = match args.get(0) { Some(IrValue::F64(v)) => *v, Some(IrValue::F32(v)) => *v as f64, _ => 0.0 };
+                let x = match args.first() {
+                    Some(IrValue::F64(v)) => *v,
+                    Some(IrValue::F32(v)) => *v as f64,
+                    _ => 0.0,
+                };
                 Ok(IrValue::F64(x.sqrt()))
             }
             _ => {
@@ -2109,37 +2677,37 @@ fn apply_unary_f32(op: &str, x: f32) -> f32 {
 
 fn eval_unary(op: ScalarUnaryOp, v: &IrValue) -> Result<IrValue, InterpError> {
     match (op, v) {
-        (ScalarUnaryOp::Neg, IrValue::F32(x))  => Ok(IrValue::F32(-x)),
-        (ScalarUnaryOp::Neg, IrValue::F64(x))  => Ok(IrValue::F64(-x)),
-        (ScalarUnaryOp::Neg, IrValue::I32(n))  => Ok(IrValue::I32(-n)),
-        (ScalarUnaryOp::Neg, IrValue::I64(n))  => Ok(IrValue::I64(-n)),
+        (ScalarUnaryOp::Neg, IrValue::F32(x)) => Ok(IrValue::F32(-x)),
+        (ScalarUnaryOp::Neg, IrValue::F64(x)) => Ok(IrValue::F64(-x)),
+        (ScalarUnaryOp::Neg, IrValue::I32(n)) => Ok(IrValue::I32(-n)),
+        (ScalarUnaryOp::Neg, IrValue::I64(n)) => Ok(IrValue::I64(-n)),
         (ScalarUnaryOp::Not, IrValue::Bool(b)) => Ok(IrValue::Bool(!b)),
         // Math builtins — float variants
-        (ScalarUnaryOp::Sqrt,  IrValue::F64(x)) => Ok(IrValue::F64(x.sqrt())),
-        (ScalarUnaryOp::Sqrt,  IrValue::F32(x)) => Ok(IrValue::F32(x.sqrt())),
-        (ScalarUnaryOp::Abs,   IrValue::F64(x)) => Ok(IrValue::F64(x.abs())),
-        (ScalarUnaryOp::Abs,   IrValue::F32(x)) => Ok(IrValue::F32(x.abs())),
-        (ScalarUnaryOp::Abs,   IrValue::I64(n)) => Ok(IrValue::I64(n.abs())),
-        (ScalarUnaryOp::Abs,   IrValue::I32(n)) => Ok(IrValue::I32(n.abs())),
+        (ScalarUnaryOp::Sqrt, IrValue::F64(x)) => Ok(IrValue::F64(x.sqrt())),
+        (ScalarUnaryOp::Sqrt, IrValue::F32(x)) => Ok(IrValue::F32(x.sqrt())),
+        (ScalarUnaryOp::Abs, IrValue::F64(x)) => Ok(IrValue::F64(x.abs())),
+        (ScalarUnaryOp::Abs, IrValue::F32(x)) => Ok(IrValue::F32(x.abs())),
+        (ScalarUnaryOp::Abs, IrValue::I64(n)) => Ok(IrValue::I64(n.abs())),
+        (ScalarUnaryOp::Abs, IrValue::I32(n)) => Ok(IrValue::I32(n.abs())),
         (ScalarUnaryOp::Floor, IrValue::F64(x)) => Ok(IrValue::F64(x.floor())),
         (ScalarUnaryOp::Floor, IrValue::F32(x)) => Ok(IrValue::F32(x.floor())),
-        (ScalarUnaryOp::Ceil,  IrValue::F64(x)) => Ok(IrValue::F64(x.ceil())),
-        (ScalarUnaryOp::Ceil,  IrValue::F32(x)) => Ok(IrValue::F32(x.ceil())),
+        (ScalarUnaryOp::Ceil, IrValue::F64(x)) => Ok(IrValue::F64(x.ceil())),
+        (ScalarUnaryOp::Ceil, IrValue::F32(x)) => Ok(IrValue::F32(x.ceil())),
         (ScalarUnaryOp::BitNot, IrValue::I64(n)) => Ok(IrValue::I64(!n)),
         (ScalarUnaryOp::BitNot, IrValue::I32(n)) => Ok(IrValue::I32(!n)),
         // Trig / transcendental — float variants
-        (ScalarUnaryOp::Sin,   IrValue::F64(x)) => Ok(IrValue::F64(x.sin())),
-        (ScalarUnaryOp::Sin,   IrValue::F32(x)) => Ok(IrValue::F32(x.sin())),
-        (ScalarUnaryOp::Cos,   IrValue::F64(x)) => Ok(IrValue::F64(x.cos())),
-        (ScalarUnaryOp::Cos,   IrValue::F32(x)) => Ok(IrValue::F32(x.cos())),
-        (ScalarUnaryOp::Tan,   IrValue::F64(x)) => Ok(IrValue::F64(x.tan())),
-        (ScalarUnaryOp::Tan,   IrValue::F32(x)) => Ok(IrValue::F32(x.tan())),
-        (ScalarUnaryOp::Exp,   IrValue::F64(x)) => Ok(IrValue::F64(x.exp())),
-        (ScalarUnaryOp::Exp,   IrValue::F32(x)) => Ok(IrValue::F32(x.exp())),
-        (ScalarUnaryOp::Log,   IrValue::F64(x)) => Ok(IrValue::F64(x.ln())),
-        (ScalarUnaryOp::Log,   IrValue::F32(x)) => Ok(IrValue::F32(x.ln())),
-        (ScalarUnaryOp::Log2,  IrValue::F64(x)) => Ok(IrValue::F64(x.log2())),
-        (ScalarUnaryOp::Log2,  IrValue::F32(x)) => Ok(IrValue::F32(x.log2())),
+        (ScalarUnaryOp::Sin, IrValue::F64(x)) => Ok(IrValue::F64(x.sin())),
+        (ScalarUnaryOp::Sin, IrValue::F32(x)) => Ok(IrValue::F32(x.sin())),
+        (ScalarUnaryOp::Cos, IrValue::F64(x)) => Ok(IrValue::F64(x.cos())),
+        (ScalarUnaryOp::Cos, IrValue::F32(x)) => Ok(IrValue::F32(x.cos())),
+        (ScalarUnaryOp::Tan, IrValue::F64(x)) => Ok(IrValue::F64(x.tan())),
+        (ScalarUnaryOp::Tan, IrValue::F32(x)) => Ok(IrValue::F32(x.tan())),
+        (ScalarUnaryOp::Exp, IrValue::F64(x)) => Ok(IrValue::F64(x.exp())),
+        (ScalarUnaryOp::Exp, IrValue::F32(x)) => Ok(IrValue::F32(x.exp())),
+        (ScalarUnaryOp::Log, IrValue::F64(x)) => Ok(IrValue::F64(x.ln())),
+        (ScalarUnaryOp::Log, IrValue::F32(x)) => Ok(IrValue::F32(x.ln())),
+        (ScalarUnaryOp::Log2, IrValue::F64(x)) => Ok(IrValue::F64(x.log2())),
+        (ScalarUnaryOp::Log2, IrValue::F32(x)) => Ok(IrValue::F32(x.log2())),
         (ScalarUnaryOp::Round, IrValue::F64(x)) => Ok(IrValue::F64(x.round())),
         (ScalarUnaryOp::Round, IrValue::F32(x)) => Ok(IrValue::F32(x.round())),
         // Sign function
@@ -2197,35 +2765,45 @@ fn eval_cast(v: &IrValue, to_ty: &IrType) -> Result<IrValue, InterpError> {
             IrValue::I32(n) => Ok(IrValue::I64((*n as u8) as i64)),
             IrValue::F32(x) => Ok(IrValue::I64((*x as u8) as i64)),
             IrValue::F64(x) => Ok(IrValue::I64((*x as u8) as i64)),
-            _ => Err(InterpError::TypeError { detail: "cannot cast to u8".into() }),
+            _ => Err(InterpError::TypeError {
+                detail: "cannot cast to u8".into(),
+            }),
         },
         IrType::Scalar(DType::I8) => match v {
             IrValue::I64(n) => Ok(IrValue::I64((*n as i8) as i64)),
             IrValue::I32(n) => Ok(IrValue::I64((*n as i8) as i64)),
             IrValue::F32(x) => Ok(IrValue::I64((*x as i8) as i64)),
             IrValue::F64(x) => Ok(IrValue::I64((*x as i8) as i64)),
-            _ => Err(InterpError::TypeError { detail: "cannot cast to i8".into() }),
+            _ => Err(InterpError::TypeError {
+                detail: "cannot cast to i8".into(),
+            }),
         },
         IrType::Scalar(DType::U32) => match v {
             IrValue::I64(n) => Ok(IrValue::I64((*n as u32) as i64)),
             IrValue::I32(n) => Ok(IrValue::I64((*n as u32) as i64)),
             IrValue::F32(x) => Ok(IrValue::I64((*x as u32) as i64)),
             IrValue::F64(x) => Ok(IrValue::I64((*x as u32) as i64)),
-            _ => Err(InterpError::TypeError { detail: "cannot cast to u32".into() }),
+            _ => Err(InterpError::TypeError {
+                detail: "cannot cast to u32".into(),
+            }),
         },
         IrType::Scalar(DType::U64) => match v {
             IrValue::I64(n) => Ok(IrValue::I64(*n)),
             IrValue::I32(n) => Ok(IrValue::I64(*n as i64)),
             IrValue::F32(x) => Ok(IrValue::I64(*x as i64)),
             IrValue::F64(x) => Ok(IrValue::I64(*x as i64)),
-            _ => Err(InterpError::TypeError { detail: "cannot cast to u64".into() }),
+            _ => Err(InterpError::TypeError {
+                detail: "cannot cast to u64".into(),
+            }),
         },
         IrType::Scalar(DType::USize) => match v {
             IrValue::I64(n) => Ok(IrValue::I64(*n)),
             IrValue::I32(n) => Ok(IrValue::I64(*n as i64)),
             IrValue::F32(x) => Ok(IrValue::I64(*x as i64)),
             IrValue::F64(x) => Ok(IrValue::I64(*x as i64)),
-            _ => Err(InterpError::TypeError { detail: "cannot cast to usize".into() }),
+            _ => Err(InterpError::TypeError {
+                detail: "cannot cast to usize".into(),
+            }),
         },
         _ => Err(InterpError::Unsupported {
             detail: format!("cast to {}", to_ty),
@@ -2331,19 +2909,85 @@ fn eval_binop(op: BinOp, lv: &IrValue, rv: &IrValue) -> Result<IrValue, InterpEr
         (BinOp::CmpGt, Str(a), Str(b)) => Ok(Bool(a > b)),
         (BinOp::CmpGe, Str(a), Str(b)) => Ok(Bool(a >= b)),
         // Grad (dual number) arithmetic -- forward-mode AD with chain rule
-        (BinOp::Add, Grad { value: av, tangent: at }, Grad { value: bv, tangent: bt }) =>
-            Ok(Grad { value: av + bv, tangent: at + bt }),
-        (BinOp::Sub, Grad { value: av, tangent: at }, Grad { value: bv, tangent: bt }) =>
-            Ok(Grad { value: av - bv, tangent: at - bt }),
-        (BinOp::Mul, Grad { value: av, tangent: at }, Grad { value: bv, tangent: bt }) =>
-            Ok(Grad { value: av * bv, tangent: av * bt + at * bv }),
-        (BinOp::Div, Grad { value: av, tangent: at }, Grad { value: bv, tangent: bt }) =>
-            Ok(Grad { value: av / bv, tangent: (at * bv - av * bt) / (bv * bv) }),
+        (
+            BinOp::Add,
+            Grad {
+                value: av,
+                tangent: at,
+            },
+            Grad {
+                value: bv,
+                tangent: bt,
+            },
+        ) => Ok(Grad {
+            value: av + bv,
+            tangent: at + bt,
+        }),
+        (
+            BinOp::Sub,
+            Grad {
+                value: av,
+                tangent: at,
+            },
+            Grad {
+                value: bv,
+                tangent: bt,
+            },
+        ) => Ok(Grad {
+            value: av - bv,
+            tangent: at - bt,
+        }),
+        (
+            BinOp::Mul,
+            Grad {
+                value: av,
+                tangent: at,
+            },
+            Grad {
+                value: bv,
+                tangent: bt,
+            },
+        ) => Ok(Grad {
+            value: av * bv,
+            tangent: av * bt + at * bv,
+        }),
+        (
+            BinOp::Div,
+            Grad {
+                value: av,
+                tangent: at,
+            },
+            Grad {
+                value: bv,
+                tangent: bt,
+            },
+        ) => Ok(Grad {
+            value: av / bv,
+            tangent: (at * bv - av * bt) / (bv * bv),
+        }),
         // Grad vs scalar: promote scalar to Grad with zero tangent
-        (BinOp::Add, Grad { value: av, tangent: at }, F64(b)) =>
-            Ok(Grad { value: av + b, tangent: *at }),
-        (BinOp::Mul, Grad { value: av, tangent: at }, F64(b)) =>
-            Ok(Grad { value: av * b, tangent: at * b }),
+        (
+            BinOp::Add,
+            Grad {
+                value: av,
+                tangent: at,
+            },
+            F64(b),
+        ) => Ok(Grad {
+            value: av + b,
+            tangent: *at,
+        }),
+        (
+            BinOp::Mul,
+            Grad {
+                value: av,
+                tangent: at,
+            },
+            F64(b),
+        ) => Ok(Grad {
+            value: av * b,
+            tangent: at * b,
+        }),
         // Math builtins: pow, min, max — F64
         (BinOp::Pow, F64(a), F64(b)) => Ok(F64(a.powf(*b))),
         (BinOp::Min, F64(a), F64(b)) => Ok(F64(a.min(*b))),
@@ -2362,20 +3006,20 @@ fn eval_binop(op: BinOp, lv: &IrValue, rv: &IrValue) -> Result<IrValue, InterpEr
         (BinOp::Max, I32(a), I32(b)) => Ok(I32(*a.max(b))),
         // Bitwise/logical AND on booleans
         (BinOp::BitAnd, IrValue::Bool(a), IrValue::Bool(b)) => Ok(IrValue::Bool(a & b)),
-        (BinOp::BitOr,  IrValue::Bool(a), IrValue::Bool(b)) => Ok(IrValue::Bool(a | b)),
+        (BinOp::BitOr, IrValue::Bool(a), IrValue::Bool(b)) => Ok(IrValue::Bool(a | b)),
         (BinOp::BitXor, IrValue::Bool(a), IrValue::Bool(b)) => Ok(IrValue::Bool(a ^ b)),
         // Bitwise ops — I64
         (BinOp::BitAnd, I64(a), I64(b)) => Ok(I64(a & b)),
-        (BinOp::BitOr,  I64(a), I64(b)) => Ok(I64(a | b)),
+        (BinOp::BitOr, I64(a), I64(b)) => Ok(I64(a | b)),
         (BinOp::BitXor, I64(a), I64(b)) => Ok(I64(a ^ b)),
-        (BinOp::Shl,    I64(a), I64(b)) => Ok(I64(a.wrapping_shl(*b as u32))),
-        (BinOp::Shr,    I64(a), I64(b)) => Ok(I64(a.wrapping_shr(*b as u32))),
+        (BinOp::Shl, I64(a), I64(b)) => Ok(I64(a.wrapping_shl(*b as u32))),
+        (BinOp::Shr, I64(a), I64(b)) => Ok(I64(a.wrapping_shr(*b as u32))),
         // Bitwise ops — I32
         (BinOp::BitAnd, I32(a), I32(b)) => Ok(I32(a & b)),
-        (BinOp::BitOr,  I32(a), I32(b)) => Ok(I32(a | b)),
+        (BinOp::BitOr, I32(a), I32(b)) => Ok(I32(a | b)),
         (BinOp::BitXor, I32(a), I32(b)) => Ok(I32(a ^ b)),
-        (BinOp::Shl,    I32(a), I32(b)) => Ok(I32(a.wrapping_shl(*b as u32))),
-        (BinOp::Shr,    I32(a), I32(b)) => Ok(I32(a.wrapping_shr(*b as u32))),
+        (BinOp::Shl, I32(a), I32(b)) => Ok(I32(a.wrapping_shl(*b as u32))),
+        (BinOp::Shr, I32(a), I32(b)) => Ok(I32(a.wrapping_shr(*b as u32))),
         _ => Err(InterpError::TypeError {
             detail: format!("unsupported binop {:?} on {:?} and {:?}", op, lv, rv),
         }),
@@ -2390,16 +3034,20 @@ fn eval_binop(op: BinOp, lv: &IrValue, rv: &IrValue) -> Result<IrValue, InterpEr
 mod tcp_store {
     use std::cell::RefCell;
     use std::collections::HashMap;
-    use std::net::{TcpStream, TcpListener};
+    use std::net::{TcpListener, TcpStream};
 
     thread_local! {
         static STREAMS: RefCell<HashMap<i64, TcpStream>> = RefCell::new(HashMap::new());
         static LISTENERS: RefCell<HashMap<i64, TcpListener>> = RefCell::new(HashMap::new());
-        static NEXT_ID: RefCell<i64> = RefCell::new(1);
+        static NEXT_ID: RefCell<i64> = const { RefCell::new(1) };
     }
 
     fn next_handle() -> i64 {
-        NEXT_ID.with(|c| { let id = *c.borrow(); *c.borrow_mut() = id + 1; id })
+        NEXT_ID.with(|c| {
+            let id = *c.borrow();
+            *c.borrow_mut() = id + 1;
+            id
+        })
     }
 
     pub fn store_stream(s: TcpStream) -> i64 {
@@ -2422,7 +3070,9 @@ mod tcp_store {
                     Ok(n) => Ok(String::from_utf8_lossy(&buf[..n]).to_string()),
                     Err(_) => Err(()),
                 }
-            } else { Err(()) }
+            } else {
+                Err(())
+            }
         })
     }
     pub fn write_stream(id: i64, data: &str) {
@@ -2442,12 +3092,18 @@ mod tcp_store {
                     Ok((stream, _)) => Ok(store_stream(stream)),
                     Err(_) => Err(()),
                 }
-            } else { Err(()) }
+            } else {
+                Err(())
+            }
         })
     }
     pub fn close(id: i64) {
-        STREAMS.with(|m| { m.borrow_mut().remove(&id); });
-        LISTENERS.with(|m| { m.borrow_mut().remove(&id); });
+        STREAMS.with(|m| {
+            m.borrow_mut().remove(&id);
+        });
+        LISTENERS.with(|m| {
+            m.borrow_mut().remove(&id);
+        });
     }
 }
 
@@ -2487,10 +3143,18 @@ unsafe fn ffi_dispatch_call(proc: *const u8, args: &[i64]) -> i64 {
 }
 
 fn str_arg(v: &IrValue) -> String {
-    match v { IrValue::Str(s) => s.clone(), _ => format!("{}", v) }
+    match v {
+        IrValue::Str(s) => s.clone(),
+        _ => format!("{}", v),
+    }
 }
 fn i64_arg(v: &IrValue) -> i64 {
-    match v { IrValue::I64(n) => *n, IrValue::I32(n) => *n as i64, IrValue::F64(f) => *f as i64, _ => 0 }
+    match v {
+        IrValue::I64(n) => *n,
+        IrValue::I32(n) => *n as i64,
+        IrValue::F64(f) => *f as i64,
+        _ => 0,
+    }
 }
 
 fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> {
@@ -2553,9 +3217,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             Ok(IrValue::Str(irvalue_to_json(v)))
         }
         // ---- Set (list-backed) ----
-        "set_new" => {
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
-        }
+        "set_new" => Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+            Vec::new(),
+        )))),
         "set_add" => {
             if let IrValue::List(rc) = &args[0] {
                 let mut list = rc.borrow_mut();
@@ -2590,9 +3254,7 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 Ok(IrValue::I64(0))
             }
         }
-        "set_to_list" => {
-            Ok(args[0].clone())
-        }
+        "set_to_list" => Ok(args[0].clone()),
         // ---- Regex ----
         "regex_match" => {
             let pattern = str_arg(&args[0]);
@@ -2604,37 +3266,60 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             let text = str_arg(&args[1]);
             let matches = simple_regex_find_all(&pattern, &text);
             let list: Vec<IrValue> = matches.into_iter().map(IrValue::Str).collect();
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(list))))
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                list,
+            ))))
         }
         "regex_replace" => {
             let pattern = str_arg(&args[0]);
             let text = str_arg(&args[1]);
             let replacement = str_arg(&args[2]);
-            Ok(IrValue::Str(simple_regex_replace(&pattern, &text, &replacement)))
+            Ok(IrValue::Str(simple_regex_replace(
+                &pattern,
+                &text,
+                &replacement,
+            )))
         }
         // ---- DateTime ----
         "datetime_now" => {
             use std::time::{SystemTime, UNIX_EPOCH};
-            let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             let s = secs as i64;
             let (y, m, d) = days_to_ymd(s / 86400);
             let time_of_day = s % 86400;
-            Ok(IrValue::Str(format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
-                y, m, d, time_of_day / 3600, (time_of_day % 3600) / 60, time_of_day % 60)))
+            Ok(IrValue::Str(format!(
+                "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                y,
+                m,
+                d,
+                time_of_day / 3600,
+                (time_of_day % 3600) / 60,
+                time_of_day % 60
+            )))
         }
         "datetime_timestamp" => {
             use std::time::{SystemTime, UNIX_EPOCH};
-            let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as f64).unwrap_or(0.0);
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs() as f64)
+                .unwrap_or(0.0);
             Ok(IrValue::F64(secs))
         }
         "datetime_format" => {
             let fmt = str_arg(&args[0]);
             use std::time::{SystemTime, UNIX_EPOCH};
-            let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let secs = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
             let s = secs as i64;
             let (y, mo, da) = days_to_ymd(s / 86400);
             let tod = s % 86400;
-            let out = fmt.replace("%Y", &format!("{:04}", y))
+            let out = fmt
+                .replace("%Y", &format!("{:04}", y))
                 .replace("%m", &format!("{:02}", mo))
                 .replace("%d", &format!("{:02}", da))
                 .replace("%H", &format!("{:02}", tod / 3600))
@@ -2643,21 +3328,31 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             Ok(IrValue::Str(out))
         }
         // ---- OS / Path ----
-        "cwd" => {
-            Ok(IrValue::Str(std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default()))
-        }
+        "cwd" => Ok(IrValue::Str(
+            std::env::current_dir()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        )),
         "listdir" => {
             let path = str_arg(&args[0]);
             let entries: Vec<IrValue> = std::fs::read_dir(&path)
-                .into_iter().flatten()
-                .filter_map(|e| e.ok().map(|e| IrValue::Str(e.file_name().to_string_lossy().into_owned())))
+                .into_iter()
+                .flatten()
+                .filter_map(|e| {
+                    e.ok()
+                        .map(|e| IrValue::Str(e.file_name().to_string_lossy().into_owned()))
+                })
                 .collect();
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(entries))))
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                entries,
+            ))))
         }
         "path_join" => {
             let a = str_arg(&args[0]);
             let b = str_arg(&args[1]);
-            Ok(IrValue::Str(std::path::PathBuf::from(&a).join(&b).display().to_string()))
+            Ok(IrValue::Str(
+                std::path::PathBuf::from(&a).join(&b).display().to_string(),
+            ))
         }
         "path_exists" => {
             let p = str_arg(&args[0]);
@@ -2674,16 +3369,26 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         // ---- Type introspection ----
         "type_of" => {
             let t = match &args[0] {
-                IrValue::I64(_) => "int", IrValue::I32(_) => "i32",
-                IrValue::F64(_) => "float", IrValue::F32(_) => "f32",
-                IrValue::Bool(_) => "bool", IrValue::Str(_) => "str",
-                IrValue::List(_) => "list", IrValue::Map(_) => "map",
-                IrValue::Tuple(_) => "tuple", IrValue::Struct(_) => "struct",
-                IrValue::Enum(_, _) => "enum", IrValue::Array(_) => "array",
-                IrValue::Tensor(_, _) => "tensor", IrValue::Closure { .. } => "closure",
-                IrValue::OptionVal(_) => "option", IrValue::ResultVal(_) => "result",
-                IrValue::Chan(_) => "chan", IrValue::Atomic(_) => "atomic",
-                IrValue::Unit => "unit", IrValue::Grad { .. } => "grad",
+                IrValue::I64(_) => "int",
+                IrValue::I32(_) => "i32",
+                IrValue::F64(_) => "float",
+                IrValue::F32(_) => "f32",
+                IrValue::Bool(_) => "bool",
+                IrValue::Str(_) => "str",
+                IrValue::List(_) => "list",
+                IrValue::Map(_) => "map",
+                IrValue::Tuple(_) => "tuple",
+                IrValue::Struct(_) => "struct",
+                IrValue::Enum(_, _) => "enum",
+                IrValue::Array(_) => "array",
+                IrValue::Tensor(_, _) => "tensor",
+                IrValue::Closure { .. } => "closure",
+                IrValue::OptionVal(_) => "option",
+                IrValue::ResultVal(_) => "result",
+                IrValue::Chan(_) => "chan",
+                IrValue::Atomic(_) => "atomic",
+                IrValue::Unit => "unit",
+                IrValue::Grad { .. } => "grad",
                 IrValue::Sparse(_) => "sparse",
             };
             Ok(IrValue::Str(t.to_string()))
@@ -2710,7 +3415,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "random_range" => {
             let lo = i64_arg(&args[0]);
             let hi = i64_arg(&args[1]);
-            if hi <= lo { return Ok(IrValue::I64(lo)); }
+            if hi <= lo {
+                return Ok(IrValue::I64(lo));
+            }
             use std::collections::hash_map::DefaultHasher;
             use std::hash::{Hash, Hasher};
             thread_local! {
@@ -2732,7 +3439,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "hash" => {
             let s = str_arg(&args[0]);
             let mut h: u64 = 5381;
-            for b in s.bytes() { h = h.wrapping_mul(33).wrapping_add(b as u64); }
+            for b in s.bytes() {
+                h = h.wrapping_mul(33).wrapping_add(b as u64);
+            }
             Ok(IrValue::I64(h as i64))
         }
         // ---- Base64 ----
@@ -2748,7 +3457,12 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "char_at" => {
             let s = str_arg(&args[0]);
             let idx = i64_arg(&args[1]) as usize;
-            Ok(IrValue::Str(s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default()))
+            Ok(IrValue::Str(
+                s.chars()
+                    .nth(idx)
+                    .map(|c| c.to_string())
+                    .unwrap_or_default(),
+            ))
         }
         "str_reverse" => {
             let s = str_arg(&args[0]);
@@ -2795,14 +3509,16 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             std::thread::sleep(std::time::Duration::from_millis(ms as u64));
             Ok(IrValue::Bool(true))
         }
-        "thread_count" => {
-            Ok(IrValue::I64(std::thread::available_parallelism().map(|n| n.get() as i64).unwrap_or(1)))
-        }
+        "thread_count" => Ok(IrValue::I64(
+            std::thread::available_parallelism()
+                .map(|n| n.get() as i64)
+                .unwrap_or(1),
+        )),
 
         // ---- Deque (double-ended queue, backed by VecDeque stored as List) ----
-        "deque_new" => {
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
-        }
+        "deque_new" => Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+            Vec::new(),
+        )))),
         "deque_push_front" => {
             if let IrValue::List(rc) = &args[0] {
                 let mut v = rc.borrow_mut();
@@ -2819,33 +3535,43 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "deque_pop_front" => {
             if let IrValue::List(rc) = &args[0] {
                 let mut v = rc.borrow_mut();
-                if !v.is_empty() { return Ok(v.remove(0)); }
+                if !v.is_empty() {
+                    return Ok(v.remove(0));
+                }
             }
             Ok(IrValue::Unit)
         }
         "deque_pop_back" => {
             if let IrValue::List(rc) = &args[0] {
                 let mut v = rc.borrow_mut();
-                if let Some(val) = v.pop() { return Ok(val); }
+                if let Some(val) = v.pop() {
+                    return Ok(val);
+                }
             }
             Ok(IrValue::Unit)
         }
         "deque_len" => {
             if let IrValue::List(rc) = &args[0] {
                 Ok(IrValue::I64(rc.borrow().len() as i64))
-            } else { Ok(IrValue::I64(0)) }
+            } else {
+                Ok(IrValue::I64(0))
+            }
         }
         "deque_front" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                if let Some(val) = v.first() { return Ok(val.clone()); }
+                if let Some(val) = v.first() {
+                    return Ok(val.clone());
+                }
             }
             Ok(IrValue::Unit)
         }
         "deque_back" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                if let Some(val) = v.last() { return Ok(val.clone()); }
+                if let Some(val) = v.last() {
+                    return Ok(val.clone());
+                }
             }
             Ok(IrValue::Unit)
         }
@@ -2857,16 +3583,22 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 let mut keys: Vec<String> = m.keys().cloned().collect();
                 keys.sort();
                 let list: Vec<IrValue> = keys.into_iter().map(IrValue::Str).collect();
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(list))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    list,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
 
         // ---- BitSet (backed by list of i64 as bit-words) ----
         "bitset_new" => {
             // Create an empty bitset (list of i64 words, each holding 64 bits)
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                Vec::new(),
+            ))))
         }
         "bitset_set" => {
             if let IrValue::List(rc) = &args[0] {
@@ -2874,7 +3606,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 let word_idx = bit / 64;
                 let bit_idx = bit % 64;
                 let mut v = rc.borrow_mut();
-                while v.len() <= word_idx { v.push(IrValue::I64(0)); }
+                while v.len() <= word_idx {
+                    v.push(IrValue::I64(0));
+                }
                 if let IrValue::I64(w) = &v[word_idx] {
                     v[word_idx] = IrValue::I64(w | (1i64 << bit_idx));
                 }
@@ -2898,9 +3632,17 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "bitset_count" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                let count: u32 = v.iter().map(|x| match x { IrValue::I64(w) => w.count_ones(), _ => 0 }).sum();
+                let count: u32 = v
+                    .iter()
+                    .map(|x| match x {
+                        IrValue::I64(w) => w.count_ones(),
+                        _ => 0,
+                    })
+                    .sum();
                 Ok(IrValue::I64(count as i64))
-            } else { Ok(IrValue::I64(0)) }
+            } else {
+                Ok(IrValue::I64(0))
+            }
         }
         "bitset_clear" => {
             if let IrValue::List(rc) = &args[0] {
@@ -2926,7 +3668,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(_path.as_bytes()).unwrap_or_default();
                 let h = unsafe { winapi_LoadLibraryA(cs.as_ptr()) };
-                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                if h.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 Ok(IrValue::I64(h as i64))
             }
             #[cfg(unix)]
@@ -2934,7 +3678,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(_path.as_bytes()).unwrap_or_default();
                 let h = unsafe { libc_dlopen(cs.as_ptr(), 1) }; // RTLD_LAZY = 1
-                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                if h.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 Ok(IrValue::I64(h as i64))
             }
             #[cfg(not(any(windows, unix)))]
@@ -2952,7 +3698,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(_func_name.as_bytes()).unwrap_or_default();
                 let proc = unsafe { winapi_GetProcAddress(_handle as *mut u8, cs.as_ptr()) };
-                if proc.is_null() { return Ok(IrValue::I64(-1)); }
+                if proc.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 let f: extern "C" fn() -> i64 = unsafe { std::mem::transmute(proc) };
                 Ok(IrValue::I64(f()))
             }
@@ -2961,7 +3709,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(_func_name.as_bytes()).unwrap_or_default();
                 let sym = unsafe { libc_dlsym(_handle as *mut u8, cs.as_ptr()) };
-                if sym.is_null() { return Ok(IrValue::I64(-1)); }
+                if sym.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 let f: extern "C" fn() -> i64 = unsafe { std::mem::transmute(sym) };
                 Ok(IrValue::I64(f()))
             }
@@ -2994,7 +3744,7 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             // Supports up to 6 i64 arguments via transmuted function pointers.
             let _handle = i64_arg(&args[0]);
             let _func_name = str_arg(&args[1]);
-            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            let extra_args: Vec<i64> = args[2..].iter().map(i64_arg).collect();
 
             let result_raw: i64;
             #[cfg(windows)]
@@ -3051,11 +3801,19 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             // python_eval(code_str) -> str (stdout from python -c "print(<code>)")
             let code = str_arg(&args[0]);
             let output = std::process::Command::new("python3")
-                .args(&["-c", &format!("import sys; sys.stdout.write(str({}))", code)])
+                .args([
+                    "-c",
+                    &format!("import sys; sys.stdout.write(str({}))", code),
+                ])
                 .output()
-                .or_else(|_| std::process::Command::new("python")
-                    .args(&["-c", &format!("import sys; sys.stdout.write(str({}))", code)])
-                    .output());
+                .or_else(|_| {
+                    std::process::Command::new("python")
+                        .args([
+                            "-c",
+                            &format!("import sys; sys.stdout.write(str({}))", code),
+                        ])
+                        .output()
+                });
             match output {
                 Ok(o) => Ok(IrValue::Str(String::from_utf8_lossy(&o.stdout).to_string())),
                 Err(_) => Ok(IrValue::Str("error: python not found".to_owned())),
@@ -3071,9 +3829,13 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                     .or_else(|_| std::process::Command::new("python").arg(&code).status())
             } else {
                 std::process::Command::new("python3")
-                    .args(&["-c", &code])
+                    .args(["-c", &code])
                     .status()
-                    .or_else(|_| std::process::Command::new("python").args(&["-c", &code]).status())
+                    .or_else(|_| {
+                        std::process::Command::new("python")
+                            .args(["-c", &code])
+                            .status()
+                    })
             };
             match result {
                 Ok(s) => Ok(IrValue::I64(s.code().unwrap_or(-1) as i64)),
@@ -3084,13 +3846,16 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             // python_call(module_or_script, func_name, arg1, arg2, ...) -> str
             let module = str_arg(&args[0]);
             let func = str_arg(&args[1]);
-            let py_args: Vec<String> = args[2..].iter().map(|a| match a {
-                IrValue::Str(s) => format!("'{}'", s.replace('\'', "\\'")),
-                IrValue::I64(n) => n.to_string(),
-                IrValue::F64(f) => f.to_string(),
-                IrValue::Bool(b) => (if *b { "True" } else { "False" }).to_owned(),
-                _ => "None".to_owned(),
-            }).collect();
+            let py_args: Vec<String> = args[2..]
+                .iter()
+                .map(|a| match a {
+                    IrValue::Str(s) => format!("'{}'", s.replace('\'', "\\'")),
+                    IrValue::I64(n) => n.to_string(),
+                    IrValue::F64(f) => f.to_string(),
+                    IrValue::Bool(b) => (if *b { "True" } else { "False" }).to_owned(),
+                    _ => "None".to_owned(),
+                })
+                .collect();
             let py_code = if std::path::Path::new(&module).exists() {
                 // It's a script file — import as module
                 let mod_name = std::path::Path::new(&module)
@@ -3103,18 +3868,28 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                      mod = importlib.util.module_from_spec(spec); \
                      spec.loader.exec_module(mod); \
                      print(mod.{}({}))",
-                    mod_name, module.replace('\\', "\\\\"),
-                    func, py_args.join(", ")
+                    mod_name,
+                    module.replace('\\', "\\\\"),
+                    func,
+                    py_args.join(", ")
                 )
             } else {
-                format!("import {}; print({}.{}({}))", module, module, func, py_args.join(", "))
+                format!(
+                    "import {}; print({}.{}({}))",
+                    module,
+                    module,
+                    func,
+                    py_args.join(", ")
+                )
             };
             let output = std::process::Command::new("python3")
-                .args(&["-c", &py_code])
+                .args(["-c", &py_code])
                 .output()
-                .or_else(|_| std::process::Command::new("python")
-                    .args(&["-c", &py_code])
-                    .output());
+                .or_else(|_| {
+                    std::process::Command::new("python")
+                        .args(["-c", &py_code])
+                        .output()
+                });
             match output {
                 Ok(o) => {
                     let stdout = String::from_utf8_lossy(&o.stdout).trim().to_owned();
@@ -3132,9 +3907,15 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             let output = std::process::Command::new("python3")
                 .arg("--version")
                 .output()
-                .or_else(|_| std::process::Command::new("python").arg("--version").output());
+                .or_else(|_| {
+                    std::process::Command::new("python")
+                        .arg("--version")
+                        .output()
+                });
             match output {
-                Ok(o) => Ok(IrValue::Str(String::from_utf8_lossy(&o.stdout).trim().to_owned())),
+                Ok(o) => Ok(IrValue::Str(
+                    String::from_utf8_lossy(&o.stdout).trim().to_owned(),
+                )),
                 Err(_) => Ok(IrValue::Str("Python not found".to_owned())),
             }
         }
@@ -3148,7 +3929,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(path.as_bytes()).unwrap_or_default();
                 let h = unsafe { winapi_LoadLibraryA(cs.as_ptr()) };
-                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                if h.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 Ok(IrValue::I64(h as i64))
             }
             #[cfg(unix)]
@@ -3156,7 +3939,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(path.as_bytes()).unwrap_or_default();
                 let h = unsafe { libc_dlopen(cs.as_ptr(), 1) };
-                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                if h.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 Ok(IrValue::I64(h as i64))
             }
             #[cfg(not(any(windows, unix)))]
@@ -3168,21 +3953,27 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             // rust_call_i64(handle, func_name, arg1, ...) -> i64
             let handle = i64_arg(&args[0]);
             let func_name = str_arg(&args[1]);
-            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            let extra_args: Vec<i64> = args[2..].iter().map(i64_arg).collect();
             #[cfg(windows)]
             {
                 use std::ffi::CString;
                 let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
                 let proc = unsafe { winapi_GetProcAddress(handle as *mut u8, cs.as_ptr()) };
-                if proc.is_null() { return Ok(IrValue::I64(-1)); }
-                Ok(IrValue::I64(unsafe { ffi_dispatch_call(proc, &extra_args) }))
+                if proc.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
+                Ok(IrValue::I64(unsafe {
+                    ffi_dispatch_call(proc, &extra_args)
+                }))
             }
             #[cfg(unix)]
             {
                 use std::ffi::CString;
                 let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
                 let sym = unsafe { libc_dlsym(handle as *mut u8, cs.as_ptr()) };
-                if sym.is_null() { return Ok(IrValue::I64(-1)); }
+                if sym.is_null() {
+                    return Ok(IrValue::I64(-1));
+                }
                 Ok(IrValue::I64(unsafe { ffi_dispatch_call(sym, &extra_args) }))
             }
             #[cfg(not(any(windows, unix)))]
@@ -3193,13 +3984,15 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "rust_call_f64" => {
             let handle = i64_arg(&args[0]);
             let func_name = str_arg(&args[1]);
-            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            let extra_args: Vec<i64> = args[2..].iter().map(i64_arg).collect();
             #[cfg(windows)]
             {
                 use std::ffi::CString;
                 let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
                 let proc = unsafe { winapi_GetProcAddress(handle as *mut u8, cs.as_ptr()) };
-                if proc.is_null() { return Ok(IrValue::F64(0.0)); }
+                if proc.is_null() {
+                    return Ok(IrValue::F64(0.0));
+                }
                 let raw = unsafe { ffi_dispatch_call(proc, &extra_args) };
                 Ok(IrValue::F64(f64::from_bits(raw as u64)))
             }
@@ -3208,7 +4001,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
                 let sym = unsafe { libc_dlsym(handle as *mut u8, cs.as_ptr()) };
-                if sym.is_null() { return Ok(IrValue::F64(0.0)); }
+                if sym.is_null() {
+                    return Ok(IrValue::F64(0.0));
+                }
                 let raw = unsafe { ffi_dispatch_call(sym, &extra_args) };
                 Ok(IrValue::F64(f64::from_bits(raw as u64)))
             }
@@ -3220,13 +4015,17 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "rust_call_void" => {
             let handle = i64_arg(&args[0]);
             let func_name = str_arg(&args[1]);
-            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            let extra_args: Vec<i64> = args[2..].iter().map(i64_arg).collect();
             #[cfg(windows)]
             {
                 use std::ffi::CString;
                 let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
                 let proc = unsafe { winapi_GetProcAddress(handle as *mut u8, cs.as_ptr()) };
-                if !proc.is_null() { unsafe { ffi_dispatch_call(proc, &extra_args); } }
+                if !proc.is_null() {
+                    unsafe {
+                        ffi_dispatch_call(proc, &extra_args);
+                    }
+                }
                 Ok(IrValue::I64(0))
             }
             #[cfg(unix)]
@@ -3234,7 +4033,11 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 use std::ffi::CString;
                 let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
                 let sym = unsafe { libc_dlsym(handle as *mut u8, cs.as_ptr()) };
-                if !sym.is_null() { unsafe { ffi_dispatch_call(sym, &extra_args); } }
+                if !sym.is_null() {
+                    unsafe {
+                        ffi_dispatch_call(sym, &extra_args);
+                    }
+                }
                 Ok(IrValue::I64(0))
             }
             #[cfg(not(any(windows, unix)))]
@@ -3251,7 +4054,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "env_set" => {
             let key = str_arg(&args[0]);
             let val = str_arg(&args[1]);
-            unsafe { std::env::set_var(&key, &val); }
+            unsafe {
+                std::env::set_var(&key, &val);
+            }
             Ok(IrValue::Bool(true))
         }
         "exit_code" => {
@@ -3261,7 +4066,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "exec_cmd" => {
             let cmd = str_arg(&args[0]);
             #[cfg(windows)]
-            let output = std::process::Command::new("cmd").args(["/C", &cmd]).output();
+            let output = std::process::Command::new("cmd")
+                .args(["/C", &cmd])
+                .output();
             #[cfg(not(windows))]
             let output = std::process::Command::new("sh").args(["-c", &cmd]).output();
             match output {
@@ -3269,9 +4076,7 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 Err(_) => Ok(IrValue::Str(String::new())),
             }
         }
-        "pid" => {
-            Ok(IrValue::I64(std::process::id() as i64))
-        }
+        "pid" => Ok(IrValue::I64(std::process::id() as i64)),
 
         // ---- Crypto / UUID ----
         "uuid" => {
@@ -3314,13 +4119,17 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         }
         "hex_encode" => {
             let s = str_arg(&args[0]);
-            Ok(IrValue::Str(s.bytes().map(|b| format!("{:02x}", b)).collect()))
+            Ok(IrValue::Str(
+                s.bytes().map(|b| format!("{:02x}", b)).collect(),
+            ))
         }
         "hex_decode" => {
             let s = str_arg(&args[0]);
             let bytes: Vec<u8> = (0..s.len())
                 .step_by(2)
-                .filter_map(|i| u8::from_str_radix(&s[i..i.min(s.len()-1)+2.min(s.len()-i)], 16).ok())
+                .filter_map(|i| {
+                    u8::from_str_radix(&s[i..i.min(s.len() - 1) + 2.min(s.len() - i)], 16).ok()
+                })
                 .collect();
             Ok(IrValue::Str(String::from_utf8_lossy(&bytes).to_string()))
         }
@@ -3332,8 +4141,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             let pad = str_arg(&args[2]);
             let pad_char = pad.chars().next().unwrap_or(' ');
             let cur_len = s.chars().count();
-            if cur_len >= width { Ok(IrValue::Str(s)) }
-            else {
+            if cur_len >= width {
+                Ok(IrValue::Str(s))
+            } else {
                 let padding: String = std::iter::repeat(pad_char).take(width - cur_len).collect();
                 Ok(IrValue::Str(format!("{}{}", padding, s)))
             }
@@ -3344,8 +4154,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             let pad = str_arg(&args[2]);
             let pad_char = pad.chars().next().unwrap_or(' ');
             let cur_len = s.chars().count();
-            if cur_len >= width { Ok(IrValue::Str(s)) }
-            else {
+            if cur_len >= width {
+                Ok(IrValue::Str(s))
+            } else {
                 let padding: String = std::iter::repeat(pad_char).take(width - cur_len).collect();
                 Ok(IrValue::Str(format!("{}{}", s, padding)))
             }
@@ -3353,12 +4164,16 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
         "str_chars" => {
             let s = str_arg(&args[0]);
             let chars: Vec<IrValue> = s.chars().map(|c| IrValue::Str(c.to_string())).collect();
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(chars))))
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                chars,
+            ))))
         }
         "str_bytes" => {
             let s = str_arg(&args[0]);
             let bytes: Vec<IrValue> = s.bytes().map(|b| IrValue::I64(b as i64)).collect();
-            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(bytes))))
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                bytes,
+            ))))
         }
         "str_count" => {
             let s = str_arg(&args[0]);
@@ -3368,32 +4183,29 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
 
         // ---- Math constants and predicates ----
         "math_pi" => Ok(IrValue::F64(std::f64::consts::PI)),
-        "math_e"  => Ok(IrValue::F64(std::f64::consts::E)),
+        "math_e" => Ok(IrValue::F64(std::f64::consts::E)),
         "math_inf" => Ok(IrValue::F64(f64::INFINITY)),
-        "is_nan" => {
-            match &args[0] {
-                IrValue::F64(f) => Ok(IrValue::Bool(f.is_nan())),
-                IrValue::F32(f) => Ok(IrValue::Bool(f.is_nan())),
-                _ => Ok(IrValue::Bool(false)),
-            }
-        }
-        "is_inf" => {
-            match &args[0] {
-                IrValue::F64(f) => Ok(IrValue::Bool(f.is_infinite())),
-                IrValue::F32(f) => Ok(IrValue::Bool(f.is_infinite())),
-                _ => Ok(IrValue::Bool(false)),
-            }
-        }
+        "is_nan" => match &args[0] {
+            IrValue::F64(f) => Ok(IrValue::Bool(f.is_nan())),
+            IrValue::F32(f) => Ok(IrValue::Bool(f.is_nan())),
+            _ => Ok(IrValue::Bool(false)),
+        },
+        "is_inf" => match &args[0] {
+            IrValue::F64(f) => Ok(IrValue::Bool(f.is_infinite())),
+            IrValue::F32(f) => Ok(IrValue::Bool(f.is_infinite())),
+            _ => Ok(IrValue::Bool(false)),
+        },
 
         // ---- Functional list operations ----
         // list_map, list_filter, list_reduce are handled directly in the
         // Interpreter::run() method (before this function is called) so they
         // can invoke closures. If we reach here, it's a programming error.
-        "list_map" | "list_filter" | "list_reduce" => {
-            Err(InterpError::Unsupported {
-                detail: format!("{}: should have been handled at the Interpreter level", name),
-            })
-        }
+        "list_map" | "list_filter" | "list_reduce" => Err(InterpError::Unsupported {
+            detail: format!(
+                "{}: should have been handled at the Interpreter level",
+                name
+            ),
+        }),
         "list_any" => {
             // list_any(list) → true if any element is truthy
             if let IrValue::List(rc) = &args[0] {
@@ -3404,7 +4216,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                     IrValue::Str(s) => !s.is_empty(),
                     _ => true,
                 })))
-            } else { Ok(IrValue::Bool(false)) }
+            } else {
+                Ok(IrValue::Bool(false))
+            }
         }
         "list_all" => {
             // list_all(list) → true if all elements are truthy
@@ -3416,31 +4230,45 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                     IrValue::Str(s) => !s.is_empty(),
                     _ => true,
                 })))
-            } else { Ok(IrValue::Bool(true)) }
+            } else {
+                Ok(IrValue::Bool(true))
+            }
         }
         "list_zip" => {
             // list_zip(list1, list2) → list of tuples
             if let (IrValue::List(a), IrValue::List(b)) = (&args[0], &args[1]) {
                 let va = a.borrow();
                 let vb = b.borrow();
-                let zipped: Vec<IrValue> = va.iter().zip(vb.iter())
+                let zipped: Vec<IrValue> = va
+                    .iter()
+                    .zip(vb.iter())
                     .map(|(x, y)| IrValue::Tuple(vec![x.clone(), y.clone()]))
                     .collect();
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(zipped))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    zipped,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_enumerate" => {
             // list_enumerate(list) → list of (index, value) tuples
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                let enumerated: Vec<IrValue> = v.iter().enumerate()
+                let enumerated: Vec<IrValue> = v
+                    .iter()
+                    .enumerate()
                     .map(|(i, val)| IrValue::Tuple(vec![IrValue::I64(i as i64), val.clone()]))
                     .collect();
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(enumerated))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    enumerated,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_flatten" => {
@@ -3455,9 +4283,13 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                         flat.push(item.clone());
                     }
                 }
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(flat))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    flat,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_unique" => {
@@ -3470,18 +4302,26 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                         unique.push(item.clone());
                     }
                 }
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(unique))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    unique,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_reverse" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
                 let reversed: Vec<IrValue> = v.iter().rev().cloned().collect();
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(reversed))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    reversed,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_sorted" => {
@@ -3489,29 +4329,40 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
                 let mut sorted: Vec<IrValue> = v.clone();
-                sorted.sort_by(|a, b| irvalue_cmp(a, b));
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(sorted))))
+                sorted.sort_by(irvalue_cmp);
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    sorted,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_sum" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                let sum: f64 = v.iter().map(|x| match x {
-                    IrValue::I64(n) => *n as f64,
-                    IrValue::F64(f) => *f,
-                    IrValue::I32(n) => *n as f64,
-                    IrValue::F32(f) => *f as f64,
-                    _ => 0.0,
-                }).sum();
+                let sum: f64 = v
+                    .iter()
+                    .map(|x| match x {
+                        IrValue::I64(n) => *n as f64,
+                        IrValue::F64(f) => *f,
+                        IrValue::I32(n) => *n as f64,
+                        IrValue::F32(f) => *f as f64,
+                        _ => 0.0,
+                    })
+                    .sum();
                 Ok(IrValue::F64(sum))
-            } else { Ok(IrValue::F64(0.0)) }
+            } else {
+                Ok(IrValue::F64(0.0))
+            }
         }
         "list_min" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                if v.is_empty() { return Ok(IrValue::Unit); }
+                if v.is_empty() {
+                    return Ok(IrValue::Unit);
+                }
                 let mut min_val = v[0].clone();
                 for item in v.iter().skip(1) {
                     if irvalue_cmp(item, &min_val) == std::cmp::Ordering::Less {
@@ -3519,12 +4370,16 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                     }
                 }
                 Ok(min_val)
-            } else { Ok(IrValue::Unit) }
+            } else {
+                Ok(IrValue::Unit)
+            }
         }
         "list_max" => {
             if let IrValue::List(rc) = &args[0] {
                 let v = rc.borrow();
-                if v.is_empty() { return Ok(IrValue::Unit); }
+                if v.is_empty() {
+                    return Ok(IrValue::Unit);
+                }
                 let mut max_val = v[0].clone();
                 for item in v.iter().skip(1) {
                     if irvalue_cmp(item, &max_val) == std::cmp::Ordering::Greater {
@@ -3532,7 +4387,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                     }
                 }
                 Ok(max_val)
-            } else { Ok(IrValue::Unit) }
+            } else {
+                Ok(IrValue::Unit)
+            }
         }
         "list_index_of" => {
             // list_index_of(list, item) → index or -1
@@ -3540,10 +4397,14 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 let v = rc.borrow();
                 let needle = &args[1];
                 for (i, item) in v.iter().enumerate() {
-                    if irvalue_eq(item, needle) { return Ok(IrValue::I64(i as i64)); }
+                    if irvalue_eq(item, needle) {
+                        return Ok(IrValue::I64(i as i64));
+                    }
                 }
                 Ok(IrValue::I64(-1))
-            } else { Ok(IrValue::I64(-1)) }
+            } else {
+                Ok(IrValue::I64(-1))
+            }
         }
         "list_count" => {
             // list_count(list, item) → number of occurrences
@@ -3552,7 +4413,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 let needle = &args[1];
                 let count = v.iter().filter(|x| irvalue_eq(x, needle)).count();
                 Ok(IrValue::I64(count as i64))
-            } else { Ok(IrValue::I64(0)) }
+            } else {
+                Ok(IrValue::I64(0))
+            }
         }
         "list_take" => {
             // list_take(list, n) → first n elements
@@ -3560,9 +4423,13 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 let n = i64_arg(&args[1]).max(0) as usize;
                 let v = rc.borrow();
                 let taken: Vec<IrValue> = v.iter().take(n).cloned().collect();
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(taken))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    taken,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
         "list_drop" => {
@@ -3571,9 +4438,13 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 let n = i64_arg(&args[1]).max(0) as usize;
                 let v = rc.borrow();
                 let dropped: Vec<IrValue> = v.iter().skip(n).cloned().collect();
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(dropped))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    dropped,
+                ))))
             } else {
-                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(
+                    Vec::new(),
+                ))))
             }
         }
 
@@ -3614,54 +4485,83 @@ fn irvalue_cmp(a: &IrValue, b: &IrValue) -> std::cmp::Ordering {
 /// Minimal SHA-256 implementation (pure Rust, no deps)
 fn sha256_hash(data: &[u8]) -> String {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
     // Padding
     let bit_len = (data.len() as u64) * 8;
     let mut msg = data.to_vec();
     msg.push(0x80);
-    while (msg.len() % 64) != 56 { msg.push(0); }
+    while (msg.len() % 64) != 56 {
+        msg.push(0);
+    }
     msg.extend_from_slice(&bit_len.to_be_bytes());
     // Process 512-bit blocks
     for chunk in msg.chunks(64) {
         let mut w = [0u32; 64];
         for i in 0..16 {
-            w[i] = u32::from_be_bytes([chunk[i*4], chunk[i*4+1], chunk[i*4+2], chunk[i*4+3]]);
+            w[i] = u32::from_be_bytes([
+                chunk[i * 4],
+                chunk[i * 4 + 1],
+                chunk[i * 4 + 2],
+                chunk[i * 4 + 3],
+            ]);
         }
         for i in 16..64 {
-            let s0 = w[i-15].rotate_right(7) ^ w[i-15].rotate_right(18) ^ (w[i-15] >> 3);
-            let s1 = w[i-2].rotate_right(17) ^ w[i-2].rotate_right(19) ^ (w[i-2] >> 10);
-            w[i] = w[i-16].wrapping_add(s0).wrapping_add(w[i-7]).wrapping_add(s1);
+            let s0 = w[i - 15].rotate_right(7) ^ w[i - 15].rotate_right(18) ^ (w[i - 15] >> 3);
+            let s1 = w[i - 2].rotate_right(17) ^ w[i - 2].rotate_right(19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16]
+                .wrapping_add(s0)
+                .wrapping_add(w[i - 7])
+                .wrapping_add(s1);
         }
         let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh) =
             (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
         for i in 0..64 {
             let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
             let ch = (e & f) ^ ((!e) & g);
-            let temp1 = hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let temp1 = hh
+                .wrapping_add(s1)
+                .wrapping_add(ch)
+                .wrapping_add(K[i])
+                .wrapping_add(w[i]);
             let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
             let maj = (a & b) ^ (a & c) ^ (b & c);
             let temp2 = s0.wrapping_add(maj);
-            hh = g; g = f; f = e; e = d.wrapping_add(temp1);
-            d = c; c = b; b = a; a = temp1.wrapping_add(temp2);
+            hh = g;
+            g = f;
+            f = e;
+            e = d.wrapping_add(temp1);
+            d = c;
+            c = b;
+            b = a;
+            a = temp1.wrapping_add(temp2);
         }
-        h[0] = h[0].wrapping_add(a); h[1] = h[1].wrapping_add(b);
-        h[2] = h[2].wrapping_add(c); h[3] = h[3].wrapping_add(d);
-        h[4] = h[4].wrapping_add(e); h[5] = h[5].wrapping_add(f);
-        h[6] = h[6].wrapping_add(g); h[7] = h[7].wrapping_add(hh);
+        h[0] = h[0].wrapping_add(a);
+        h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c);
+        h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e);
+        h[5] = h[5].wrapping_add(f);
+        h[6] = h[6].wrapping_add(g);
+        h[7] = h[7].wrapping_add(hh);
     }
-    format!("{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}", h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7])
+    format!(
+        "{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}",
+        h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]
+    )
 }
 
 // ---- FFI extern declarations ----
@@ -3672,11 +4572,11 @@ extern "system" {
     fn FreeLibrary(module: *mut u8) -> i32;
 }
 #[cfg(windows)]
-use self::LoadLibraryA as winapi_LoadLibraryA;
+use self::FreeLibrary as winapi_FreeLibrary;
 #[cfg(windows)]
 use self::GetProcAddress as winapi_GetProcAddress;
 #[cfg(windows)]
-use self::FreeLibrary as winapi_FreeLibrary;
+use self::LoadLibraryA as winapi_LoadLibraryA;
 
 #[cfg(unix)]
 extern "C" {
@@ -3685,19 +4585,22 @@ extern "C" {
     fn dlclose(handle: *mut u8) -> i32;
 }
 #[cfg(unix)]
+use self::dlclose as libc_dlclose;
+#[cfg(unix)]
 use self::dlopen as libc_dlopen;
 #[cfg(unix)]
 use self::dlsym as libc_dlsym;
-#[cfg(unix)]
-use self::dlclose as libc_dlclose;
 
 fn json_to_irvalue(v: &serde_json::Value) -> IrValue {
     match v {
         serde_json::Value::Null => IrValue::Str("null".into()),
         serde_json::Value::Bool(b) => IrValue::Bool(*b),
         serde_json::Value::Number(n) => {
-            if let Some(i) = n.as_i64() { IrValue::I64(i) }
-            else { IrValue::F64(n.as_f64().unwrap_or(0.0)) }
+            if let Some(i) = n.as_i64() {
+                IrValue::I64(i)
+            } else {
+                IrValue::F64(n.as_f64().unwrap_or(0.0))
+            }
         }
         serde_json::Value::String(s) => IrValue::Str(s.clone()),
         serde_json::Value::Array(arr) => {
@@ -3706,7 +4609,9 @@ fn json_to_irvalue(v: &serde_json::Value) -> IrValue {
         }
         serde_json::Value::Object(obj) => {
             let mut map = std::collections::HashMap::new();
-            for (k, v) in obj { map.insert(k.clone(), json_to_irvalue(v)); }
+            for (k, v) in obj {
+                map.insert(k.clone(), json_to_irvalue(v));
+            }
             IrValue::Map(std::rc::Rc::new(std::cell::RefCell::new(map)))
         }
     }
@@ -3718,15 +4623,29 @@ fn irvalue_to_json(v: &IrValue) -> String {
         IrValue::I32(n) => n.to_string(),
         IrValue::F64(f) => format!("{}", f),
         IrValue::F32(f) => format!("{}", f),
-        IrValue::Bool(b) => if *b { "true".into() } else { "false".into() },
+        IrValue::Bool(b) => {
+            if *b {
+                "true".into()
+            } else {
+                "false".into()
+            }
+        }
         IrValue::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         IrValue::List(rc) => {
             let items: Vec<String> = rc.borrow().iter().map(irvalue_to_json).collect();
             format!("[{}]", items.join(","))
         }
         IrValue::Map(rc) => {
-            let pairs: Vec<String> = rc.borrow().iter()
-                .map(|(k, v)| format!("\"{}\":{}", k.replace('\\', "\\\\").replace('"', "\\\""), irvalue_to_json(v)))
+            let pairs: Vec<String> = rc
+                .borrow()
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "\"{}\":{}",
+                        k.replace('\\', "\\\\").replace('"', "\\\""),
+                        irvalue_to_json(v)
+                    )
+                })
                 .collect();
             format!("{{{}}}", pairs.join(","))
         }
@@ -3741,23 +4660,35 @@ fn http_request(method: &str, url: &str, body: &str) -> String {
         None => (url_trimmed, "/"),
     };
     let (host, port) = match hostport.rfind(':') {
-        Some(i) => (&hostport[..i], hostport[i+1..].parse::<u16>().unwrap_or(80)),
+        Some(i) => (
+            &hostport[..i],
+            hostport[i + 1..].parse::<u16>().unwrap_or(80),
+        ),
         None => (hostport, 80u16),
     };
     let req = if method == "POST" {
         format!("{} {} HTTP/1.0\r\nHost: {}\r\nContent-Length: {}\r\nContent-Type: application/x-www-form-urlencoded\r\nConnection: close\r\n\r\n{}",
             method, path, host, body.len(), body)
     } else {
-        format!("{} {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\n\r\n", method, path, host)
+        format!(
+            "{} {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\n\r\n",
+            method, path, host
+        )
     };
     use std::io::{Read, Write};
     match std::net::TcpStream::connect(format!("{}:{}", host, port)) {
         Ok(mut stream) => {
             let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
-            if stream.write_all(req.as_bytes()).is_err() { return String::new(); }
+            if stream.write_all(req.as_bytes()).is_err() {
+                return String::new();
+            }
             let mut resp = String::new();
             let _ = stream.read_to_string(&mut resp);
-            if let Some(i) = resp.find("\r\n\r\n") { resp[i+4..].to_string() } else { resp }
+            if let Some(i) = resp.find("\r\n\r\n") {
+                resp[i + 4..].to_string()
+            } else {
+                resp
+            }
         }
         Err(_) => String::new(),
     }
@@ -3766,23 +4697,37 @@ fn http_request(method: &str, url: &str, body: &str) -> String {
 fn simple_regex_match(pattern: &str, text: &str) -> bool {
     let pat = pattern.as_bytes();
     let txt = text.as_bytes();
-    if pat.first() == Some(&b'^') { return regex_match_here(&pat[1..], txt); }
+    if pat.first() == Some(&b'^') {
+        return regex_match_here(&pat[1..], txt);
+    }
     for i in 0..=txt.len() {
-        if regex_match_here(pat, &txt[i..]) { return true; }
+        if regex_match_here(pat, &txt[i..]) {
+            return true;
+        }
     }
     false
 }
 
 fn regex_match_here(pat: &[u8], txt: &[u8]) -> bool {
-    if pat.is_empty() { return true; }
-    if pat == b"$" { return txt.is_empty(); }
-    if pat.len() >= 2 && pat[1] == b'*' { return regex_match_star(pat[0], &pat[2..], txt); }
+    if pat.is_empty() {
+        return true;
+    }
+    if pat == b"$" {
+        return txt.is_empty();
+    }
+    if pat.len() >= 2 && pat[1] == b'*' {
+        return regex_match_star(pat[0], &pat[2..], txt);
+    }
     if pat.len() >= 2 && pat[1] == b'+' {
-        if txt.is_empty() || (pat[0] != b'.' && pat[0] != txt[0]) { return false; }
+        if txt.is_empty() || (pat[0] != b'.' && pat[0] != txt[0]) {
+            return false;
+        }
         return regex_match_star(pat[0], &pat[2..], &txt[1..]);
     }
     if pat.len() >= 2 && pat[1] == b'?' {
-        if regex_match_here(&pat[2..], txt) { return true; }
+        if regex_match_here(&pat[2..], txt) {
+            return true;
+        }
         if !txt.is_empty() && (pat[0] == b'.' || pat[0] == txt[0]) {
             return regex_match_here(&pat[2..], &txt[1..]);
         }
@@ -3797,8 +4742,12 @@ fn regex_match_here(pat: &[u8], txt: &[u8]) -> bool {
 fn regex_match_star(c: u8, pat: &[u8], txt: &[u8]) -> bool {
     let mut i = 0;
     loop {
-        if regex_match_here(pat, &txt[i..]) { return true; }
-        if i >= txt.len() || (c != b'.' && txt[i] != c) { return false; }
+        if regex_match_here(pat, &txt[i..]) {
+            return true;
+        }
+        if i >= txt.len() || (c != b'.' && txt[i] != c) {
+            return false;
+        }
         i += 1;
     }
 }
@@ -3811,10 +4760,14 @@ fn simple_regex_find_all(pattern: &str, text: &str) -> Vec<String> {
     while start <= txt.len() {
         if let Some((ms, me)) = regex_find_at(pat, &txt[start..]) {
             if me > ms {
-                results.push(String::from_utf8_lossy(&txt[start+ms..start+me]).to_string());
+                results.push(String::from_utf8_lossy(&txt[start + ms..start + me]).to_string());
                 start += ms + (me - ms).max(1);
-            } else { start += 1; }
-        } else { break; }
+            } else {
+                start += 1;
+            }
+        } else {
+            break;
+        }
     }
     results
 }
@@ -3834,15 +4787,21 @@ fn regex_find_at(pat: &[u8], txt: &[u8]) -> Option<(usize, usize)> {
 }
 
 fn regex_match_exact(pat: &[u8], txt: &[u8]) -> bool {
-    if pat.is_empty() { return txt.is_empty(); }
-    if pat == b"$" { return txt.is_empty(); }
+    if pat.is_empty() {
+        return txt.is_empty();
+    }
+    if pat == b"$" {
+        return txt.is_empty();
+    }
     if pat.len() >= 2 && pat[1] == b'*' {
         let c = pat[0];
         for i in 0..=txt.len() {
-            if (i == 0 || c == b'.' || txt[i-1] == c) && regex_match_exact(&pat[2..], &txt[i..]) {
+            if (i == 0 || c == b'.' || txt[i - 1] == c) && regex_match_exact(&pat[2..], &txt[i..]) {
                 return true;
             }
-            if i < txt.len() && c != b'.' && txt[i] != c { break; }
+            if i < txt.len() && c != b'.' && txt[i] != c {
+                break;
+            }
         }
         return false;
     }
@@ -3857,7 +4816,12 @@ fn simple_regex_replace(pattern: &str, text: &str, replacement: &str) -> String 
     let mut result = text.to_string();
     for m in &matches {
         if let Some(pos) = result.find(m.as_str()) {
-            result = format!("{}{}{}", &result[..pos], replacement, &result[pos+m.len()..]);
+            result = format!(
+                "{}{}{}",
+                &result[..pos],
+                replacement,
+                &result[pos + m.len()..]
+            );
         }
     }
     result
@@ -3867,11 +4831,11 @@ fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
     days += 719468;
     let era = if days >= 0 { days } else { days - 146096 } / 146097;
     let doe = days - era * 146097;
-    let yoe = (doe - doe/1460 + doe/36524 - doe/146096) / 365;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
     let y = yoe + era * 400;
-    let doy = doe - (365*yoe + yoe/4 - yoe/100);
-    let mp = (5*doy + 2) / 153;
-    let d = doy - (153*mp + 2)/5 + 1;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
     let m = if mp < 10 { mp + 3 } else { mp - 9 };
     let y = if m <= 2 { y + 1 } else { y };
     (y, m, d)
@@ -3883,13 +4847,29 @@ fn base64_encode(data: &[u8]) -> String {
     let mut i = 0;
     while i < data.len() {
         let b0 = data[i] as u32;
-        let b1 = if i+1 < data.len() { data[i+1] as u32 } else { 0 };
-        let b2 = if i+2 < data.len() { data[i+2] as u32 } else { 0 };
+        let b1 = if i + 1 < data.len() {
+            data[i + 1] as u32
+        } else {
+            0
+        };
+        let b2 = if i + 2 < data.len() {
+            data[i + 2] as u32
+        } else {
+            0
+        };
         let triple = (b0 << 16) | (b1 << 8) | b2;
         out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
         out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
-        if i+1 < data.len() { out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char); } else { out.push('='); }
-        if i+2 < data.len() { out.push(CHARS[(triple & 0x3F) as usize] as char); } else { out.push('='); }
+        if i + 1 < data.len() {
+            out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if i + 2 < data.len() {
+            out.push(CHARS[(triple & 0x3F) as usize] as char);
+        } else {
+            out.push('=');
+        }
         i += 3;
     }
     out
@@ -3899,28 +4879,57 @@ fn base64_decode(s: &str) -> String {
     const DTABLE: [u8; 128] = {
         let mut t = [255u8; 128];
         let mut i = 0u8;
-        while i < 26 { t[(b'A' + i) as usize] = i; i += 1; }
-        i = 0; while i < 26 { t[(b'a' + i) as usize] = 26 + i; i += 1; }
-        i = 0; while i < 10 { t[(b'0' + i) as usize] = 52 + i; i += 1; }
-        t[b'+' as usize] = 62; t[b'/' as usize] = 63;
+        while i < 26 {
+            t[(b'A' + i) as usize] = i;
+            i += 1;
+        }
+        i = 0;
+        while i < 26 {
+            t[(b'a' + i) as usize] = 26 + i;
+            i += 1;
+        }
+        i = 0;
+        while i < 10 {
+            t[(b'0' + i) as usize] = 52 + i;
+            i += 1;
+        }
+        t[b'+' as usize] = 62;
+        t[b'/' as usize] = 63;
         t
     };
-    let bytes: Vec<u8> = s.bytes().filter(|&b| b != b'=' && b < 128 && DTABLE[b as usize] != 255).collect();
+    let bytes: Vec<u8> = s
+        .bytes()
+        .filter(|&b| b != b'=' && b < 128 && DTABLE[b as usize] != 255)
+        .collect();
     let mut out = Vec::new();
     let mut i = 0;
     while i + 3 < bytes.len() {
-        let (a, b, c, d) = (DTABLE[bytes[i] as usize] as u32, DTABLE[bytes[i+1] as usize] as u32,
-            DTABLE[bytes[i+2] as usize] as u32, DTABLE[bytes[i+3] as usize] as u32);
+        let (a, b, c, d) = (
+            DTABLE[bytes[i] as usize] as u32,
+            DTABLE[bytes[i + 1] as usize] as u32,
+            DTABLE[bytes[i + 2] as usize] as u32,
+            DTABLE[bytes[i + 3] as usize] as u32,
+        );
         let triple = (a << 18) | (b << 12) | (c << 6) | d;
-        out.push((triple >> 16) as u8); out.push((triple >> 8) as u8); out.push(triple as u8);
+        out.push((triple >> 16) as u8);
+        out.push((triple >> 8) as u8);
+        out.push(triple as u8);
         i += 4;
     }
     if i + 2 < bytes.len() {
-        let (a, b, c) = (DTABLE[bytes[i] as usize] as u32, DTABLE[bytes[i+1] as usize] as u32, DTABLE[bytes[i+2] as usize] as u32);
+        let (a, b, c) = (
+            DTABLE[bytes[i] as usize] as u32,
+            DTABLE[bytes[i + 1] as usize] as u32,
+            DTABLE[bytes[i + 2] as usize] as u32,
+        );
         let triple = (a << 18) | (b << 12) | (c << 6);
-        out.push((triple >> 16) as u8); out.push((triple >> 8) as u8);
+        out.push((triple >> 16) as u8);
+        out.push((triple >> 8) as u8);
     } else if i + 1 < bytes.len() {
-        let (a, b) = (DTABLE[bytes[i] as usize] as u32, DTABLE[bytes[i+1] as usize] as u32);
+        let (a, b) = (
+            DTABLE[bytes[i] as usize] as u32,
+            DTABLE[bytes[i + 1] as usize] as u32,
+        );
         let triple = (a << 18) | (b << 12);
         out.push((triple >> 16) as u8);
     }

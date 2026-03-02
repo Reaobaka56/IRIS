@@ -18,7 +18,7 @@ use std::collections::HashMap;
 
 use crate::error::CodegenError;
 use crate::ir::graph::{GraphIr, GraphNode, NodeId, ParamValue};
-use crate::ir::types::{Dim, DType, IrType};
+use crate::ir::types::{DType, Dim, IrType};
 use crate::proto::{encode_message_field, encode_string_field, encode_varint_field};
 
 // ---------------------------------------------------------------------------
@@ -46,17 +46,17 @@ fn dtype_to_onnx_elem(dtype: DType) -> u64 {
 
 fn onnx_op(iris_op: &str) -> &str {
     match iris_op {
-        "Dense" | "Linear"  => "Gemm",
-        "ReLU"              => "Relu",
-        "GELU"              => "Gelu",
-        "BatchNorm"         => "BatchNormalization",
-        "LayerNorm"         => "LayerNormalization",
-        "Conv2D"            => "Conv",
-        "AvgPool"           => "AveragePool",
+        "Dense" | "Linear" => "Gemm",
+        "ReLU" => "Relu",
+        "GELU" => "Gelu",
+        "BatchNorm" => "BatchNormalization",
+        "LayerNorm" => "LayerNormalization",
+        "Conv2D" => "Conv",
+        "AvgPool" => "AveragePool",
         "GlobalAveragePool" => "GlobalAveragePool",
-        "GlobalMaxPool"     => "GlobalMaxPool",
-        "Flatten"           => "Flatten",
-        "Embedding"         => "Gather",
+        "GlobalMaxPool" => "GlobalMaxPool",
+        "Flatten" => "Flatten",
+        "Embedding" => "Gather",
         other => other,
     }
 }
@@ -68,8 +68,8 @@ fn onnx_op(iris_op: &str) -> &str {
 /// Encode a TensorShapeProto::Dimension for a single dim.
 fn encode_shape_dim(dim: &Dim) -> Vec<u8> {
     match dim {
-        Dim::Literal(n) => encode_varint_field(1, *n),   // dim_value
-        Dim::Symbolic(s) => encode_string_field(2, s),   // dim_param
+        Dim::Literal(n) => encode_varint_field(1, *n), // dim_value
+        Dim::Symbolic(s) => encode_string_field(2, s), // dim_param
     }
 }
 
@@ -114,7 +114,7 @@ fn encode_type_proto(ty: &IrType) -> Vec<u8> {
 
 fn encode_value_info(name: &str, ty: &IrType) -> Vec<u8> {
     let mut out = Vec::new();
-    out.extend(encode_string_field(1, name));   // name = 1
+    out.extend(encode_string_field(1, name)); // name = 1
     let type_bytes = encode_type_proto(ty);
     out.extend(encode_message_field(2, &type_bytes)); // type = 2
     out
@@ -172,7 +172,7 @@ fn encode_node(
     for outp in outputs {
         out.extend(encode_string_field(2, outp)); // output = 2
     }
-    out.extend(encode_string_field(3, name));    // name = 3
+    out.extend(encode_string_field(3, name)); // name = 3
     out.extend(encode_string_field(4, op_type)); // op_type = 4
     for (key, val) in attrs {
         let attr_bytes = encode_attribute(key, val);
@@ -185,10 +185,7 @@ fn encode_node(
 // GraphProto
 // ---------------------------------------------------------------------------
 
-fn encode_graph(
-    graph: &GraphIr,
-    shapes: &HashMap<NodeId, IrType>,
-) -> Vec<u8> {
+fn encode_graph(graph: &GraphIr, shapes: &HashMap<NodeId, IrType>) -> Vec<u8> {
     let mut out = Vec::new();
 
     // name = 2
@@ -196,7 +193,14 @@ fn encode_graph(
 
     // node = 1 (repeated)
     for node in graph.layers() {
-        if let GraphNode::Layer { op, inputs, params, name, .. } = node {
+        if let GraphNode::Layer {
+            op,
+            inputs,
+            params,
+            name,
+            ..
+        } = node
+        {
             let op_type = onnx_op(op);
             let input_names: Vec<&str> = inputs
                 .iter()
@@ -207,13 +211,7 @@ fn encode_graph(
                 .iter()
                 .map(|p| (p.key.clone(), p.value.clone()))
                 .collect();
-            let node_bytes = encode_node(
-                op_type,
-                name,
-                &input_names,
-                &[name.as_str()],
-                &attrs,
-            );
+            let node_bytes = encode_node(op_type, name, &input_names, &[name.as_str()], &attrs);
             out.extend(encode_message_field(1, &node_bytes));
         }
     }
@@ -246,8 +244,8 @@ fn encode_graph(
 
 fn encode_opset(domain: &str, version: u64) -> Vec<u8> {
     let mut out = Vec::new();
-    out.extend(encode_string_field(1, domain));     // domain = 1
-    out.extend(encode_varint_field(2, version));    // version = 2
+    out.extend(encode_string_field(1, domain)); // domain = 1
+    out.extend(encode_varint_field(2, version)); // version = 2
     out
 }
 

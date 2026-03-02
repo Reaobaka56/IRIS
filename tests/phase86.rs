@@ -3,7 +3,6 @@
 /// Uses the existing `impl Trait for Type` infrastructure (phase 46).
 /// Operators `+`, `-`, `*`, `/` on record types dispatch to
 /// `Add__Type__add`, `Sub__Type__sub`, etc.
-
 use iris::{compile, EmitKind};
 
 fn eval(src: &str) -> String {
@@ -136,8 +135,11 @@ def main() -> f64 {
 }
 "#;
     let ir_text = ir(src);
-    assert!(ir_text.contains("Add__Vec2__add"),
-        "expected Add__Vec2__add in IR:\n{}", ir_text);
+    assert!(
+        ir_text.contains("Add__Vec2__add"),
+        "expected Add__Vec2__add in IR:\n{}",
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------

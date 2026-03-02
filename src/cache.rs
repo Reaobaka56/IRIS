@@ -32,27 +32,21 @@ pub fn sha256_hex(data: &[u8]) -> String {
 /// SHA-256 (FIPS 180-4) — returns 32-byte digest.
 fn sha256(data: &[u8]) -> [u8; 32] {
     const K: [u32; 64] = [
-        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
-        0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
-        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3,
-        0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
-        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc,
-        0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
-        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
-        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
-        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13,
-        0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
-        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3,
-        0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
-        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5,
-        0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
-        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208,
-        0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
+        0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
+        0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f,
+        0x4a7484aa, 0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7,
+        0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138, 0x4d2c6dfc,
+        0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b,
+        0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070, 0x19a4c116,
+        0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7,
+        0xc67178f2,
     ];
 
     let mut h: [u32; 8] = [
-        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
-        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab,
+        0x5be0cd19,
     ];
 
     // Pre-processing: pad the message
@@ -166,7 +160,12 @@ impl BuildCache {
     pub fn open(project_dir: &Path) -> Self {
         let cache_dir = project_dir.join(".iris").join("cache");
         let manifest = Self::load_manifest(&cache_dir);
-        Self { cache_dir, manifest, disabled: false, dirty: false }
+        Self {
+            cache_dir,
+            manifest,
+            disabled: false,
+            dirty: false,
+        }
     }
 
     /// A no-op cache that never stores or retrieves anything.
@@ -188,7 +187,9 @@ impl BuildCache {
     /// 1. Quick: compare mtime + size against the manifest.
     /// 2. Full:  if mtime/size changed, re-hash and compare the SHA-256.
     pub fn is_fresh(&self, path: &Path, source: &str) -> bool {
-        if self.disabled { return false; }
+        if self.disabled {
+            return false;
+        }
         let canon = match path.canonicalize() {
             Ok(p) => p,
             Err(_) => return false,
@@ -196,7 +197,9 @@ impl BuildCache {
         if let Some(entry) = self.manifest.get(&canon) {
             // Quick check: if mtime+size haven't changed, trust the stored hash.
             if let Ok(meta) = fs::metadata(&canon) {
-                let mtime = meta.modified().ok()
+                let mtime = meta
+                    .modified()
+                    .ok()
                     .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
@@ -213,14 +216,23 @@ impl BuildCache {
 
     /// Record that `path` with content `source` has been successfully compiled.
     pub fn mark_fresh(&mut self, path: &Path, source: &str) {
-        if self.disabled { return; }
+        if self.disabled {
+            return;
+        }
         let canon = match path.canonicalize() {
             Ok(p) => p,
             Err(_) => return,
         };
         let hash = sha256_hex(source.as_bytes());
         let (mtime_secs, size) = file_mtime_and_size(&canon);
-        self.manifest.insert(canon, CacheEntry { hash, mtime_secs, size });
+        self.manifest.insert(
+            canon,
+            CacheEntry {
+                hash,
+                mtime_secs,
+                size,
+            },
+        );
         self.dirty = true;
     }
 
@@ -230,7 +242,9 @@ impl BuildCache {
 
     /// Try to load a cached `IrModule` for the given source hash.
     pub fn load_ir(&self, source_hash: &str) -> Option<crate::ir::module::IrModule> {
-        if self.disabled { return None; }
+        if self.disabled {
+            return None;
+        }
         let path = self.cache_dir.join(format!("{}.ir.bin", source_hash));
         let data = fs::read(&path).ok()?;
         crate::codegen::ir_serial::deserialize_module(&data).ok()
@@ -238,7 +252,9 @@ impl BuildCache {
 
     /// Store a compiled `IrModule` under the given source hash.
     pub fn store_ir(&self, source_hash: &str, module: &crate::ir::module::IrModule) {
-        if self.disabled { return; }
+        if self.disabled {
+            return;
+        }
         let _ = fs::create_dir_all(&self.cache_dir);
         let path = self.cache_dir.join(format!("{}.ir.bin", source_hash));
         let data = crate::codegen::ir_serial::serialize_module(module);
@@ -256,7 +272,9 @@ impl BuildCache {
 
     /// Write the manifest to disk if it was modified.
     pub fn flush(&mut self) {
-        if self.disabled || !self.dirty { return; }
+        if self.disabled || !self.dirty {
+            return;
+        }
         let _ = fs::create_dir_all(&self.cache_dir);
         let path = self.cache_dir.join("manifest.json");
         let mut out = String::from("{\n");
@@ -270,7 +288,9 @@ impl BuildCache {
                 entry.mtime_secs,
                 entry.size,
             ));
-            if i + 1 < entries.len() { out.push(','); }
+            if i + 1 < entries.len() {
+                out.push(',');
+            }
             out.push('\n');
         }
         out.push('}');
@@ -280,7 +300,9 @@ impl BuildCache {
 
     /// Remove all cached artifacts.
     pub fn clean(&self) {
-        if self.disabled { return; }
+        if self.disabled {
+            return;
+        }
         let _ = fs::remove_dir_all(&self.cache_dir);
     }
 
@@ -304,7 +326,9 @@ impl BuildCache {
 
 fn file_mtime_and_size(path: &Path) -> (u64, u64) {
     if let Ok(meta) = fs::metadata(path) {
-        let mtime = meta.modified().ok()
+        let mtime = meta
+            .modified()
+            .ok()
             .and_then(|t| t.duration_since(SystemTime::UNIX_EPOCH).ok())
             .map(|d| d.as_secs())
             .unwrap_or(0);
@@ -342,7 +366,11 @@ fn parse_manifest_json(data: &str) -> HashMap<PathBuf, CacheEntry> {
                 if !hash.is_empty() {
                     map.insert(
                         PathBuf::from(key.replace("\\\\", "\\")),
-                        CacheEntry { hash, mtime_secs: mtime, size },
+                        CacheEntry {
+                            hash,
+                            mtime_secs: mtime,
+                            size,
+                        },
                     );
                 }
             }
@@ -362,7 +390,9 @@ fn extract_json_num(s: &str, key: &str) -> Option<u64> {
     let needle = format!("\"{}\":", key);
     let start = s.find(&needle)? + needle.len();
     let rest = s[start..].trim_start();
-    let end = rest.find(|c: char| !c.is_ascii_digit()).unwrap_or(rest.len());
+    let end = rest
+        .find(|c: char| !c.is_ascii_digit())
+        .unwrap_or(rest.len());
     rest[..end].parse().ok()
 }
 

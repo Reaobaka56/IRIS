@@ -33,7 +33,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "double(21) should be 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "double(21) should be 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -49,7 +54,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "15", "add_n(5) should be 15, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "15",
+        "add_n(5) should be 15, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -79,7 +89,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "81", "square(9) should be 81, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "81",
+        "square(9) should be 81, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -14,7 +14,11 @@ def f() -> i64 {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(ir.contains("alloc_array"), "IR should contain alloc_array, got:\n{}", ir);
+    assert!(
+        ir.contains("alloc_array"),
+        "IR should contain alloc_array, got:\n{}",
+        ir
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +79,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "99", "arr[1] after store should be 99, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "99",
+        "arr[1] after store should be 99, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +99,11 @@ def f() -> i64 {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(ir.contains("array_load"), "IR should contain array_load, got:\n{}", ir);
+    assert!(
+        ir.contains("array_load"),
+        "IR should contain array_load, got:\n{}",
+        ir
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -107,7 +120,11 @@ def f() -> f32 {
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // The value should be approximately 2.5
     let v: f32 = out.trim().parse().expect("should parse as float");
-    assert!((v - 2.5f32).abs() < 1e-5, "arr[1] should be 2.5, got: {}", v);
+    assert!(
+        (v - 2.5f32).abs() < 1e-5,
+        "arr[1] should be 2.5, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -126,5 +143,10 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "15", "sum of [1,2,3,4,5] should be 15, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "15",
+        "sum of [1,2,3,4,5] should be 15, got: {}",
+        out.trim()
+    );
 }

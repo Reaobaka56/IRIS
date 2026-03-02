@@ -3,7 +3,6 @@
 ///
 /// Interpreter stubs return sentinel values (fd=-1, str="").
 /// Tests verify compile success, IR structure, and stub evaluation.
-
 use iris::{compile, EmitKind};
 
 fn eval(src: &str) -> String {
@@ -109,8 +108,11 @@ def main() -> i64 {
 }
 "#;
     let ir_text = ir(src);
-    assert!(ir_text.contains("tcp_connect"),
-        "expected tcp_connect in IR:\n{}", ir_text);
+    assert!(
+        ir_text.contains("tcp_connect"),
+        "expected tcp_connect in IR:\n{}",
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------
@@ -125,8 +127,11 @@ def main() -> i64 {
 }
 "#;
     let llvm_text = llvm(src);
-    assert!(llvm_text.contains("iris_tcp_connect"),
-        "expected iris_tcp_connect in LLVM IR:\n{}", llvm_text);
+    assert!(
+        llvm_text.contains("iris_tcp_connect"),
+        "expected iris_tcp_connect in LLVM IR:\n{}",
+        llvm_text
+    );
 }
 
 // ------------------------------------------------------------------

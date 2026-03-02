@@ -17,7 +17,11 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(out.contains("barrier"), "IR should contain barrier, got:\n{}", out);
+    assert!(
+        out.contains("barrier"),
+        "IR should contain barrier, got:\n{}",
+        out
+    );
 }
 
 // 2. barrier() is a no-op - value after it is returned
@@ -30,7 +34,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "99", "barrier is no-op, should return 99, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "99",
+        "barrier is no-op, should return 99, got: {}",
+        out.trim()
+    );
 }
 
 // 3. multiple barriers work
@@ -45,7 +54,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "7", "three barriers still return 7, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "7",
+        "three barriers still return 7, got: {}",
+        out.trim()
+    );
 }
 
 // 4. barrier between par for loops
@@ -65,7 +79,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "barrier between par fors should return 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "barrier between par fors should return 42, got: {}",
+        out.trim()
+    );
 }
 
 // 5. barrier in a conditional branch
@@ -83,7 +102,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "100", "barrier in conditional should return 100, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "100",
+        "barrier in conditional should return 100, got: {}",
+        out.trim()
+    );
 }
 
 // 6. barrier with variable access before and after
@@ -98,7 +122,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "8", "barrier with vars should return 8, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "8",
+        "barrier with vars should return 8, got: {}",
+        out.trim()
+    );
 }
 
 // 7. barrier IR contains the barrier instruction text
@@ -112,7 +141,11 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Ir).expect("should compile to IR");
-    assert!(out.contains("barrier"), "IR should contain barrier keyword, got:\n{}", out);
+    assert!(
+        out.contains("barrier"),
+        "IR should contain barrier keyword, got:\n{}",
+        out
+    );
 }
 
 // 8. barrier with arithmetic - value preserved across barrier
@@ -126,5 +159,10 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "21", "barrier should preserve 3*7=21, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "21",
+        "barrier should preserve 3*7=21, got: {}",
+        out.trim()
+    );
 }

@@ -1,3 +1,4 @@
+#![allow(clippy::approx_constant)]
 //! Phase 41 integration tests: `parse_i64(s)` and `parse_f64(s)` builtins.
 //!
 //! parse_i64(s) -> option<i64>: returns some(n) if s is a valid integer, none otherwise.
@@ -20,7 +21,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "parse_i64(\"42\") should be some(42), got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "parse_i64(\"42\") should be some(42), got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -38,7 +44,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "-1", "parse_i64(\"abc\") should be none, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "-1",
+        "parse_i64(\"abc\") should be none, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -57,7 +68,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 3.14).abs() < 1e-9, "parse_f64(\"3.14\") should be ~3.14, got: {}", v);
+    assert!(
+        (v - 3.14).abs() < 1e-9,
+        "parse_f64(\"3.14\") should be ~3.14, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -76,7 +91,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - (-1.0)).abs() < 1e-9, "parse_f64(\"xyz\") should be none (-1.0), got: {}", v);
+    assert!(
+        (v - (-1.0)).abs() < 1e-9,
+        "parse_f64(\"xyz\") should be none (-1.0), got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -160,5 +179,10 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "-99", "parse_i64(\"-99\") should be -99, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "-99",
+        "parse_i64(\"-99\") should be -99, got: {}",
+        out.trim()
+    );
 }

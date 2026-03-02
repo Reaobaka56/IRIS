@@ -32,7 +32,11 @@ def withunused(x: f32) -> f32 {
         "DCE should remove the dead const.i instruction\n{}",
         output
     );
-    assert!(output.contains("return"), "return must still be present\n{}", output);
+    assert!(
+        output.contains("return"),
+        "return must still be present\n{}",
+        output
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -52,7 +56,11 @@ def addtwo(x: f32, y: f32) -> f32 {
         "DCE must not remove the live add instruction\n{}",
         output
     );
-    assert!(output.contains("return"), "return must be present\n{}", output);
+    assert!(
+        output.contains("return"),
+        "return must be present\n{}",
+        output
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -165,7 +173,11 @@ model ValidNet {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "valid model should pass all passes: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "valid model should pass all passes: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -186,7 +198,10 @@ fn test_shape_check_invalid_reshape() {
         shape: Shape(vec![Dim::Literal(3), Dim::Literal(3)]),
     };
 
-    let params = vec![Param { name: "x".into(), ty: in_ty.clone() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: in_ty.clone(),
+    }];
     let mut builder = IrFunctionBuilder::new("bad_reshape", params, out_ty.clone());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), in_ty);
@@ -202,7 +217,12 @@ fn test_shape_check_invalid_reshape() {
         },
         Some(out_ty),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
     module.add_function(builder.build()).unwrap();
 
     let mut pm = PassManager::new();
@@ -214,7 +234,13 @@ fn test_shape_check_invalid_reshape() {
     pm.add_pass(ShapeCheckPass);
 
     let err = pm.run(&mut module);
-    assert!(err.is_err(), "bad reshape must be rejected by ShapeCheckPass");
+    assert!(
+        err.is_err(),
+        "bad reshape must be rejected by ShapeCheckPass"
+    );
     let (pass_name, _) = err.unwrap_err();
-    assert_eq!(pass_name, "shape-check", "error should originate from shape-check pass");
+    assert_eq!(
+        pass_name, "shape-check",
+        "error should originate from shape-check pass"
+    );
 }

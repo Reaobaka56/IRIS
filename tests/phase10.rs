@@ -36,7 +36,11 @@ fn test_modulo_const_fold() {
     let src = "def rem() -> i64 { 10 % 3 }";
     let ir = compile(src, "test", EmitKind::Ir).expect("should compile");
     // After const folding, the result should be 1 (10 % 3 = 1).
-    assert!(ir.contains("1"), "IR should contain folded result '1': {}", ir);
+    assert!(
+        ir.contains("1"),
+        "IR should contain folded result '1': {}",
+        ir
+    );
 }
 
 #[test]
@@ -50,19 +54,31 @@ fn test_cast_f32_to_i64() {
 fn test_cast_llvm_fptosi() {
     let src = "def conv(x: f32) -> i64 { x to i64 }";
     let llvm = compile(src, "test", EmitKind::Llvm).expect("should compile to LLVM");
-    assert!(llvm.contains("fptosi"), "LLVM IR should contain 'fptosi': {}", llvm);
+    assert!(
+        llvm.contains("fptosi"),
+        "LLVM IR should contain 'fptosi': {}",
+        llvm
+    );
 }
 
 #[test]
 fn test_cast_llvm_sitofp() {
     let src = "def conv(x: i64) -> f32 { x to f32 }";
     let llvm = compile(src, "test", EmitKind::Llvm).expect("should compile to LLVM");
-    assert!(llvm.contains("sitofp"), "LLVM IR should contain 'sitofp': {}", llvm);
+    assert!(
+        llvm.contains("sitofp"),
+        "LLVM IR should contain 'sitofp': {}",
+        llvm
+    );
 }
 
 #[test]
 fn test_modulo_llvm() {
     let src = "def rem(a: i64, b: i64) -> i64 { a % b }";
     let llvm = compile(src, "test", EmitKind::Llvm).expect("should compile to LLVM");
-    assert!(llvm.contains("srem"), "LLVM IR should contain 'srem': {}", llvm);
+    assert!(
+        llvm.contains("srem"),
+        "LLVM IR should contain 'srem': {}",
+        llvm
+    );
 }

@@ -27,9 +27,21 @@ def clamp(x: f32) -> f32 {
         "if-else must produce a condbr instruction\n{}",
         output
     );
-    assert!(output.contains("then"), "then block must be present\n{}", output);
-    assert!(output.contains("else"), "else block must be present\n{}", output);
-    assert!(output.contains("merge"), "merge block must be present\n{}", output);
+    assert!(
+        output.contains("then"),
+        "then block must be present\n{}",
+        output
+    );
+    assert!(
+        output.contains("else"),
+        "else block must be present\n{}",
+        output
+    );
+    assert!(
+        output.contains("merge"),
+        "merge block must be present\n{}",
+        output
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -46,7 +58,11 @@ def offset(x: f32) -> f32 {
 }
 "#;
     let output = compile(src, "test", EmitKind::Ir).expect("compile");
-    assert!(output.contains("condbr"), "must contain conditional branch\n{}", output);
+    assert!(
+        output.contains("condbr"),
+        "must contain conditional branch\n{}",
+        output
+    );
     assert!(output.contains("return"), "must contain return\n{}", output);
 }
 
@@ -63,7 +79,11 @@ def maxval(x: f32, y: f32) -> f32 {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "if-else with comparison should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "if-else with comparison should compile: {:?}",
+        result.err()
+    );
     let output = result.unwrap();
     assert!(output.contains("condbr"), "must contain condbr\n{}", output);
 }
@@ -90,7 +110,11 @@ def folded() -> f32 {
         output
     );
     // The folded result (6.0) should appear as a const.f instruction.
-    assert!(output.contains("const.f"), "folded constant must appear\n{}", output);
+    assert!(
+        output.contains("const.f"),
+        "folded constant must appear\n{}",
+        output
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +152,11 @@ model DropNet {
 }
 "#;
     let result = compile(src, "test", EmitKind::Ir);
-    assert!(result.is_ok(), "Dropout model should compile: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Dropout model should compile: {:?}",
+        result.err()
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -70,7 +70,11 @@ def f() -> i64 {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
-    assert!(ir.contains("process_args"), "expected process_args in IR:\n{}", ir);
+    assert!(
+        ir.contains("process_args"),
+        "expected process_args in IR:\n{}",
+        ir
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -102,7 +106,11 @@ def f() -> i64 {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("iris_process_args"), "expected iris_process_args in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("iris_process_args"),
+        "expected iris_process_args in LLVM:\n{}",
+        ll
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +126,11 @@ def f() -> bool {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("iris_env_var"), "expected iris_env_var in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("iris_env_var"),
+        "expected iris_env_var in LLVM:\n{}",
+        ll
+    );
 }
 
 // ---------------------------------------------------------------------------

@@ -40,7 +40,9 @@ struct UnionFind {
 }
 
 impl UnionFind {
-    fn new() -> Self { Self { slots: Vec::new() } }
+    fn new() -> Self {
+        Self { slots: Vec::new() }
+    }
 
     /// Allocate a new slot with an optional known concrete type.
     fn new_slot(&mut self, ty: Option<IrType>) -> usize {
@@ -70,14 +72,20 @@ impl UnionFind {
     /// Return the concrete type at the root, if any.
     fn get_type(&mut self, id: usize) -> Option<IrType> {
         let root = self.find(id);
-        if let Slot::Root(ty) = &self.slots[root] { ty.clone() } else { None }
+        if let Slot::Root(ty) = &self.slots[root] {
+            ty.clone()
+        } else {
+            None
+        }
     }
 
     /// Unify two slots. Concrete types must match; otherwise record an error.
     fn unify(&mut self, a: usize, b: usize, errors: &mut Vec<String>) {
         let ra = self.find(a);
         let rb = self.find(b);
-        if ra == rb { return; }
+        if ra == rb {
+            return;
+        }
         let ta = self.get_type(ra);
         let tb = self.get_type(rb);
         match (ta, tb) {
@@ -113,7 +121,9 @@ impl UnionFind {
 pub struct HmTypeInferPass;
 
 impl Pass for HmTypeInferPass {
-    fn name(&self) -> &'static str { "hm-type-infer" }
+    fn name(&self) -> &'static str {
+        "hm-type-infer"
+    }
 
     fn run(&mut self, module: &mut IrModule) -> Result<(), PassError> {
         let num_fns = module.functions.len();
@@ -141,7 +151,11 @@ fn infer_function(module: &mut IrModule, fn_idx: usize) -> Result<(), PassError>
     }
 
     // Pass 2: substitute resolved types back into value_types.
-    let value_ids: Vec<ValueId> = module.functions[fn_idx].value_types.keys().cloned().collect();
+    let value_ids: Vec<ValueId> = module.functions[fn_idx]
+        .value_types
+        .keys()
+        .cloned()
+        .collect();
     for vid in value_ids {
         if module.functions[fn_idx].value_types.get(&vid) == Some(&IrType::Infer) {
             if let Some(&s) = slots.get(&vid) {
@@ -180,7 +194,13 @@ fn collect_constraints(
 
     match instr {
         // BinOp: ty is the result type; lhs/rhs have the same operand type.
-        IrInstr::BinOp { result, lhs, rhs, ty, .. } => {
+        IrInstr::BinOp {
+            result,
+            lhs,
+            rhs,
+            ty,
+            ..
+        } => {
             let sr = slot(*result, Some(ty.clone()));
             let sl = slot(*lhs, None);
             let srs = slot(*rhs, None);
@@ -191,16 +211,31 @@ fn collect_constraints(
                 uf.unify(sr, sl, errors);
             }
         }
-        IrInstr::UnaryOp { result, ty, operand, .. } => {
+        IrInstr::UnaryOp {
+            result,
+            ty,
+            operand,
+            ..
+        } => {
             let sr = slot(*result, Some(ty.clone()));
             let so = slot(*operand, None);
             uf.unify(sr, so, errors);
         }
-        IrInstr::ConstInt { result, ty, .. } => { slot(*result, Some(ty.clone())); }
-        IrInstr::ConstFloat { result, ty, .. } => { slot(*result, Some(ty.clone())); }
-        IrInstr::ConstBool { result, .. } => { slot(*result, Some(IrType::Scalar(DType::Bool))); }
-        IrInstr::ConstStr { result, .. } => { slot(*result, Some(IrType::Str)); }
-        IrInstr::Cast { result, to_ty, .. } => { slot(*result, Some(to_ty.clone())); }
+        IrInstr::ConstInt { result, ty, .. } => {
+            slot(*result, Some(ty.clone()));
+        }
+        IrInstr::ConstFloat { result, ty, .. } => {
+            slot(*result, Some(ty.clone()));
+        }
+        IrInstr::ConstBool { result, .. } => {
+            slot(*result, Some(IrType::Scalar(DType::Bool)));
+        }
+        IrInstr::ConstStr { result, .. } => {
+            slot(*result, Some(IrType::Str));
+        }
+        IrInstr::Cast { result, to_ty, .. } => {
+            slot(*result, Some(to_ty.clone()));
+        }
         // Return: each returned value should match the corresponding function return type.
         // (We don't have function return_ty here; leave for a separate pass.)
         IrInstr::Return { .. } => {}
@@ -208,7 +243,7 @@ fn collect_constraints(
         _ => {
             if let Some(r) = instr.result() {
                 // Most instructions already have a concrete type stored in value_types;
-            // this is a no-op if it's already known.
+                // this is a no-op if it's already known.
                 slot(r, None);
             }
         }

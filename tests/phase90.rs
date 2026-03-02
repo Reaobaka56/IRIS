@@ -1,7 +1,6 @@
-/// Phase 90: Loop unrolling + exhaustiveness checking.
-
-use iris::{compile, compile_to_module, ExhaustivePass, LoopUnrollPass, EmitKind};
 use iris::pass::Pass;
+/// Phase 90: Loop unrolling + exhaustiveness checking.
+use iris::{compile, compile_to_module, EmitKind, ExhaustivePass, LoopUnrollPass};
 
 fn eval(src: &str) -> String {
     compile(src, "phase90", EmitKind::Eval).expect("eval failed")
@@ -66,8 +65,11 @@ def main() -> i64 {
     // With max_unroll=8, a 100-iteration loop should NOT be unrolled.
     // The IR should still contain for_header block.
     let ir_text = ir_after_unroll(src);
-    assert!(ir_text.contains("for_header") || ir_text.contains("bb"),
-        "expected loop structure to remain for large loops:\n{}", ir_text);
+    assert!(
+        ir_text.contains("for_header") || ir_text.contains("bb"),
+        "expected loop structure to remain for large loops:\n{}",
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------
@@ -88,8 +90,10 @@ def main() -> i64 {
 "#;
     let mut module = compile_to_module(src, "phase90").expect("compile failed");
     let mut pass = ExhaustivePass;
-    assert!(pass.run(&mut module).is_ok(),
-        "exhaustive match should pass ExhaustivePass");
+    assert!(
+        pass.run(&mut module).is_ok(),
+        "exhaustive match should pass ExhaustivePass"
+    );
 }
 
 // ------------------------------------------------------------------

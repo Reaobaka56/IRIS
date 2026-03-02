@@ -66,46 +66,180 @@ pub struct LspState {
 // ---------------------------------------------------------------------------
 
 static STATIC_COMPLETIONS: &[&str] = &[
-    "def", "val", "var", "for", "while", "loop", "if", "else", "when",
-    "return", "break", "continue", "choice", "record", "const", "type",
-    "extern", "trait", "impl", "bring", "pub", "async", "await", "spawn",
-    "par", "in",
+    "def",
+    "val",
+    "var",
+    "for",
+    "while",
+    "loop",
+    "if",
+    "else",
+    "when",
+    "return",
+    "break",
+    "continue",
+    "choice",
+    "record",
+    "const",
+    "type",
+    "extern",
+    "trait",
+    "impl",
+    "bring",
+    "pub",
+    "async",
+    "await",
+    "spawn",
+    "par",
+    "in",
     // builtins
-    "print", "panic", "assert", "len", "concat", "sin", "cos", "sqrt",
-    "abs", "floor", "ceil", "exp", "log", "min", "max", "pow", "clamp",
-    "some", "none", "ok", "err", "is_some", "is_ok", "unwrap",
-    "list", "push", "map", "cell", "cell_get", "cell_set",
-    "to_str", "format", "read_line", "read_i64", "read_f64",
-    "grad", "grad_of", "zeros", "ones", "fill", "linspace",
-    "split", "join", "contains", "starts_with", "ends_with",
-    "to_upper", "to_lower", "trim", "repeat",
+    "print",
+    "panic",
+    "assert",
+    "len",
+    "concat",
+    "sin",
+    "cos",
+    "sqrt",
+    "abs",
+    "floor",
+    "ceil",
+    "exp",
+    "log",
+    "min",
+    "max",
+    "pow",
+    "clamp",
+    "some",
+    "none",
+    "ok",
+    "err",
+    "is_some",
+    "is_ok",
+    "unwrap",
+    "list",
+    "push",
+    "map",
+    "cell",
+    "cell_get",
+    "cell_set",
+    "to_str",
+    "format",
+    "read_line",
+    "read_i64",
+    "read_f64",
+    "grad",
+    "grad_of",
+    "zeros",
+    "ones",
+    "fill",
+    "linspace",
+    "split",
+    "join",
+    "contains",
+    "starts_with",
+    "ends_with",
+    "to_upper",
+    "to_lower",
+    "trim",
+    "repeat",
     // Phase 104 builtins
-    "http_get", "http_post", "json_stringify",
-    "regex_match", "regex_find_all", "regex_replace",
-    "datetime_now", "datetime_timestamp", "datetime_format",
-    "cwd", "list_dir", "path_join", "mkdir", "remove_file",
-    "type_of", "random", "random_range",
-    "hash", "base64_encode", "base64_decode",
-    "char_at", "str_reverse",
+    "http_get",
+    "http_post",
+    "json_stringify",
+    "regex_match",
+    "regex_find_all",
+    "regex_replace",
+    "datetime_now",
+    "datetime_timestamp",
+    "datetime_format",
+    "cwd",
+    "list_dir",
+    "path_join",
+    "mkdir",
+    "remove_file",
+    "type_of",
+    "random",
+    "random_range",
+    "hash",
+    "base64_encode",
+    "base64_decode",
+    "char_at",
+    "str_reverse",
     // Phase 105 builtins
-    "chan_try_recv", "chan_len", "select", "timeout", "thread_count",
-    "deque_new", "deque_push_front", "deque_push_back", "deque_pop_front",
-    "deque_pop_back", "deque_len", "deque_front", "deque_back",
+    "chan_try_recv",
+    "chan_len",
+    "select",
+    "timeout",
+    "thread_count",
+    "deque_new",
+    "deque_push_front",
+    "deque_push_back",
+    "deque_pop_front",
+    "deque_pop_back",
+    "deque_len",
+    "deque_front",
+    "deque_back",
     "sorted_keys",
-    "bitset_new", "bitset_set", "bitset_get", "bitset_count", "bitset_clear",
-    "ffi_open", "ffi_call", "ffi_close",
+    "bitset_new",
+    "bitset_set",
+    "bitset_get",
+    "bitset_count",
+    "bitset_clear",
+    "ffi_open",
+    "ffi_call",
+    "ffi_close",
     // Phase 106: expanded FFI — C, Python, Rust
-    "ffi_call_i64", "ffi_call_f64", "ffi_call_str", "ffi_call_void", "ffi_call_args",
-    "python_eval", "python_exec", "python_call", "python_version",
-    "rust_lib_open", "rust_call_i64", "rust_call_f64", "rust_call_void",
-    "env_get", "env_set", "exit_code", "exec_cmd", "pid",
-    "uuid", "sha256", "hex_encode", "hex_decode",
-    "str_pad_left", "str_pad_right", "str_chars", "str_bytes", "str_count",
-    "math_pi", "math_e", "math_inf", "is_nan", "is_inf",
-    "list_map", "list_filter", "list_reduce", "list_any", "list_all",
-    "list_zip", "list_enumerate", "list_flatten", "list_unique",
-    "list_reverse", "list_sorted", "list_sum", "list_min", "list_max",
-    "list_index_of", "list_count", "list_take", "list_drop",
+    "ffi_call_i64",
+    "ffi_call_f64",
+    "ffi_call_str",
+    "ffi_call_void",
+    "ffi_call_args",
+    "python_eval",
+    "python_exec",
+    "python_call",
+    "python_version",
+    "rust_lib_open",
+    "rust_call_i64",
+    "rust_call_f64",
+    "rust_call_void",
+    "env_get",
+    "env_set",
+    "exit_code",
+    "exec_cmd",
+    "pid",
+    "uuid",
+    "sha256",
+    "hex_encode",
+    "hex_decode",
+    "str_pad_left",
+    "str_pad_right",
+    "str_chars",
+    "str_bytes",
+    "str_count",
+    "math_pi",
+    "math_e",
+    "math_inf",
+    "is_nan",
+    "is_inf",
+    "list_map",
+    "list_filter",
+    "list_reduce",
+    "list_any",
+    "list_all",
+    "list_zip",
+    "list_enumerate",
+    "list_flatten",
+    "list_unique",
+    "list_reverse",
+    "list_sorted",
+    "list_sum",
+    "list_min",
+    "list_max",
+    "list_index_of",
+    "list_count",
+    "list_take",
+    "list_drop",
 ];
 
 // ---------------------------------------------------------------------------
@@ -114,7 +248,9 @@ static STATIC_COMPLETIONS: &[&str] = &[
 
 impl LspState {
     /// Creates an empty LSP state.
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Called when the editor opens a document. Returns initial diagnostics.
     pub fn open_document(&mut self, uri: &str, text: &str) -> Vec<LspDiagnostic> {
@@ -144,29 +280,45 @@ impl LspState {
             // User-defined functions
             for func in &ast.functions {
                 if func.name.name == ident {
-                    let params: Vec<String> = func.params.iter()
+                    let params: Vec<String> = func
+                        .params
+                        .iter()
                         .map(|p| format!("{}: {}", p.name.name, ast_type_str(&p.ty)))
                         .collect();
                     let ret = ast_type_str(&func.return_ty);
                     let vis = if func.is_pub { "pub " } else { "" };
-                    return Some(format!("```iris\n{}def {}({}) -> {}\n```", vis, ident, params.join(", "), ret));
+                    return Some(format!(
+                        "```iris\n{}def {}({}) -> {}\n```",
+                        vis,
+                        ident,
+                        params.join(", "),
+                        ret
+                    ));
                 }
             }
 
             // Struct (record) definitions
             for s in &ast.structs {
                 if s.name.name == ident {
-                    let fields: Vec<String> = s.fields.iter()
+                    let fields: Vec<String> = s
+                        .fields
+                        .iter()
                         .map(|f| format!("    {}: {}", f.name.name, ast_type_str(&f.ty)))
                         .collect();
-                    return Some(format!("```iris\nrecord {} {{\n{}\n}}\n```", ident, fields.join(",\n")));
+                    return Some(format!(
+                        "```iris\nrecord {} {{\n{}\n}}\n```",
+                        ident,
+                        fields.join(",\n")
+                    ));
                 }
             }
 
             // Enum (choice) definitions
             for e in &ast.enums {
                 if e.name.name == ident {
-                    let variants: Vec<String> = e.variants.iter()
+                    let variants: Vec<String> = e
+                        .variants
+                        .iter()
                         .map(|v| {
                             if v.fields.is_empty() {
                                 format!("    {}", v.name.name)
@@ -176,16 +328,29 @@ impl LspState {
                             }
                         })
                         .collect();
-                    return Some(format!("```iris\nchoice {} {{\n{}\n}}\n```", ident, variants.join(",\n")));
+                    return Some(format!(
+                        "```iris\nchoice {} {{\n{}\n}}\n```",
+                        ident,
+                        variants.join(",\n")
+                    ));
                 }
                 // Also match variant names
                 for v in &e.variants {
                     if v.name.name == ident {
                         if v.fields.is_empty() {
-                            return Some(format!("```iris\n{}.{}\n```\nVariant of `{}`", e.name.name, ident, e.name.name));
+                            return Some(format!(
+                                "```iris\n{}.{}\n```\nVariant of `{}`",
+                                e.name.name, ident, e.name.name
+                            ));
                         } else {
                             let tys: Vec<String> = v.fields.iter().map(ast_type_str).collect();
-                            return Some(format!("```iris\n{}.{}({})\n```\nVariant of `{}`", e.name.name, ident, tys.join(", "), e.name.name));
+                            return Some(format!(
+                                "```iris\n{}.{}({})\n```\nVariant of `{}`",
+                                e.name.name,
+                                ident,
+                                tys.join(", "),
+                                e.name.name
+                            ));
                         }
                     }
                 }
@@ -194,7 +359,10 @@ impl LspState {
             // Constants
             for c in &ast.consts {
                 if c.name.name == ident {
-                    let ty_s = c.ty.as_ref().map(|t| ast_type_str(t)).unwrap_or_else(|| "(inferred)".into());
+                    let ty_s =
+                        c.ty.as_ref()
+                            .map(ast_type_str)
+                            .unwrap_or_else(|| "(inferred)".into());
                     return Some(format!("```iris\nconst {}: {}\n```", ident, ty_s));
                 }
             }
@@ -202,17 +370,28 @@ impl LspState {
             // Type aliases
             for ta in &ast.type_aliases {
                 if ta.name == ident {
-                    return Some(format!("```iris\ntype {} = {}\n```", ident, ast_type_str(&ta.ty)));
+                    return Some(format!(
+                        "```iris\ntype {} = {}\n```",
+                        ident,
+                        ast_type_str(&ta.ty)
+                    ));
                 }
             }
 
             // Extern functions
             for ef in &ast.extern_fns {
                 if ef.name.name == ident {
-                    let params: Vec<String> = ef.params.iter()
+                    let params: Vec<String> = ef
+                        .params
+                        .iter()
                         .map(|p| format!("{}: {}", p.name.name, ast_type_str(&p.ty)))
                         .collect();
-                    return Some(format!("```iris\nextern def {}({}) -> {}\n```", ident, params.join(", "), ast_type_str(&ef.ret_ty)));
+                    return Some(format!(
+                        "```iris\nextern def {}({}) -> {}\n```",
+                        ident,
+                        params.join(", "),
+                        ast_type_str(&ef.ret_ty)
+                    ));
                 }
             }
 
@@ -230,10 +409,17 @@ impl LspState {
             for func in module.functions() {
                 let bare = func.name.split("__").next().unwrap_or(&func.name);
                 if bare == ident {
-                    let params: Vec<String> = func.params.iter()
+                    let params: Vec<String> = func
+                        .params
+                        .iter()
                         .map(|p| format!("{}: {:?}", p.name, p.ty))
                         .collect();
-                    return Some(format!("```iris\ndef {}({}) -> {:?}\n```", bare, params.join(", "), func.return_ty));
+                    return Some(format!(
+                        "```iris\ndef {}({}) -> {:?}\n```",
+                        bare,
+                        params.join(", "),
+                        func.return_ty
+                    ));
                 }
             }
         }
@@ -273,7 +459,12 @@ impl LspState {
 
     /// Returns the definition location for the identifier at the given position.
     /// Returns `(uri, start_line, start_char, end_line, end_char)` on success.
-    pub fn definition(&self, uri: &str, line: u32, character: u32) -> Option<(String, u32, u32, u32, u32)> {
+    pub fn definition(
+        &self,
+        uri: &str,
+        line: u32,
+        character: u32,
+    ) -> Option<(String, u32, u32, u32, u32)> {
         let source = self.documents.get(uri)?;
         let byte = line_col_to_byte(source, line, character);
         let ident = ident_at_byte(source, byte)?;
@@ -289,8 +480,14 @@ impl LspState {
     /// Each entry is `(name, kind, start_line, start_char, end_line, end_char)`.
     /// SymbolKind: 12=Function, 23=Struct, 10=Enum, 14=Constant, 26=TypeParameter
     pub fn document_symbols(&self, uri: &str) -> Vec<(String, u32, u32, u32, u32, u32)> {
-        let source = match self.documents.get(uri) { Some(s) => s, None => return vec![] };
-        let ast = match parse_source(source) { Some(a) => a, None => return vec![] };
+        let source = match self.documents.get(uri) {
+            Some(s) => s,
+            None => return vec![],
+        };
+        let ast = match parse_source(source) {
+            Some(a) => a,
+            None => return vec![],
+        };
         let mut symbols = Vec::new();
 
         for func in &ast.functions {
@@ -329,7 +526,12 @@ impl LspState {
 
     /// Returns signature help for a function call at the given position.
     /// Returns `(label, parameter_labels, active_parameter_index)`.
-    pub fn signature_help(&self, uri: &str, line: u32, character: u32) -> Option<(String, Vec<String>, usize)> {
+    pub fn signature_help(
+        &self,
+        uri: &str,
+        line: u32,
+        character: u32,
+    ) -> Option<(String, Vec<String>, usize)> {
         let source = self.documents.get(uri)?;
         let (func_name, active_param) = find_call_context(source, line, character)?;
         let ast = parse_source(source)?;
@@ -337,7 +539,9 @@ impl LspState {
         // Find the function definition.
         let func = ast.functions.iter().find(|f| f.name.name == func_name)?;
 
-        let param_labels: Vec<String> = func.params.iter()
+        let param_labels: Vec<String> = func
+            .params
+            .iter()
             .map(|p| format!("{}: {}", p.name.name, ast_type_str(&p.ty)))
             .collect();
         let ret = ast_type_str(&func.return_ty);
@@ -357,11 +561,17 @@ impl LspState {
     // ------------------------------------------------------------------
 
     /// Returns code actions (quick fixes) for the given range.
-    pub fn code_actions(&self, uri: &str, range_start_line: u32, range_start_col: u32,
-                        _range_end_line: u32, _range_end_col: u32)
-        -> Vec<CodeAction>
-    {
-        let Some(source) = self.documents.get(uri) else { return Vec::new() };
+    pub fn code_actions(
+        &self,
+        uri: &str,
+        range_start_line: u32,
+        range_start_col: u32,
+        _range_end_line: u32,
+        _range_end_col: u32,
+    ) -> Vec<CodeAction> {
+        let Some(source) = self.documents.get(uri) else {
+            return Vec::new();
+        };
         let mut actions = Vec::new();
 
         // Run diagnostics to find actionable errors/warnings.
@@ -373,7 +583,10 @@ impl LspState {
                 if let Some(name) = extract_quoted_name(&diag.message) {
                     if let Some(bring_stmt) = suggest_bring_for_name(&name) {
                         actions.push(CodeAction {
-                            title: format!("Add 'bring {}' to imports", bring_stmt.trim_start_matches("bring ")),
+                            title: format!(
+                                "Add 'bring {}' to imports",
+                                bring_stmt.trim_start_matches("bring ")
+                            ),
                             kind: "quickfix".to_owned(),
                             edit_uri: uri.to_owned(),
                             edit_range: (0, 0, 0, 0),
@@ -399,7 +612,9 @@ impl LspState {
             }
 
             // Quick fix: suggest closing brace for unterminated blocks
-            if diag.message.contains("missing a closing brace") || diag.message.contains("unexpected end of file") {
+            if diag.message.contains("missing a closing brace")
+                || diag.message.contains("unexpected end of file")
+            {
                 let line_count = source.lines().count() as u32;
                 actions.push(CodeAction {
                     title: "Add closing '}'".to_owned(),
@@ -412,19 +627,27 @@ impl LspState {
             }
 
             // Quick fix: missing semicolon
-            if diag.message.contains("expected ';'") || diag.message.contains("expected semicolon") {
+            if diag.message.contains("expected ';'") || diag.message.contains("expected semicolon")
+            {
                 actions.push(CodeAction {
                     title: "Add missing semicolon".to_owned(),
                     kind: "quickfix".to_owned(),
                     edit_uri: uri.to_owned(),
-                    edit_range: (diag.end_line, diag.end_character, diag.end_line, diag.end_character),
+                    edit_range: (
+                        diag.end_line,
+                        diag.end_character,
+                        diag.end_line,
+                        diag.end_character,
+                    ),
                     new_text: ";".to_owned(),
                     diagnostic_message: Some(diag.message.clone()),
                 });
             }
 
             // Quick fix: type mismatch — suggest explicit cast
-            if diag.message.contains("type mismatch") || diag.message.contains("expected") && diag.message.contains("found") {
+            if diag.message.contains("type mismatch")
+                || diag.message.contains("expected") && diag.message.contains("found")
+            {
                 // Extract expected/found types
                 if let (Some(expected), Some(found)) = (
                     extract_type_from_mismatch(&diag.message, "expected"),
@@ -435,7 +658,12 @@ impl LspState {
                             title: format!("Cast to {}", expected),
                             kind: "quickfix".to_owned(),
                             edit_uri: uri.to_owned(),
-                            edit_range: (diag.line, diag.character, diag.end_line, diag.end_character),
+                            edit_range: (
+                                diag.line,
+                                diag.character,
+                                diag.end_line,
+                                diag.end_character,
+                            ),
                             new_text: format!("/* cast to {} */", expected),
                             diagnostic_message: Some(diag.message.clone()),
                         });
@@ -487,7 +715,12 @@ impl LspState {
                             title: format!("Rename '{}' to '{}'", name, snake),
                             kind: "quickfix".to_owned(),
                             edit_uri: uri.to_owned(),
-                            edit_range: (diag.line, diag.character, diag.end_line, diag.end_character),
+                            edit_range: (
+                                diag.line,
+                                diag.character,
+                                diag.end_line,
+                                diag.end_character,
+                            ),
                             new_text: snake,
                             diagnostic_message: Some(diag.message.clone()),
                         });
@@ -543,8 +776,12 @@ impl LspState {
     /// Returns inlay hints for the document — type annotations on `val`/`var` bindings.
     /// Each hint is (line, character, label, kind) where kind is 1=Type, 2=Parameter.
     pub fn inlay_hints(&self, uri: &str) -> Vec<InlayHint> {
-        let Some(source) = self.documents.get(uri) else { return Vec::new() };
-        let Some(ast) = parse_source(source) else { return Vec::new() };
+        let Some(source) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let Some(ast) = parse_source(source) else {
+            return Vec::new();
+        };
         let mut hints = Vec::new();
 
         // Walk all function bodies looking for val/var bindings without explicit types.
@@ -555,7 +792,13 @@ impl LspState {
         hints
     }
 
-    fn collect_inlay_hints_from_stmts(&self, stmts: &[crate::parser::ast::AstStmt], source: &str, hints: &mut Vec<InlayHint>) {
+    #[allow(clippy::only_used_in_recursion)]
+    fn collect_inlay_hints_from_stmts(
+        &self,
+        stmts: &[crate::parser::ast::AstStmt],
+        source: &str,
+        hints: &mut Vec<InlayHint>,
+    ) {
         use crate::parser::ast::AstStmt;
         for stmt in stmts {
             match stmt {
@@ -574,7 +817,9 @@ impl LspState {
                 AstStmt::While { body, .. } | AstStmt::Loop { body, .. } => {
                     self.collect_inlay_hints_from_stmts(&body.stmts, source, hints);
                 }
-                AstStmt::ForRange { body, .. } | AstStmt::ForEach { body, .. } | AstStmt::ParFor { body, .. } => {
+                AstStmt::ForRange { body, .. }
+                | AstStmt::ForEach { body, .. }
+                | AstStmt::ParFor { body, .. } => {
                     self.collect_inlay_hints_from_stmts(&body.stmts, source, hints);
                 }
                 AstStmt::Spawn { body, .. } => {
@@ -592,9 +837,13 @@ impl LspState {
     /// Finds all occurrences of the identifier at (line, character) in the document.
     /// Returns Vec<(start_line, start_col, end_line, end_col)>.
     pub fn references(&self, uri: &str, line: u32, character: u32) -> Vec<(u32, u32, u32, u32)> {
-        let Some(source) = self.documents.get(uri) else { return Vec::new() };
-        let byte = line_col_to_byte(source, line, character) as u32;
-        let Some(target) = ident_at_byte(source, byte) else { return Vec::new() };
+        let Some(source) = self.documents.get(uri) else {
+            return Vec::new();
+        };
+        let byte = line_col_to_byte(source, line, character);
+        let Some(target) = ident_at_byte(source, byte) else {
+            return Vec::new();
+        };
         let mut refs = Vec::new();
 
         // Simple text-based reference search: find all occurrences of the identifier
@@ -628,7 +877,13 @@ impl LspState {
 
     /// Renames all occurrences of the identifier at (line, character) to `new_name`.
     /// Returns Vec<(start_line, start_col, end_line, end_col, new_text)>.
-    pub fn rename(&self, uri: &str, line: u32, character: u32, new_name: &str) -> Vec<(u32, u32, u32, u32, String)> {
+    pub fn rename(
+        &self,
+        uri: &str,
+        line: u32,
+        character: u32,
+        new_name: &str,
+    ) -> Vec<(u32, u32, u32, u32, String)> {
         let refs = self.references(uri, line, character);
         refs.into_iter()
             .map(|(sl, sc, el, ec)| (sl, sc, el, ec, new_name.to_owned()))
@@ -640,7 +895,9 @@ impl LspState {
     // ------------------------------------------------------------------
 
     fn diagnose(&self, uri: &str) -> Vec<LspDiagnostic> {
-        let Some(source) = self.documents.get(uri) else { return Vec::new() };
+        let Some(source) = self.documents.get(uri) else {
+            return Vec::new();
+        };
         let module_name = uri_to_module_name(uri);
         let mut diags = Vec::new();
 
@@ -755,7 +1012,8 @@ impl LspState {
                         end_character: character + func.name.name.len() as u32,
                         message: format!(
                             "Function '{}' has {} parameters. Consider using a record type.",
-                            func.name.name, func.params.len()
+                            func.name.name,
+                            func.params.len()
                         ),
                         severity: 4,
                         code: Some("BP003".to_owned()),
@@ -868,7 +1126,11 @@ fn definition_byte_of(ast: &crate::parser::ast::AstModule, name: &str) -> Option
 /// Converts a byte offset to a 0-based (line, character) LSP position.
 fn byte_to_lsp_pos(source: &str, byte: u32) -> (u32, u32) {
     let byte = byte as usize;
-    let prefix = if byte <= source.len() { &source[..byte] } else { source };
+    let prefix = if byte <= source.len() {
+        &source[..byte]
+    } else {
+        source
+    };
     let line = prefix.bytes().filter(|&b| b == b'\n').count() as u32;
     let col = prefix.rfind('\n').map(|i| byte - i - 1).unwrap_or(byte) as u32;
     (line, col)
@@ -876,7 +1138,7 @@ fn byte_to_lsp_pos(source: &str, byte: u32) -> (u32, u32) {
 
 /// Converts an AstType to a display string.
 fn ast_type_str(ty: &crate::parser::ast::AstType) -> String {
-    use crate::parser::ast::{AstType, AstScalarKind};
+    use crate::parser::ast::{AstScalarKind, AstType};
     match ty {
         AstType::Scalar(k, _) => match k {
             AstScalarKind::I64 => "i64",
@@ -889,7 +1151,8 @@ fn ast_type_str(ty: &crate::parser::ast::AstType) -> String {
             AstScalarKind::U32 => "u32",
             AstScalarKind::U64 => "u64",
             AstScalarKind::USize => "usize",
-        }.to_owned(),
+        }
+        .to_owned(),
         AstType::Named(n, _) => n.clone(),
         AstType::Tuple(ts, _) => {
             let inner: Vec<String> = ts.iter().map(ast_type_str).collect();
@@ -933,20 +1196,30 @@ fn find_call_context(source: &str, line: u32, character: u32) -> Option<(String,
     // Count commas between open_pos and cursor to find active parameter.
     let between = &prefix[open + 1..];
     let mut depth2 = 0i32;
-    let active_param = between.chars().filter(|&c| {
-        if c == '(' || c == '[' { depth2 += 1; }
-        if c == ')' || c == ']' { depth2 -= 1; }
-        c == ',' && depth2 == 0
-    }).count();
+    let active_param = between
+        .chars()
+        .filter(|&c| {
+            if c == '(' || c == '[' {
+                depth2 += 1;
+            }
+            if c == ')' || c == ']' {
+                depth2 -= 1;
+            }
+            c == ',' && depth2 == 0
+        })
+        .count();
 
     // Find identifier immediately before `(`.
     let before_paren = prefix[..open].trim_end();
     let ident_end = before_paren.len();
-    let ident_start = before_paren.rfind(|c: char| !c.is_alphanumeric() && c != '_')
+    let ident_start = before_paren
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
         .map(|i| i + 1)
         .unwrap_or(0);
     let func_name = &before_paren[ident_start..ident_end];
-    if func_name.is_empty() { return None; }
+    if func_name.is_empty() {
+        return None;
+    }
 
     Some((func_name.to_owned(), active_param))
 }
@@ -957,12 +1230,21 @@ fn find_call_context(source: &str, line: u32, character: u32) -> Option<(String,
 
 /// Searches a block (and nested blocks) for a val/var binding matching `name`
 /// whose span encompasses the cursor `byte` position.
-fn find_binding_in_block(block: &crate::parser::ast::AstBlock, name: &str, _byte: u32) -> Option<String> {
+fn find_binding_in_block(
+    block: &crate::parser::ast::AstBlock,
+    name: &str,
+    _byte: u32,
+) -> Option<String> {
     for stmt in &block.stmts {
         match stmt {
-            crate::parser::ast::AstStmt::Let { name: ident, ty, .. } => {
+            crate::parser::ast::AstStmt::Let {
+                name: ident, ty, ..
+            } => {
                 if ident.name == name {
-                    let ty_str = ty.as_ref().map(|t| ast_type_str(t)).unwrap_or_else(|| "(inferred)".to_owned());
+                    let ty_str = ty
+                        .as_ref()
+                        .map(ast_type_str)
+                        .unwrap_or_else(|| "(inferred)".to_owned());
                     // Detect if it was `val` or `var` by checking the source at the span.
                     return Some(format!("```iris\nval {}: {}\n```", name, ty_str));
                 }
@@ -987,7 +1269,10 @@ fn find_binding_in_block(block: &crate::parser::ast::AstBlock, name: &str, _byte
             }
             crate::parser::ast::AstStmt::ParFor { var, body, .. } => {
                 if var.name == name {
-                    return Some(format!("```iris\npar for {}: i64\n```\nParallel loop variable", name));
+                    return Some(format!(
+                        "```iris\npar for {}: i64\n```\nParallel loop variable",
+                        name
+                    ));
                 }
                 if let Some(info) = find_binding_in_block(body, name, _byte) {
                     return Some(info);
@@ -995,7 +1280,10 @@ fn find_binding_in_block(block: &crate::parser::ast::AstBlock, name: &str, _byte
             }
             crate::parser::ast::AstStmt::ForEach { var, body, .. } => {
                 if var.name == name {
-                    return Some(format!("```iris\nfor {} in ...\n```\nIterator variable", name));
+                    return Some(format!(
+                        "```iris\nfor {} in ...\n```\nIterator variable",
+                        name
+                    ));
                 }
                 if let Some(info) = find_binding_in_block(body, name, _byte) {
                     return Some(info);
@@ -1229,41 +1517,50 @@ fn builtin_hover(name: &str) -> Option<String> {
         "list_drop"          => "def list_drop(xs: list<T>, n: i64) -> list<T>\nDrop first n elements",
         _ => return None,
     };
-    Some(format!("```iris\n{}\n```", sig.split_once('\n').map(|(s, _)| s).unwrap_or(sig)).to_owned()
-        + &sig.split_once('\n').map(|(_, d)| format!("\n\n{}", d)).unwrap_or_default())
+    Some(
+        format!(
+            "```iris\n{}\n```",
+            sig.split_once('\n').map(|(s, _)| s).unwrap_or(sig)
+        )
+        .to_owned()
+            + &sig
+                .split_once('\n')
+                .map(|(_, d)| format!("\n\n{}", d))
+                .unwrap_or_default(),
+    )
 }
 
 /// Returns hover info for a keyword.
 fn keyword_hover(name: &str) -> Option<String> {
     let info = match name {
-        "def"      => "**def** — Define a function",
-        "pub"      => "**pub** — Export a function or record for use from other files",
-        "val"      => "**val** — Immutable binding (cannot be reassigned)",
-        "var"      => "**var** — Mutable binding (can be reassigned)",
-        "if"       => "**if** — Conditional expression: `if cond { ... } else { ... }`",
-        "else"     => "**else** — Alternative branch of an if expression",
-        "while"    => "**while** — Loop while condition is true",
-        "for"      => "**for** — Range loop: `for i in start..end { ... }`",
-        "loop"     => "**loop** — Infinite loop (break to exit)",
-        "break"    => "**break** — Exit the innermost loop",
+        "def" => "**def** — Define a function",
+        "pub" => "**pub** — Export a function or record for use from other files",
+        "val" => "**val** — Immutable binding (cannot be reassigned)",
+        "var" => "**var** — Mutable binding (can be reassigned)",
+        "if" => "**if** — Conditional expression: `if cond { ... } else { ... }`",
+        "else" => "**else** — Alternative branch of an if expression",
+        "while" => "**while** — Loop while condition is true",
+        "for" => "**for** — Range loop: `for i in start..end { ... }`",
+        "loop" => "**loop** — Infinite loop (break to exit)",
+        "break" => "**break** — Exit the innermost loop",
         "continue" => "**continue** — Skip to the next loop iteration",
-        "return"   => "**return** — Early return from a function",
-        "when"     => "**when** — Pattern match expression",
-        "record"   => "**record** — Define a struct type with named fields",
-        "choice"   => "**choice** — Define an enum type with variants",
-        "const"    => "**const** — Compile-time constant",
-        "type"     => "**type** — Type alias",
-        "extern"   => "**extern** — Declare an external C function",
-        "bring"    => "**bring** — Import a module: `bring std.math`",
-        "trait"    => "**trait** — Define a trait (interface)",
-        "impl"     => "**impl** — Implement a trait for a type",
-        "spawn"    => "**spawn** — Launch a concurrent task",
-        "par"      => "**par** — Parallel execution: `par for i in 0..n { ... }`",
-        "async"    => "**async** — Mark a function as asynchronous",
-        "await"    => "**await** — Wait for an async expression to complete",
-        "true"     => "```iris\ntrue: bool\n```",
-        "false"    => "```iris\nfalse: bool\n```",
-        "none"     => "```iris\nnone: option<T>\n```\nAbsent value",
+        "return" => "**return** — Early return from a function",
+        "when" => "**when** — Pattern match expression",
+        "record" => "**record** — Define a struct type with named fields",
+        "choice" => "**choice** — Define an enum type with variants",
+        "const" => "**const** — Compile-time constant",
+        "type" => "**type** — Type alias",
+        "extern" => "**extern** — Declare an external C function",
+        "bring" => "**bring** — Import a module: `bring std.math`",
+        "trait" => "**trait** — Define a trait (interface)",
+        "impl" => "**impl** — Implement a trait for a type",
+        "spawn" => "**spawn** — Launch a concurrent task",
+        "par" => "**par** — Parallel execution: `par for i in 0..n { ... }`",
+        "async" => "**async** — Mark a function as asynchronous",
+        "await" => "**await** — Wait for an async expression to complete",
+        "true" => "```iris\ntrue: bool\n```",
+        "false" => "```iris\nfalse: bool\n```",
+        "none" => "```iris\nnone: option<T>\n```\nAbsent value",
         _ => return None,
     };
     Some(info.to_owned())
@@ -1292,19 +1589,35 @@ fn format_iris(source: &str) -> String {
     let indent_str = |depth: usize| "    ".repeat(depth);
 
     // Top-level item starters that get a blank line before them.
-    let is_top_level_kw = |t: &Token| matches!(
-        t,
-        Token::Def | Token::Record | Token::Choice | Token::Const | Token::Type
-        | Token::Extern | Token::Trait | Token::Impl | Token::Pub
-    );
+    let is_top_level_kw = |t: &Token| {
+        matches!(
+            t,
+            Token::Def
+                | Token::Record
+                | Token::Choice
+                | Token::Const
+                | Token::Type
+                | Token::Extern
+                | Token::Trait
+                | Token::Impl
+                | Token::Pub
+        )
+    };
 
     for (idx, spanned) in spanned_tokens.iter().enumerate() {
         let tok = &spanned.node;
         let tok_str = token_to_str(tok, source);
-        if tok_str.is_empty() { continue; }
+        if tok_str.is_empty() {
+            continue;
+        }
 
         // Emit blank line before top-level keywords (except at very start).
-        if is_top_level_kw(tok) && indent == 0 && !out.is_empty() && blank_lines == 0 && !at_line_start {
+        if is_top_level_kw(tok)
+            && indent == 0
+            && !out.is_empty()
+            && blank_lines == 0
+            && !at_line_start
+        {
             out.push('\n');
             blank_lines = 1;
         }
@@ -1333,8 +1646,10 @@ fn format_iris(source: &str) -> String {
 
         // Closing brace: decrease indent, then emit on its own line.
         if tok_str == "}" {
-            if indent > 0 { indent -= 1; }
-            if !out.ends_with('\n') { out.push('\n'); }
+            indent = indent.saturating_sub(1);
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
             out.push_str(&indent_str(indent));
             out.push('}');
             out.push('\n');
@@ -1357,7 +1672,9 @@ fn format_iris(source: &str) -> String {
         // Commas — no leading space, one trailing space.
         if tok_str == "," {
             // Remove trailing space before comma.
-            if out.ends_with(' ') { out.pop(); }
+            if out.ends_with(' ') {
+                out.pop();
+            }
             out.push(',');
             out.push(' ');
             prev_was_newline = false;
@@ -1365,27 +1682,46 @@ fn format_iris(source: &str) -> String {
         }
 
         // Operators that need surrounding spaces.
-        let needs_space = matches!(tok_str.as_str(),
-            "=" | "==" | "!=" | "<=" | ">=" |
-            "+" | "-" | "*" | "/" | "%" | "&&" | "||" |
-            "->" | "=>" | ".." | "..=" | ":" | "to"
+        let needs_space = matches!(
+            tok_str.as_str(),
+            "=" | "=="
+                | "!="
+                | "<="
+                | ">="
+                | "+"
+                | "-"
+                | "*"
+                | "/"
+                | "%"
+                | "&&"
+                | "||"
+                | "->"
+                | "=>"
+                | ".."
+                | "..="
+                | ":"
+                | "to"
         );
 
         if needs_space {
-            if !out.ends_with(' ') && !out.ends_with('\n') { out.push(' '); }
+            if !out.ends_with(' ') && !out.ends_with('\n') {
+                out.push(' ');
+            }
             out.push_str(&tok_str);
             out.push(' ');
         } else if tok_str == "(" || tok_str == "[" || tok_str == "<" {
             // No space before open paren/bracket (function calls, indexing, generics).
             out.push_str(&tok_str);
         } else if tok_str == ")" || tok_str == "]" || tok_str == ">" {
-            if out.ends_with(' ') { out.pop(); }
+            if out.ends_with(' ') {
+                out.pop();
+            }
             out.push_str(&tok_str);
         } else {
             // Default: keyword or identifier — space between tokens unless at line start.
             let last = out.chars().last();
             let needs_sep = matches!(last, Some(c) if c.is_alphanumeric() || c == '_' || c == '"');
-            if needs_sep && !tok_str.starts_with(|c: char| c == '.' || c == '(' || c == '[') {
+            if needs_sep && !tok_str.starts_with(['.', '(', '[']) {
                 out.push(' ');
             }
             out.push_str(&tok_str);
@@ -1396,7 +1732,9 @@ fn format_iris(source: &str) -> String {
         blank_lines = 0;
     }
 
-    if !out.ends_with('\n') { out.push('\n'); }
+    if !out.ends_with('\n') {
+        out.push('\n');
+    }
     out
 }
 
@@ -1431,7 +1769,13 @@ fn token_to_str(tok: &crate::parser::lexer::Token, _source: &str) -> String {
         Token::Par => "par".into(),
         Token::In => "in".into(),
         Token::To => "to".into(),
-        Token::BoolLit(b) => if *b { "true".into() } else { "false".into() },
+        Token::BoolLit(b) => {
+            if *b {
+                "true".into()
+            } else {
+                "false".into()
+            }
+        }
         // Type keywords
         Token::I64 => "i64".into(),
         Token::I32 => "i32".into(),
@@ -1475,7 +1819,11 @@ fn token_to_str(tok: &crate::parser::lexer::Token, _source: &str) -> String {
         Token::Ident(s) => s.clone(),
         Token::IntLit(n) => n.to_string(),
         Token::FloatLit(f) => {
-            if f.fract() == 0.0 { format!("{:.1}", f) } else { f.to_string() }
+            if f.fract() == 0.0 {
+                format!("{:.1}", f)
+            } else {
+                f.to_string()
+            }
         }
         Token::StringLit(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
         Token::FStringLit(s) => format!("f\"{}\"", s),
@@ -1506,17 +1854,25 @@ pub fn run_lsp_server() -> std::io::Result<()> {
             let mut chars = String::new();
             loop {
                 stdin.lock().read_exact(&mut byte)?;
-                if byte[0] == b'\r' { continue; }
-                if byte[0] == b'\n' { break; }
+                if byte[0] == b'\r' {
+                    continue;
+                }
+                if byte[0] == b'\n' {
+                    break;
+                }
                 chars.push(byte[0] as char);
             }
-            if chars.is_empty() { break; }
+            if chars.is_empty() {
+                break;
+            }
             if chars.to_lowercase().starts_with("content-length:") {
                 let val = chars["content-length:".len()..].trim();
                 content_length = val.parse().unwrap_or(0);
             }
         }
-        if content_length == 0 { continue; }
+        if content_length == 0 {
+            continue;
+        }
 
         // Read body.
         let mut body = vec![0u8; content_length];
@@ -1530,47 +1886,67 @@ pub fn run_lsp_server() -> std::io::Result<()> {
 
         request_id = msg.get("id").cloned();
         let method = msg.get("method").and_then(|v| v.as_str()).unwrap_or("");
-        let params = msg.get("params").cloned().unwrap_or(serde_json::Value::Null);
+        let params = msg
+            .get("params")
+            .cloned()
+            .unwrap_or(serde_json::Value::Null);
 
         match method {
             "initialize" => {
-                let resp = make_response(request_id.clone(), serde_json::json!({
-                    "capabilities": {
-                        "textDocumentSync": 1,
-                        "hoverProvider": true,
-                        "completionProvider": { "triggerCharacters": [".", ":"] },
-                        "definitionProvider": true,
-                        "documentSymbolProvider": true,
-                        "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
-                        "documentFormattingProvider": true,
-                        "codeActionProvider": {
-                            "codeActionKinds": ["quickfix", "refactor.extract"]
+                let resp = make_response(
+                    request_id.clone(),
+                    serde_json::json!({
+                        "capabilities": {
+                            "textDocumentSync": 1,
+                            "hoverProvider": true,
+                            "completionProvider": { "triggerCharacters": [".", ":"] },
+                            "definitionProvider": true,
+                            "documentSymbolProvider": true,
+                            "signatureHelpProvider": { "triggerCharacters": ["(", ","] },
+                            "documentFormattingProvider": true,
+                            "codeActionProvider": {
+                                "codeActionKinds": ["quickfix", "refactor.extract"]
+                            },
+                            "inlayHintProvider": true,
+                            "referencesProvider": true,
+                            "renameProvider": {
+                                "prepareProvider": false
+                            }
                         },
-                        "inlayHintProvider": true,
-                        "referencesProvider": true,
-                        "renameProvider": {
-                            "prepareProvider": false
-                        }
-                    },
-                    "serverInfo": { "name": "iris-lsp", "version": "0.2.0" }
-                }));
+                        "serverInfo": { "name": "iris-lsp", "version": "0.2.0" }
+                    }),
+                );
                 write_message(&mut stdout.lock(), &resp)?;
             }
             "initialized" => { /* no-op */ }
             "textDocument/didOpen" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
-                let text = params["textDocument"]["text"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
+                let text = params["textDocument"]["text"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let diags = state.open_document(&uri, &text);
                 let notif = make_diagnostics_notification(&uri, &diags);
                 write_message(&mut stdout.lock(), &notif)?;
             }
             "textDocument/didChange" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
-                let text = params["contentChanges"][0]["text"].as_str()
-                    .or_else(|| params["contentChanges"].as_array()
-                        .and_then(|a| a.first())
-                        .and_then(|c| c["text"].as_str()))
-                    .unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
+                let text = params["contentChanges"][0]["text"]
+                    .as_str()
+                    .or_else(|| {
+                        params["contentChanges"]
+                            .as_array()
+                            .and_then(|a| a.first())
+                            .and_then(|c| c["text"].as_str())
+                    })
+                    .unwrap_or("")
+                    .to_owned();
                 let diags = state.update_document(&uri, &text);
                 let notif = make_diagnostics_notification(&uri, &diags);
                 write_message(&mut stdout.lock(), &notif)?;
@@ -1581,86 +1957,134 @@ pub fn run_lsp_server() -> std::io::Result<()> {
                 state.close_document(uri);
             }
             "textDocument/hover" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
                 let character = params["position"]["character"].as_u64().unwrap_or(0) as u32;
                 let hover_text = state.hover(&uri, line, character);
-                let result = hover_text.map(|t| serde_json::json!({
-                    "contents": { "kind": "markdown", "value": t }
-                })).unwrap_or(serde_json::Value::Null);
-                write_message(&mut stdout.lock(), &make_response(request_id.clone(), result))?;
+                let result = hover_text
+                    .map(|t| {
+                        serde_json::json!({
+                            "contents": { "kind": "markdown", "value": t }
+                        })
+                    })
+                    .unwrap_or(serde_json::Value::Null);
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), result),
+                )?;
             }
             "textDocument/completion" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
-                let items: Vec<serde_json::Value> = state.completions(&uri).into_iter()
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
+                let items: Vec<serde_json::Value> = state
+                    .completions(&uri)
+                    .into_iter()
                     .map(|label| serde_json::json!({ "label": label, "kind": 1 }))
                     .collect();
-                write_message(&mut stdout.lock(), &make_response(
-                    request_id.clone(),
-                    serde_json::json!({ "isIncomplete": false, "items": items }),
-                ))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(
+                        request_id.clone(),
+                        serde_json::json!({ "isIncomplete": false, "items": items }),
+                    ),
+                )?;
             }
             "textDocument/definition" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
                 let character = params["position"]["character"].as_u64().unwrap_or(0) as u32;
-                let result = state.definition(&uri, line, character)
-                    .map(|(def_uri, sl, sc, el, ec)| serde_json::json!({
-                        "uri": def_uri,
-                        "range": {
-                            "start": { "line": sl, "character": sc },
-                            "end":   { "line": el, "character": ec }
-                        }
-                    }))
+                let result = state
+                    .definition(&uri, line, character)
+                    .map(|(def_uri, sl, sc, el, ec)| {
+                        serde_json::json!({
+                            "uri": def_uri,
+                            "range": {
+                                "start": { "line": sl, "character": sc },
+                                "end":   { "line": el, "character": ec }
+                            }
+                        })
+                    })
                     .unwrap_or(serde_json::Value::Null);
-                write_message(&mut stdout.lock(), &make_response(request_id.clone(), result))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), result),
+                )?;
             }
             "textDocument/documentSymbol" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
-                let syms: Vec<serde_json::Value> = state.document_symbols(&uri).into_iter()
-                    .map(|(name, kind, sl, sc, el, ec)| serde_json::json!({
-                        "name": name,
-                        "kind": kind,
-                        "range": {
-                            "start": { "line": sl, "character": sc },
-                            "end":   { "line": el, "character": ec }
-                        },
-                        "selectionRange": {
-                            "start": { "line": sl, "character": sc },
-                            "end":   { "line": sl, "character": sc + name.len() as u32 }
-                        }
-                    }))
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
+                let syms: Vec<serde_json::Value> = state
+                    .document_symbols(&uri)
+                    .into_iter()
+                    .map(|(name, kind, sl, sc, el, ec)| {
+                        serde_json::json!({
+                            "name": name,
+                            "kind": kind,
+                            "range": {
+                                "start": { "line": sl, "character": sc },
+                                "end":   { "line": el, "character": ec }
+                            },
+                            "selectionRange": {
+                                "start": { "line": sl, "character": sc },
+                                "end":   { "line": sl, "character": sc + name.len() as u32 }
+                            }
+                        })
+                    })
                     .collect();
-                write_message(&mut stdout.lock(), &make_response(
-                    request_id.clone(),
-                    serde_json::json!(syms),
-                ))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), serde_json::json!(syms)),
+                )?;
             }
             "textDocument/signatureHelp" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
                 let character = params["position"]["character"].as_u64().unwrap_or(0) as u32;
-                let result = state.signature_help(&uri, line, character)
-                    .map(|(label, param_labels, active)| serde_json::json!({
-                        "signatures": [{
-                            "label": label,
-                            "parameters": param_labels.iter().map(|p| {
-                                serde_json::json!({ "label": p })
-                            }).collect::<Vec<_>>()
-                        }],
-                        "activeSignature": 0,
-                        "activeParameter": active
-                    }))
+                let result = state
+                    .signature_help(&uri, line, character)
+                    .map(|(label, param_labels, active)| {
+                        serde_json::json!({
+                            "signatures": [{
+                                "label": label,
+                                "parameters": param_labels.iter().map(|p| {
+                                    serde_json::json!({ "label": p })
+                                }).collect::<Vec<_>>()
+                            }],
+                            "activeSignature": 0,
+                            "activeParameter": active
+                        })
+                    })
                     .unwrap_or(serde_json::Value::Null);
-                write_message(&mut stdout.lock(), &make_response(request_id.clone(), result))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), result),
+                )?;
             }
             "textDocument/formatting" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let source = state.documents.get(&uri).cloned().unwrap_or_default();
-                let result = state.format(&uri)
+                let result = state
+                    .format(&uri)
                     .map(|formatted| {
                         let line_count = source.lines().count() as u32;
-                        let last_line_len = source.lines().last().map(|l| l.len()).unwrap_or(0) as u32;
+                        let last_line_len =
+                            source.lines().last().map(|l| l.len()).unwrap_or(0) as u32;
                         serde_json::json!([{
                             "range": {
                                 "start": { "line": 0, "character": 0 },
@@ -1670,10 +2094,16 @@ pub fn run_lsp_server() -> std::io::Result<()> {
                         }])
                     })
                     .unwrap_or(serde_json::json!([]));
-                write_message(&mut stdout.lock(), &make_response(request_id.clone(), result))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), result),
+                )?;
             }
             "textDocument/codeAction" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let range = &params["range"];
                 let sl = range["start"]["line"].as_u64().unwrap_or(0) as u32;
                 let sc = range["start"]["character"].as_u64().unwrap_or(0) as u32;
@@ -1704,73 +2134,100 @@ pub fn run_lsp_server() -> std::io::Result<()> {
                     }
                     action
                 }).collect();
-                write_message(&mut stdout.lock(), &make_response(
-                    request_id.clone(),
-                    serde_json::json!(result),
-                ))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), serde_json::json!(result)),
+                )?;
             }
             "textDocument/inlayHint" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let hints = state.inlay_hints(&uri);
-                let result: Vec<serde_json::Value> = hints.into_iter().map(|h| {
-                    serde_json::json!({
-                        "position": { "line": h.line, "character": h.character },
-                        "label": h.label,
-                        "kind": h.kind,
-                        "paddingLeft": true,
+                let result: Vec<serde_json::Value> = hints
+                    .into_iter()
+                    .map(|h| {
+                        serde_json::json!({
+                            "position": { "line": h.line, "character": h.character },
+                            "label": h.label,
+                            "kind": h.kind,
+                            "paddingLeft": true,
+                        })
                     })
-                }).collect();
-                write_message(&mut stdout.lock(), &make_response(
-                    request_id.clone(),
-                    serde_json::json!(result),
-                ))?;
+                    .collect();
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), serde_json::json!(result)),
+                )?;
             }
             "textDocument/references" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
                 let character = params["position"]["character"].as_u64().unwrap_or(0) as u32;
                 let refs = state.references(&uri, line, character);
-                let result: Vec<serde_json::Value> = refs.into_iter().map(|(sl, sc, el, ec)| {
-                    serde_json::json!({
-                        "uri": &uri,
-                        "range": {
-                            "start": { "line": sl, "character": sc },
-                            "end":   { "line": el, "character": ec }
-                        }
+                let result: Vec<serde_json::Value> = refs
+                    .into_iter()
+                    .map(|(sl, sc, el, ec)| {
+                        serde_json::json!({
+                            "uri": &uri,
+                            "range": {
+                                "start": { "line": sl, "character": sc },
+                                "end":   { "line": el, "character": ec }
+                            }
+                        })
                     })
-                }).collect();
-                write_message(&mut stdout.lock(), &make_response(
-                    request_id.clone(),
-                    serde_json::json!(result),
-                ))?;
+                    .collect();
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), serde_json::json!(result)),
+                )?;
             }
             "textDocument/rename" => {
-                let uri = params["textDocument"]["uri"].as_str().unwrap_or("").to_owned();
+                let uri = params["textDocument"]["uri"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_owned();
                 let line = params["position"]["line"].as_u64().unwrap_or(0) as u32;
                 let character = params["position"]["character"].as_u64().unwrap_or(0) as u32;
                 let new_name = params["newName"].as_str().unwrap_or("").to_owned();
                 let edits = state.rename(&uri, line, character, &new_name);
-                let text_edits: Vec<serde_json::Value> = edits.into_iter().map(|(sl, sc, el, ec, text)| {
-                    serde_json::json!({
-                        "range": {
-                            "start": { "line": sl, "character": sc },
-                            "end":   { "line": el, "character": ec }
-                        },
-                        "newText": text
+                let text_edits: Vec<serde_json::Value> = edits
+                    .into_iter()
+                    .map(|(sl, sc, el, ec, text)| {
+                        serde_json::json!({
+                            "range": {
+                                "start": { "line": sl, "character": sc },
+                                "end":   { "line": el, "character": ec }
+                            },
+                            "newText": text
+                        })
                     })
-                }).collect();
+                    .collect();
                 let result = serde_json::json!({
                     "changes": { &uri: text_edits }
                 });
-                write_message(&mut stdout.lock(), &make_response(request_id.clone(), result))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), result),
+                )?;
             }
             "shutdown" => {
-                write_message(&mut stdout.lock(), &make_response(request_id.clone(), serde_json::Value::Null))?;
+                write_message(
+                    &mut stdout.lock(),
+                    &make_response(request_id.clone(), serde_json::Value::Null),
+                )?;
             }
             "exit" => break,
             _ => {
                 if request_id.is_some() {
-                    write_message(&mut stdout.lock(), &make_response(request_id.clone(), serde_json::Value::Null))?;
+                    write_message(
+                        &mut stdout.lock(),
+                        &make_response(request_id.clone(), serde_json::Value::Null),
+                    )?;
                 }
             }
         }
@@ -1783,7 +2240,8 @@ pub fn run_lsp_server() -> std::io::Result<()> {
 // ---------------------------------------------------------------------------
 
 fn uri_to_module_name(uri: &str) -> String {
-    uri.rsplit('/').next()
+    uri.rsplit('/')
+        .next()
         .and_then(|f| f.split('.').next())
         .unwrap_or("module")
         .to_owned()
@@ -1799,7 +2257,11 @@ fn uri_to_file_path(uri: &str) -> Option<std::path::PathBuf> {
     // On Windows the path looks like "C:/Users/…"; on Unix "/home/…".
     // std::path::PathBuf handles both forms.
     let path = std::path::PathBuf::from(&decoded);
-    if path.exists() { Some(path) } else { None }
+    if path.exists() {
+        Some(path)
+    } else {
+        None
+    }
 }
 
 /// Minimal %-decode (covers the most common LSP URI escapes).
@@ -1809,10 +2271,9 @@ fn percent_decode(s: &str) -> String {
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(
-                std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""),
-                16,
-            ) {
+            if let Ok(byte) =
+                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
+            {
                 out.push(byte as char);
                 i += 3;
                 continue;
@@ -1844,14 +2305,22 @@ fn line_col_to_byte(source: &str, line: u32, character: u32) -> u32 {
 fn ident_at_byte(source: &str, byte: u32) -> Option<&str> {
     let src = source;
     let byte = byte as usize;
-    if byte >= src.len() { return None; }
-    let start = src[..byte].rfind(|c: char| !c.is_alphanumeric() && c != '_')
+    if byte >= src.len() {
+        return None;
+    }
+    let start = src[..byte]
+        .rfind(|c: char| !c.is_alphanumeric() && c != '_')
         .map(|i| i + 1)
         .unwrap_or(0);
-    let end = src[byte..].find(|c: char| !c.is_alphanumeric() && c != '_')
+    let end = src[byte..]
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
         .map(|i| byte + i)
         .unwrap_or(src.len());
-    if start < end { Some(&src[start..end]) } else { None }
+    if start < end {
+        Some(&src[start..end])
+    } else {
+        None
+    }
 }
 
 fn make_response(id: Option<serde_json::Value>, result: serde_json::Value) -> String {
@@ -1859,30 +2328,35 @@ fn make_response(id: Option<serde_json::Value>, result: serde_json::Value) -> St
         "jsonrpc": "2.0",
         "id": id,
         "result": result,
-    })).unwrap_or_default()
+    }))
+    .unwrap_or_default()
 }
 
 fn make_diagnostics_notification(uri: &str, diags: &[LspDiagnostic]) -> String {
-    let json_diags: Vec<serde_json::Value> = diags.iter().map(|d| {
-        let mut diag = serde_json::json!({
-            "range": {
-                "start": { "line": d.line, "character": d.character },
-                "end":   { "line": d.end_line, "character": d.end_character },
-            },
-            "severity": d.severity,
-            "message": d.message,
-            "source": "iris",
-        });
-        if let Some(code) = &d.code {
-            diag["code"] = serde_json::json!(code);
-        }
-        diag
-    }).collect();
+    let json_diags: Vec<serde_json::Value> = diags
+        .iter()
+        .map(|d| {
+            let mut diag = serde_json::json!({
+                "range": {
+                    "start": { "line": d.line, "character": d.character },
+                    "end":   { "line": d.end_line, "character": d.end_character },
+                },
+                "severity": d.severity,
+                "message": d.message,
+                "source": "iris",
+            });
+            if let Some(code) = &d.code {
+                diag["code"] = serde_json::json!(code);
+            }
+            diag
+        })
+        .collect();
     serde_json::to_string(&serde_json::json!({
         "jsonrpc": "2.0",
         "method": "textDocument/publishDiagnostics",
         "params": { "uri": uri, "diagnostics": json_diags },
-    })).unwrap_or_default()
+    }))
+    .unwrap_or_default()
 }
 
 fn write_message(writer: &mut impl std::io::Write, body: &str) -> std::io::Result<()> {
@@ -1907,53 +2381,107 @@ fn suggest_bring_for_name(name: &str) -> Option<String> {
     // Map well-known function names to their stdlib modules.
     let stdlib_map: &[(&str, &str)] = &[
         // std.math
-        ("sqrt", "std.math"), ("abs", "std.math"), ("sin", "std.math"),
-        ("cos", "std.math"), ("tan", "std.math"), ("log", "std.math"),
-        ("exp", "std.math"), ("pow", "std.math"), ("ceil", "std.math"),
-        ("floor", "std.math"), ("round", "std.math"), ("min", "std.math"),
-        ("max", "std.math"), ("pi", "std.math"),
+        ("sqrt", "std.math"),
+        ("abs", "std.math"),
+        ("sin", "std.math"),
+        ("cos", "std.math"),
+        ("tan", "std.math"),
+        ("log", "std.math"),
+        ("exp", "std.math"),
+        ("pow", "std.math"),
+        ("ceil", "std.math"),
+        ("floor", "std.math"),
+        ("round", "std.math"),
+        ("min", "std.math"),
+        ("max", "std.math"),
+        ("pi", "std.math"),
         // std.string
-        ("split", "std.string"), ("join", "std.string"), ("trim", "std.string"),
-        ("replace", "std.string"), ("contains", "std.string"), ("starts_with", "std.string"),
-        ("ends_with", "std.string"), ("to_upper", "std.string"), ("to_lower", "std.string"),
-        ("len", "std.string"), ("substring", "std.string"), ("char_at", "std.string"),
+        ("split", "std.string"),
+        ("join", "std.string"),
+        ("trim", "std.string"),
+        ("replace", "std.string"),
+        ("contains", "std.string"),
+        ("starts_with", "std.string"),
+        ("ends_with", "std.string"),
+        ("to_upper", "std.string"),
+        ("to_lower", "std.string"),
+        ("len", "std.string"),
+        ("substring", "std.string"),
+        ("char_at", "std.string"),
         // std.fmt
-        ("format", "std.fmt"), ("to_string", "std.fmt"), ("println", "std.fmt"),
+        ("format", "std.fmt"),
+        ("to_string", "std.fmt"),
+        ("println", "std.fmt"),
         // std.json
-        ("parse_json", "std.json"), ("to_json", "std.json"),
+        ("parse_json", "std.json"),
+        ("to_json", "std.json"),
         // std.fs
-        ("read_file", "std.fs"), ("write_file", "std.fs"), ("file_exists", "std.fs"),
+        ("read_file", "std.fs"),
+        ("write_file", "std.fs"),
+        ("file_exists", "std.fs"),
         // std.time
-        ("now", "std.time"), ("sleep", "std.time"),
+        ("now", "std.time"),
+        ("sleep", "std.time"),
         // std.http
-        ("http_get", "std.http"), ("http_post", "std.http"),
+        ("http_get", "std.http"),
+        ("http_post", "std.http"),
         // std.kv
-        ("kv_set", "std.kv"), ("kv_get", "std.kv"), ("kv_delete", "std.kv"),
+        ("kv_set", "std.kv"),
+        ("kv_get", "std.kv"),
+        ("kv_delete", "std.kv"),
         // std.csv
-        ("parse_csv", "std.csv"), ("to_csv", "std.csv"),
+        ("parse_csv", "std.csv"),
+        ("to_csv", "std.csv"),
         // std.set
-        ("set_new", "std.set"), ("set_add", "std.set"), ("set_contains", "std.set"),
+        ("set_new", "std.set"),
+        ("set_add", "std.set"),
+        ("set_contains", "std.set"),
         // std.path
-        ("path_join", "std.path"), ("path_parent", "std.path"), ("path_ext", "std.path"),
+        ("path_join", "std.path"),
+        ("path_parent", "std.path"),
+        ("path_ext", "std.path"),
         // std.ffi
-        ("ffi_open", "std.ffi"), ("ffi_call", "std.ffi"), ("ffi_close", "std.ffi"),
-        ("ffi_call_i64", "std.ffi"), ("ffi_call_f64", "std.ffi"), ("ffi_call_str", "std.ffi"),
-        ("python_eval", "std.ffi"), ("python_exec", "std.ffi"), ("python_call", "std.ffi"),
-        ("python_version", "std.ffi"), ("rust_lib_open", "std.ffi"),
-        ("rust_call_i64", "std.ffi"), ("rust_call_f64", "std.ffi"),
+        ("ffi_open", "std.ffi"),
+        ("ffi_call", "std.ffi"),
+        ("ffi_close", "std.ffi"),
+        ("ffi_call_i64", "std.ffi"),
+        ("ffi_call_f64", "std.ffi"),
+        ("ffi_call_str", "std.ffi"),
+        ("python_eval", "std.ffi"),
+        ("python_exec", "std.ffi"),
+        ("python_call", "std.ffi"),
+        ("python_version", "std.ffi"),
+        ("rust_lib_open", "std.ffi"),
+        ("rust_call_i64", "std.ffi"),
+        ("rust_call_f64", "std.ffi"),
         // std.crypto
-        ("uuid", "std.crypto"), ("sha256", "std.crypto"), ("hex_encode", "std.crypto"),
-        ("hex_decode", "std.crypto"), ("hash_code", "std.crypto"),
-        ("to_base64", "std.crypto"), ("from_base64", "std.crypto"),
+        ("uuid", "std.crypto"),
+        ("sha256", "std.crypto"),
+        ("hex_encode", "std.crypto"),
+        ("hex_decode", "std.crypto"),
+        ("hash_code", "std.crypto"),
+        ("to_base64", "std.crypto"),
+        ("from_base64", "std.crypto"),
         // std.os
-        ("getenv", "std.os"), ("setenv", "std.os"), ("get_pid", "std.os"),
-        ("shell", "std.os"), ("getcwd", "std.os"), ("readdir", "std.os"),
-        ("exists", "std.os"), ("make_dir", "std.os"), ("cpu_count", "std.os"),
+        ("getenv", "std.os"),
+        ("setenv", "std.os"),
+        ("get_pid", "std.os"),
+        ("shell", "std.os"),
+        ("getcwd", "std.os"),
+        ("readdir", "std.os"),
+        ("exists", "std.os"),
+        ("make_dir", "std.os"),
+        ("cpu_count", "std.os"),
         // std.testing
-        ("assert_eq", "std.testing"), ("assert_true", "std.testing"),
-        ("assert_false", "std.testing"), ("assert_str_eq", "std.testing"),
+        ("assert_eq", "std.testing"),
+        ("assert_true", "std.testing"),
+        ("assert_false", "std.testing"),
+        ("assert_str_eq", "std.testing"),
         // std.log
-        ("info", "std.log"), ("warn", "std.log"), ("error", "std.log"), ("debug", "std.log"),
+        ("info", "std.log"),
+        ("warn", "std.log"),
+        ("error", "std.log"),
+        ("debug", "std.log"),
     ];
 
     for (func, module) in stdlib_map {
@@ -1971,19 +2499,58 @@ fn is_ident_char(b: u8) -> bool {
 
 /// Checks if a word is a language keyword.
 fn is_keyword(word: &str) -> bool {
-    matches!(word,
-        "def" | "val" | "var" | "for" | "while" | "loop" | "if" | "else" | "when"
-        | "return" | "break" | "continue" | "bring" | "record" | "choice" | "const"
-        | "type" | "extern" | "trait" | "impl" | "pub" | "in" | "to" | "true" | "false"
-        | "async" | "await" | "spawn" | "par"
-        | "i64" | "i32" | "f64" | "f32" | "bool" | "str" | "u8" | "i8" | "u32" | "u64" | "usize"
+    matches!(
+        word,
+        "def"
+            | "val"
+            | "var"
+            | "for"
+            | "while"
+            | "loop"
+            | "if"
+            | "else"
+            | "when"
+            | "return"
+            | "break"
+            | "continue"
+            | "bring"
+            | "record"
+            | "choice"
+            | "const"
+            | "type"
+            | "extern"
+            | "trait"
+            | "impl"
+            | "pub"
+            | "in"
+            | "to"
+            | "true"
+            | "false"
+            | "async"
+            | "await"
+            | "spawn"
+            | "par"
+            | "i64"
+            | "i32"
+            | "f64"
+            | "f32"
+            | "bool"
+            | "str"
+            | "u8"
+            | "i8"
+            | "u32"
+            | "u64"
+            | "usize"
     )
 }
 
 /// Checks if a name follows snake_case convention.
 fn is_snake_case(name: &str) -> bool {
-    if name.is_empty() || name.starts_with('_') { return true; }
-    name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+    if name.is_empty() || name.starts_with('_') {
+        return true;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
 }
 
 /// Converts a camelCase or PascalCase name to snake_case.
@@ -1991,7 +2558,9 @@ fn to_snake_case(name: &str) -> String {
     let mut result = String::new();
     for (i, ch) in name.chars().enumerate() {
         if ch.is_ascii_uppercase() {
-            if i > 0 { result.push('_'); }
+            if i > 0 {
+                result.push('_');
+            }
             result.push(ch.to_ascii_lowercase());
         } else {
             result.push(ch);
@@ -2005,13 +2574,22 @@ fn extract_type_from_mismatch(msg: &str, keyword: &str) -> Option<String> {
     let lower = msg.to_lowercase();
     let idx = lower.find(keyword)?;
     let rest = &msg[idx + keyword.len()..];
-    let rest = rest.trim_start_matches(|c: char| c == ' ' || c == ':' || c == '`' || c == '\'');
-    let end = rest.find(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>').unwrap_or(rest.len());
+    let rest = rest.trim_start_matches([' ', ':', '`', '\'']);
+    let end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>')
+        .unwrap_or(rest.len());
     let ty = rest[..end].trim();
-    if ty.is_empty() { None } else { Some(ty.to_owned()) }
+    if ty.is_empty() {
+        None
+    } else {
+        Some(ty.to_owned())
+    }
 }
 
 /// Checks if a type name is a numeric type (i32, i64, f32, f64).
 fn is_numeric_type(ty: &str) -> bool {
-    matches!(ty, "i32" | "i64" | "f32" | "f64" | "u8" | "u32" | "u64" | "usize")
+    matches!(
+        ty,
+        "i32" | "i64" | "f32" | "f64" | "u8" | "u32" | "u64" | "usize"
+    )
 }

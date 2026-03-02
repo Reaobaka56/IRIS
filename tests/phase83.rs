@@ -1,11 +1,10 @@
+use iris::pass::Pass;
 /// Phase 83: Ref-counting GC — Retain/Release IR annotations
 ///
 /// Tests that GcAnnotatePass inserts retain/release annotations into IR,
 /// the interpreter evaluates correctly (retain/release are no-ops),
 /// and LLVM IR contains iris_retain/iris_release calls.
-
-use iris::{compile, compile_to_module, GcAnnotatePass, EmitKind};
-use iris::pass::Pass;
+use iris::{compile, compile_to_module, EmitKind, GcAnnotatePass};
 
 fn eval(src: &str) -> String {
     compile(src, "phase83", EmitKind::Eval).expect("eval failed")
@@ -41,12 +40,17 @@ def main() -> i64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_gc_annotated_list_sum_correct() {
-    let v: f64 = eval(r#"
+    let v: f64 = eval(
+        r#"
 def main() -> f64 {
     val xs = ones(4)
     list_sum(xs)
 }
-"#).trim().parse().unwrap();
+"#,
+    )
+    .trim()
+    .parse()
+    .unwrap();
     assert!((v - 4.0).abs() < 1e-9, "expected 4.0, got {v}");
 }
 
@@ -62,8 +66,11 @@ def main() -> i64 {
 }
 "#;
     let (_, ir_text) = module_with_gc(src);
-    assert!(ir_text.contains("retain"),
-        "expected 'retain' in GC-annotated IR:\n{}", ir_text);
+    assert!(
+        ir_text.contains("retain"),
+        "expected 'retain' in GC-annotated IR:\n{}",
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------
@@ -78,8 +85,11 @@ def main() -> i64 {
 }
 "#;
     let (_, ir_text) = module_with_gc(src);
-    assert!(ir_text.contains("release"),
-        "expected 'release' in GC-annotated IR:\n{}", ir_text);
+    assert!(
+        ir_text.contains("release"),
+        "expected 'release' in GC-annotated IR:\n{}",
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------
@@ -98,8 +108,12 @@ def main() -> i64 {
     let (_, ir_text) = module_with_gc(src);
     let retain_count = ir_text.matches("retain").count();
     // At least 3 retains (one per list)
-    assert!(retain_count >= 3,
-        "expected at least 3 retains for 3 lists, got {}:\n{}", retain_count, ir_text);
+    assert!(
+        retain_count >= 3,
+        "expected at least 3 retains for 3 lists, got {}:\n{}",
+        retain_count,
+        ir_text
+    );
 }
 
 // ------------------------------------------------------------------
@@ -135,8 +149,11 @@ def main() -> i64 {
     let (_, ir_text) = module_with_gc(src);
     // No heap allocation → no retain/release
     let retain_count = ir_text.matches("retain").count();
-    assert_eq!(retain_count, 0,
-        "expected 0 retains for scalar-only fn, got {}:\n{}", retain_count, ir_text);
+    assert_eq!(
+        retain_count, 0,
+        "expected 0 retains for scalar-only fn, got {}:\n{}",
+        retain_count, ir_text
+    );
 }
 
 // ------------------------------------------------------------------
@@ -155,6 +172,9 @@ def main() -> i64 {
     pass.run(&mut module).expect("gc pass failed");
     // Generate LLVM IR from annotated module
     let llvm = iris::codegen::llvm_ir::emit_llvm_ir(&module).expect("llvm emit failed");
-    assert!(llvm.contains("iris_retain") || llvm.contains("iris_release"),
-        "expected iris_retain/iris_release in LLVM IR after GC annotation:\n{}", llvm);
+    assert!(
+        llvm.contains("iris_retain") || llvm.contains("iris_release"),
+        "expected iris_retain/iris_release in LLVM IR after GC annotation:\n{}",
+        llvm
+    );
 }

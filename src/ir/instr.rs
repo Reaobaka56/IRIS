@@ -45,26 +45,26 @@ pub enum BinOp {
 impl std::fmt::Display for BinOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            BinOp::Add      => "add",
-            BinOp::Sub      => "sub",
-            BinOp::Mul      => "mul",
-            BinOp::Div      => "div",
+            BinOp::Add => "add",
+            BinOp::Sub => "sub",
+            BinOp::Mul => "mul",
+            BinOp::Div => "div",
             BinOp::FloorDiv => "floordiv",
-            BinOp::Mod      => "mod",
-            BinOp::Pow      => "pow",
-            BinOp::Min      => "min",
-            BinOp::Max      => "max",
-            BinOp::BitAnd   => "band",
-            BinOp::BitOr    => "bor",
-            BinOp::BitXor   => "bxor",
-            BinOp::Shl      => "shl",
-            BinOp::Shr      => "shr",
-            BinOp::CmpEq    => "cmpeq",
-            BinOp::CmpNe    => "cmpne",
-            BinOp::CmpLt    => "cmplt",
-            BinOp::CmpLe    => "cmple",
-            BinOp::CmpGt    => "cmpgt",
-            BinOp::CmpGe    => "cmpge",
+            BinOp::Mod => "mod",
+            BinOp::Pow => "pow",
+            BinOp::Min => "min",
+            BinOp::Max => "max",
+            BinOp::BitAnd => "band",
+            BinOp::BitOr => "bor",
+            BinOp::BitXor => "bxor",
+            BinOp::Shl => "shl",
+            BinOp::Shr => "shr",
+            BinOp::CmpEq => "cmpeq",
+            BinOp::CmpNe => "cmpne",
+            BinOp::CmpLt => "cmplt",
+            BinOp::CmpLe => "cmple",
+            BinOp::CmpGt => "cmpgt",
+            BinOp::CmpGe => "cmpge",
         };
         f.write_str(s)
     }
@@ -108,21 +108,21 @@ pub enum ScalarUnaryOp {
 impl std::fmt::Display for ScalarUnaryOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ScalarUnaryOp::Neg    => f.write_str("neg"),
-            ScalarUnaryOp::Not    => f.write_str("not"),
-            ScalarUnaryOp::Sqrt   => f.write_str("sqrt"),
-            ScalarUnaryOp::Abs    => f.write_str("abs"),
-            ScalarUnaryOp::Floor  => f.write_str("floor"),
-            ScalarUnaryOp::Ceil   => f.write_str("ceil"),
+            ScalarUnaryOp::Neg => f.write_str("neg"),
+            ScalarUnaryOp::Not => f.write_str("not"),
+            ScalarUnaryOp::Sqrt => f.write_str("sqrt"),
+            ScalarUnaryOp::Abs => f.write_str("abs"),
+            ScalarUnaryOp::Floor => f.write_str("floor"),
+            ScalarUnaryOp::Ceil => f.write_str("ceil"),
             ScalarUnaryOp::BitNot => f.write_str("bnot"),
-            ScalarUnaryOp::Sin    => f.write_str("sin"),
-            ScalarUnaryOp::Cos    => f.write_str("cos"),
-            ScalarUnaryOp::Tan    => f.write_str("tan"),
-            ScalarUnaryOp::Exp    => f.write_str("exp"),
-            ScalarUnaryOp::Log    => f.write_str("log"),
-            ScalarUnaryOp::Log2   => f.write_str("log2"),
-            ScalarUnaryOp::Round  => f.write_str("round"),
-            ScalarUnaryOp::Sign   => f.write_str("sign"),
+            ScalarUnaryOp::Sin => f.write_str("sin"),
+            ScalarUnaryOp::Cos => f.write_str("cos"),
+            ScalarUnaryOp::Tan => f.write_str("tan"),
+            ScalarUnaryOp::Exp => f.write_str("exp"),
+            ScalarUnaryOp::Log => f.write_str("log"),
+            ScalarUnaryOp::Log2 => f.write_str("log2"),
+            ScalarUnaryOp::Round => f.write_str("round"),
+            ScalarUnaryOp::Sign => f.write_str("sign"),
         }
     }
 }
@@ -256,9 +256,14 @@ pub enum IrInstr {
 
     // ---- Phase 83: Ref-counting GC ----
     /// Increment the reference count of a heap value (list, map, option, …).
-    Retain { ptr: ValueId },
+    Retain {
+        ptr: ValueId,
+    },
     /// Decrement the reference count; frees the value when it reaches zero.
-    Release { ptr: ValueId, ty: IrType },
+    Release {
+        ptr: ValueId,
+        ty: IrType,
+    },
 
     // ---- Struct operations ----
     /// Construct a struct value from field values.
@@ -359,39 +364,85 @@ pub enum IrInstr {
 
     // ---- Option operations ----
     /// Wrap a value in Some.
-    MakeSome { result: ValueId, value: ValueId, result_ty: IrType },
+    MakeSome {
+        result: ValueId,
+        value: ValueId,
+        result_ty: IrType,
+    },
     /// Create a None value.
-    MakeNone { result: ValueId, result_ty: IrType },
+    MakeNone {
+        result: ValueId,
+        result_ty: IrType,
+    },
     /// Test if an option is Some. Yields bool.
-    IsSome { result: ValueId, operand: ValueId },
+    IsSome {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// Unwrap a Some value, panicking at runtime on None.
-    OptionUnwrap { result: ValueId, operand: ValueId, result_ty: IrType },
+    OptionUnwrap {
+        result: ValueId,
+        operand: ValueId,
+        result_ty: IrType,
+    },
 
     // ---- Result operations ----
     /// Wrap a value in Ok.
-    MakeOk { result: ValueId, value: ValueId, result_ty: IrType },
+    MakeOk {
+        result: ValueId,
+        value: ValueId,
+        result_ty: IrType,
+    },
     /// Wrap a value in Err.
-    MakeErr { result: ValueId, value: ValueId, result_ty: IrType },
+    MakeErr {
+        result: ValueId,
+        value: ValueId,
+        result_ty: IrType,
+    },
     /// Test if a result is Ok. Yields bool.
-    IsOk { result: ValueId, operand: ValueId },
+    IsOk {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// Unwrap the Ok value of a result.
-    ResultUnwrap { result: ValueId, operand: ValueId, result_ty: IrType },
+    ResultUnwrap {
+        result: ValueId,
+        operand: ValueId,
+        result_ty: IrType,
+    },
     /// Unwrap the Err value of a result.
-    ResultUnwrapErr { result: ValueId, operand: ValueId, result_ty: IrType },
+    ResultUnwrapErr {
+        result: ValueId,
+        operand: ValueId,
+        result_ty: IrType,
+    },
 
     // ---- Channel operations ----
     /// Create a new channel.
-    ChanNew { result: ValueId, elem_ty: IrType },
+    ChanNew {
+        result: ValueId,
+        elem_ty: IrType,
+    },
     /// Send a value on a channel (side-effecting, no result).
-    ChanSend { chan: ValueId, value: ValueId },
+    ChanSend {
+        chan: ValueId,
+        value: ValueId,
+    },
     /// Receive a value from a channel.
-    ChanRecv { result: ValueId, chan: ValueId, elem_ty: IrType },
+    ChanRecv {
+        result: ValueId,
+        chan: ValueId,
+        elem_ty: IrType,
+    },
     /// Spawn a concurrent task (body is a lifted function name).
-    Spawn { body_fn: String, args: Vec<ValueId> },
+    Spawn {
+        body_fn: String,
+        args: Vec<ValueId>,
+    },
 
     /// Parallel for-loop over a range (sequential simulation).
     ParFor {
-        var: ValueId,   // loop variable (result placeholder)
+        var: ValueId, // loop variable (result placeholder)
         start: ValueId,
         end: ValueId,
         body_fn: String,
@@ -401,19 +452,45 @@ pub enum IrInstr {
 
     // ---- Atomic / Mutex operations ----
     /// Create a new atomic value.
-    AtomicNew { result: ValueId, value: ValueId, result_ty: IrType },
+    AtomicNew {
+        result: ValueId,
+        value: ValueId,
+        result_ty: IrType,
+    },
     /// Load from an atomic value.
-    AtomicLoad { result: ValueId, atomic: ValueId, result_ty: IrType },
+    AtomicLoad {
+        result: ValueId,
+        atomic: ValueId,
+        result_ty: IrType,
+    },
     /// Store into an atomic value (side-effecting, no result).
-    AtomicStore { atomic: ValueId, value: ValueId },
+    AtomicStore {
+        atomic: ValueId,
+        value: ValueId,
+    },
     /// Atomically add a value and return the new value.
-    AtomicAdd { result: ValueId, atomic: ValueId, value: ValueId, result_ty: IrType },
+    AtomicAdd {
+        result: ValueId,
+        atomic: ValueId,
+        value: ValueId,
+        result_ty: IrType,
+    },
     /// Create a new mutex-protected value.
-    MutexNew { result: ValueId, value: ValueId, result_ty: IrType },
+    MutexNew {
+        result: ValueId,
+        value: ValueId,
+        result_ty: IrType,
+    },
     /// Lock a mutex and return the inner value.
-    MutexLock { result: ValueId, mutex: ValueId, result_ty: IrType },
+    MutexLock {
+        result: ValueId,
+        mutex: ValueId,
+        result_ty: IrType,
+    },
     /// Unlock a mutex (side-effecting, no result).
-    MutexUnlock { mutex: ValueId },
+    MutexUnlock {
+        mutex: ValueId,
+    },
 
     // ---- Concurrency barrier ----
     /// A synchronization barrier (no-op in interpreter, marks sync point in parallel code).
@@ -442,169 +519,392 @@ pub enum IrInstr {
 
     // ---- Sparse tensor operations ----
     /// Convert a dense array/tensor to sparse representation.
-    Sparsify { result: ValueId, operand: ValueId, ty: IrType },
+    Sparsify {
+        result: ValueId,
+        operand: ValueId,
+        ty: IrType,
+    },
     /// Convert a sparse representation back to dense.
-    Densify { result: ValueId, operand: ValueId, ty: IrType },
+    Densify {
+        result: ValueId,
+        operand: ValueId,
+        ty: IrType,
+    },
 
     // ---- String operations ----
     /// A compile-time string constant.
-    ConstStr { result: ValueId, value: String },
+    ConstStr {
+        result: ValueId,
+        value: String,
+    },
     /// Get the length (number of bytes) of a string.
-    StrLen { result: ValueId, operand: ValueId },
+    StrLen {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// Concatenate two strings.
-    StrConcat { result: ValueId, lhs: ValueId, rhs: ValueId },
+    StrConcat {
+        result: ValueId,
+        lhs: ValueId,
+        rhs: ValueId,
+    },
     /// Print a value to stdout (side-effecting, no result).
-    Print { operand: ValueId },
+    Print {
+        operand: ValueId,
+    },
     // ---- Extended string operations ----
     /// `contains(s, sub)` → bool
-    StrContains { result: ValueId, haystack: ValueId, needle: ValueId },
+    StrContains {
+        result: ValueId,
+        haystack: ValueId,
+        needle: ValueId,
+    },
     /// `starts_with(s, prefix)` → bool
-    StrStartsWith { result: ValueId, haystack: ValueId, prefix: ValueId },
+    StrStartsWith {
+        result: ValueId,
+        haystack: ValueId,
+        prefix: ValueId,
+    },
     /// `ends_with(s, suffix)` → bool
-    StrEndsWith { result: ValueId, haystack: ValueId, suffix: ValueId },
+    StrEndsWith {
+        result: ValueId,
+        haystack: ValueId,
+        suffix: ValueId,
+    },
     /// `to_upper(s)` → str
-    StrToUpper { result: ValueId, operand: ValueId },
+    StrToUpper {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// `to_lower(s)` → str
-    StrToLower { result: ValueId, operand: ValueId },
+    StrToLower {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// `trim(s)` → str  (strips leading/trailing ASCII whitespace)
-    StrTrim { result: ValueId, operand: ValueId },
+    StrTrim {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// `repeat(s, n)` → str
-    StrRepeat { result: ValueId, operand: ValueId, count: ValueId },
+    StrRepeat {
+        result: ValueId,
+        operand: ValueId,
+        count: ValueId,
+    },
     /// Unconditional abort with a message string. Terminates execution.
-    Panic { msg: ValueId },
+    Panic {
+        msg: ValueId,
+    },
     /// Convert any scalar or string value to its string representation.
-    ValueToStr { result: ValueId, operand: ValueId },
+    ValueToStr {
+        result: ValueId,
+        operand: ValueId,
+    },
 
     // ---- User input ----
     /// Read a line from stdin (strips trailing newline). Returns str.
-    ReadLine { result: ValueId },
+    ReadLine {
+        result: ValueId,
+    },
     /// Read a line from stdin and parse it as i64.
-    ReadI64 { result: ValueId },
+    ReadI64 {
+        result: ValueId,
+    },
     /// Read a line from stdin and parse it as f64.
-    ReadF64 { result: ValueId },
+    ReadF64 {
+        result: ValueId,
+    },
 
     // ---- String parsing ----
     /// Parse a str as i64. Returns option<i64>: some(n) on success, none on failure.
-    ParseI64 { result: ValueId, operand: ValueId },
+    ParseI64 {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// Parse a str as f64. Returns option<f64>: some(x) on success, none on failure.
-    ParseF64 { result: ValueId, operand: ValueId },
+    ParseF64 {
+        result: ValueId,
+        operand: ValueId,
+    },
 
     // ---- String indexing and slicing ----
     /// `str_index(s, i)` → i64 byte value at position i.
-    StrIndex { result: ValueId, string: ValueId, index: ValueId },
+    StrIndex {
+        result: ValueId,
+        string: ValueId,
+        index: ValueId,
+    },
     /// `slice(s, start, end)` → str substring [start..end).
-    StrSlice { result: ValueId, string: ValueId, start: ValueId, end: ValueId },
+    StrSlice {
+        result: ValueId,
+        string: ValueId,
+        start: ValueId,
+        end: ValueId,
+    },
     /// `find(s, sub)` → option<i64>: index of first occurrence of sub in s, or none.
-    StrFind { result: ValueId, haystack: ValueId, needle: ValueId },
+    StrFind {
+        result: ValueId,
+        haystack: ValueId,
+        needle: ValueId,
+    },
     /// `str_replace(s, old, new)` → str with all occurrences of old replaced by new.
-    StrReplace { result: ValueId, string: ValueId, from: ValueId, to: ValueId },
+    StrReplace {
+        result: ValueId,
+        string: ValueId,
+        from: ValueId,
+        to: ValueId,
+    },
 
     // ---- Dynamic list operations ----
     /// Create a new empty list of the given element type.
-    ListNew { result: ValueId, elem_ty: IrType },
+    ListNew {
+        result: ValueId,
+        elem_ty: IrType,
+    },
     /// Append a value to a list (side-effecting, no SSA result).
-    ListPush { list: ValueId, value: ValueId },
+    ListPush {
+        list: ValueId,
+        value: ValueId,
+    },
     /// Get the length of a list. Returns i64.
-    ListLen { result: ValueId, list: ValueId },
+    ListLen {
+        result: ValueId,
+        list: ValueId,
+    },
     /// Load an element from a list by index. Returns elem_ty.
-    ListGet { result: ValueId, list: ValueId, index: ValueId, elem_ty: IrType },
+    ListGet {
+        result: ValueId,
+        list: ValueId,
+        index: ValueId,
+        elem_ty: IrType,
+    },
     /// Store a value into a list element by index (side-effecting).
-    ListSet { list: ValueId, index: ValueId, value: ValueId },
+    ListSet {
+        list: ValueId,
+        index: ValueId,
+        value: ValueId,
+    },
     /// Remove and return the last element of a list. Returns option<elem_ty>.
-    ListPop { result: ValueId, list: ValueId, elem_ty: IrType },
+    ListPop {
+        result: ValueId,
+        list: ValueId,
+        elem_ty: IrType,
+    },
 
     // ---- HashMap operations ----
     /// Create a new empty map with the given key/value types.
-    MapNew { result: ValueId, key_ty: IrType, val_ty: IrType },
+    MapNew {
+        result: ValueId,
+        key_ty: IrType,
+        val_ty: IrType,
+    },
     /// Insert or update a key-value pair (side-effecting, no SSA result).
-    MapSet { map: ValueId, key: ValueId, value: ValueId },
+    MapSet {
+        map: ValueId,
+        key: ValueId,
+        value: ValueId,
+    },
     /// Get the value for a key. Returns option<val_ty>.
-    MapGet { result: ValueId, map: ValueId, key: ValueId, val_ty: IrType },
+    MapGet {
+        result: ValueId,
+        map: ValueId,
+        key: ValueId,
+        val_ty: IrType,
+    },
     /// Check whether a key exists. Returns bool.
-    MapContains { result: ValueId, map: ValueId, key: ValueId },
+    MapContains {
+        result: ValueId,
+        map: ValueId,
+        key: ValueId,
+    },
     /// Remove a key from the map (side-effecting, no SSA result).
-    MapRemove { map: ValueId, key: ValueId },
+    MapRemove {
+        map: ValueId,
+        key: ValueId,
+    },
     /// Return the number of entries in the map. Returns i64.
-    MapLen { result: ValueId, map: ValueId },
+    MapLen {
+        result: ValueId,
+        map: ValueId,
+    },
 
     // ---- File I/O operations (Phase 56) ----
     /// Read entire file as a string. Returns result<str, str>.
-    FileReadAll { result: ValueId, path: ValueId },
+    FileReadAll {
+        result: ValueId,
+        path: ValueId,
+    },
     /// Write string to a file. Returns result<unit, str>.
-    FileWriteAll { result: ValueId, path: ValueId, content: ValueId },
+    FileWriteAll {
+        result: ValueId,
+        path: ValueId,
+        content: ValueId,
+    },
     /// Check if a file exists. Returns bool.
-    FileExists { result: ValueId, path: ValueId },
+    FileExists {
+        result: ValueId,
+        path: ValueId,
+    },
     /// Read file as a list of lines. Returns list<str>.
-    FileLines { result: ValueId, path: ValueId },
+    FileLines {
+        result: ValueId,
+        path: ValueId,
+    },
 
     // ---- Database operations ----
     /// Open a SQLite database. Returns handle (i64).
-    DbOpen { result: ValueId, path: ValueId },
+    DbOpen {
+        result: ValueId,
+        path: ValueId,
+    },
     /// Execute SQL (INSERT/UPDATE/DELETE/CREATE). Returns rows affected (i64).
-    DbExec { result: ValueId, db: ValueId, sql: ValueId },
+    DbExec {
+        result: ValueId,
+        db: ValueId,
+        sql: ValueId,
+    },
     /// Query SQL (SELECT). Returns list<list<str>>.
-    DbQuery { result: ValueId, db: ValueId, sql: ValueId },
+    DbQuery {
+        result: ValueId,
+        db: ValueId,
+        sql: ValueId,
+    },
     /// Close a database handle.
-    DbClose { result: ValueId, db: ValueId },
+    DbClose {
+        result: ValueId,
+        db: ValueId,
+    },
 
     // ---- Extended collection operations (Phase 58) ----
     /// Check if a list contains a value. Returns bool.
-    ListContains { result: ValueId, list: ValueId, value: ValueId },
+    ListContains {
+        result: ValueId,
+        list: ValueId,
+        value: ValueId,
+    },
     /// Sort a list in-place (side-effecting, no result).
-    ListSort { list: ValueId },
+    ListSort {
+        list: ValueId,
+    },
     /// Get all keys of a map as list<str>.
-    MapKeys { result: ValueId, map: ValueId },
+    MapKeys {
+        result: ValueId,
+        map: ValueId,
+    },
     /// Get all values of a map as a list.
-    MapValues { result: ValueId, map: ValueId },
+    MapValues {
+        result: ValueId,
+        map: ValueId,
+    },
     /// Concatenate two lists into a new list.
-    ListConcat { result: ValueId, lhs: ValueId, rhs: ValueId },
+    ListConcat {
+        result: ValueId,
+        lhs: ValueId,
+        rhs: ValueId,
+    },
     /// Slice a list from start to end (exclusive). Returns list.
-    ListSlice { result: ValueId, list: ValueId, start: ValueId, end: ValueId },
+    ListSlice {
+        result: ValueId,
+        list: ValueId,
+        start: ValueId,
+        end: ValueId,
+    },
 
     // ---- Process / environment operations (Phase 59) ----
     /// Exit the process with the given i64 exit code (side-effecting, no result).
-    ProcessExit { code: ValueId },
+    ProcessExit {
+        code: ValueId,
+    },
     /// Get command-line arguments as list<str>.
-    ProcessArgs { result: ValueId },
+    ProcessArgs {
+        result: ValueId,
+    },
     /// Get an environment variable by name. Returns option<str>.
-    EnvVar { result: ValueId, name: ValueId },
+    EnvVar {
+        result: ValueId,
+        name: ValueId,
+    },
 
     // ---- Pattern matching helpers (Phase 61) ----
     /// Extract the tag (variant index as i64) from an enum value.
-    GetVariantTag { result: ValueId, operand: ValueId },
+    GetVariantTag {
+        result: ValueId,
+        operand: ValueId,
+    },
     /// Compare two string values for equality. Returns bool.
-    StrEq { result: ValueId, lhs: ValueId, rhs: ValueId },
+    StrEq {
+        result: ValueId,
+        lhs: ValueId,
+        rhs: ValueId,
+    },
 
     // ---- Phase 88: TCP network I/O ----
     /// Connect to a TCP server. Returns socket fd (i64).
-    TcpConnect { result: ValueId, host: ValueId, port: ValueId },
+    TcpConnect {
+        result: ValueId,
+        host: ValueId,
+        port: ValueId,
+    },
     /// Listen on a TCP port. Returns listener fd (i64).
-    TcpListen { result: ValueId, port: ValueId },
+    TcpListen {
+        result: ValueId,
+        port: ValueId,
+    },
     /// Accept a connection from a listener. Returns connection fd (i64).
-    TcpAccept { result: ValueId, listener: ValueId },
+    TcpAccept {
+        result: ValueId,
+        listener: ValueId,
+    },
     /// Read a line from a TCP connection. Returns str.
-    TcpRead { result: ValueId, conn: ValueId },
+    TcpRead {
+        result: ValueId,
+        conn: ValueId,
+    },
     /// Write a string to a TCP connection. Side-effecting.
-    TcpWrite { conn: ValueId, data: ValueId },
+    TcpWrite {
+        conn: ValueId,
+        data: ValueId,
+    },
     /// Close a TCP connection or listener. Side-effecting.
-    TcpClose { conn: ValueId },
+    TcpClose {
+        conn: ValueId,
+    },
 
     // ---- Phase 95: String split/join ----
     /// Split a string by a delimiter. Returns list<str>.
-    StrSplit { result: ValueId, str_val: ValueId, delim: ValueId },
+    StrSplit {
+        result: ValueId,
+        str_val: ValueId,
+        delim: ValueId,
+    },
     /// Join a list<str> with a delimiter string. Returns str.
-    StrJoin { result: ValueId, list_val: ValueId, delim: ValueId },
+    StrJoin {
+        result: ValueId,
+        list_val: ValueId,
+        delim: ValueId,
+    },
 
     // ---- Phase 97: Time / OS ----
     /// Returns current time in milliseconds since Unix epoch. Returns i64.
-    NowMs { result: ValueId },
+    NowMs {
+        result: ValueId,
+    },
     /// Sleep for the given number of milliseconds. Side-effecting; returns i64 (0).
-    SleepMs { result: ValueId, ms: ValueId },
+    SleepMs {
+        result: ValueId,
+        ms: ValueId,
+    },
 
     // ---- Phase 104: Generic builtin call for new runtime functions ----
     /// Calls a named runtime builtin with arbitrary arguments.
     /// Used for HTTP, JSON, Set, Regex, DateTime, OS, type_of, random, hash, etc.
-    BuiltinCall { result: ValueId, name: String, args: Vec<ValueId>, result_ty: IrType },
+    BuiltinCall {
+        result: ValueId,
+        name: String,
+        args: Vec<ValueId>,
+        result_ty: IrType,
+    },
 }
 
 impl IrInstr {
@@ -750,7 +1050,6 @@ impl IrInstr {
         )
     }
 
-
     /// Returns all `ValueId`s consumed by this instruction (operands).
     pub fn operands(&self) -> Vec<ValueId> {
         match self {
@@ -806,8 +1105,14 @@ impl IrInstr {
             }
             IrInstr::AllocArray { init, .. } => init.clone(),
             IrInstr::ArrayLoad { array, index, .. } => vec![*array, *index],
-            IrInstr::ArrayStore { array, index, value } => vec![*array, *index, *value],
-            IrInstr::ParFor { start, end, args, .. } => {
+            IrInstr::ArrayStore {
+                array,
+                index,
+                value,
+            } => vec![*array, *index, *value],
+            IrInstr::ParFor {
+                start, end, args, ..
+            } => {
                 let mut ops = vec![*start, *end];
                 ops.extend_from_slice(args);
                 ops
@@ -842,9 +1147,15 @@ impl IrInstr {
             IrInstr::StrLen { operand, .. } => vec![*operand],
             IrInstr::StrConcat { lhs, rhs, .. } => vec![*lhs, *rhs],
             IrInstr::Print { operand } => vec![*operand],
-            IrInstr::StrContains { haystack, needle, .. } => vec![*haystack, *needle],
-            IrInstr::StrStartsWith { haystack, prefix, .. } => vec![*haystack, *prefix],
-            IrInstr::StrEndsWith { haystack, suffix, .. } => vec![*haystack, *suffix],
+            IrInstr::StrContains {
+                haystack, needle, ..
+            } => vec![*haystack, *needle],
+            IrInstr::StrStartsWith {
+                haystack, prefix, ..
+            } => vec![*haystack, *prefix],
+            IrInstr::StrEndsWith {
+                haystack, suffix, ..
+            } => vec![*haystack, *suffix],
             IrInstr::StrToUpper { operand, .. } => vec![*operand],
             IrInstr::StrToLower { operand, .. } => vec![*operand],
             IrInstr::StrTrim { operand, .. } => vec![*operand],
@@ -857,9 +1168,15 @@ impl IrInstr {
             IrInstr::ParseI64 { operand, .. } => vec![*operand],
             IrInstr::ParseF64 { operand, .. } => vec![*operand],
             IrInstr::StrIndex { string, index, .. } => vec![*string, *index],
-            IrInstr::StrSlice { string, start, end, .. } => vec![*string, *start, *end],
-            IrInstr::StrFind { haystack, needle, .. } => vec![*haystack, *needle],
-            IrInstr::StrReplace { string, from, to, .. } => vec![*string, *from, *to],
+            IrInstr::StrSlice {
+                string, start, end, ..
+            } => vec![*string, *start, *end],
+            IrInstr::StrFind {
+                haystack, needle, ..
+            } => vec![*haystack, *needle],
+            IrInstr::StrReplace {
+                string, from, to, ..
+            } => vec![*string, *from, *to],
             IrInstr::ListNew { .. } => vec![],
             IrInstr::ListPush { list, value } => vec![*list, *value],
             IrInstr::ListLen { list, .. } => vec![*list],
@@ -888,7 +1205,9 @@ impl IrInstr {
             IrInstr::MapKeys { map, .. } => vec![*map],
             IrInstr::MapValues { map, .. } => vec![*map],
             IrInstr::ListConcat { lhs, rhs, .. } => vec![*lhs, *rhs],
-            IrInstr::ListSlice { list, start, end, .. } => vec![*list, *start, *end],
+            IrInstr::ListSlice {
+                list, start, end, ..
+            } => vec![*list, *start, *end],
             // Phase 59: Process / environment
             IrInstr::ProcessExit { code } => vec![*code],
             IrInstr::ProcessArgs { .. } => vec![],
@@ -906,7 +1225,9 @@ impl IrInstr {
             IrInstr::TcpWrite { conn, data } => vec![*conn, *data],
             IrInstr::TcpClose { conn } => vec![*conn],
             IrInstr::StrSplit { str_val, delim, .. } => vec![*str_val, *delim],
-            IrInstr::StrJoin { list_val, delim, .. } => vec![*list_val, *delim],
+            IrInstr::StrJoin {
+                list_val, delim, ..
+            } => vec![*list_val, *delim],
             IrInstr::NowMs { .. } => vec![],
             IrInstr::SleepMs { ms, .. } => vec![*ms],
             IrInstr::BuiltinCall { args, .. } => args.clone(),

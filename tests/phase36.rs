@@ -75,7 +75,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 3.0).abs() < 1e-9, "log2(8.0) should be 3.0, got: {}", v);
+    assert!(
+        (v - 3.0).abs() < 1e-9,
+        "log2(8.0) should be 3.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -90,7 +94,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 3.0).abs() < 1e-9, "round(2.7) should be 3.0, got: {}", v);
+    assert!(
+        (v - 3.0).abs() < 1e-9,
+        "round(2.7) should be 3.0, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -104,7 +112,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "-1", "sign(-5) should be -1, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "-1",
+        "sign(-5) should be -1, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,5 +131,10 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "10", "clamp(15,0,10) should be 10, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "10",
+        "clamp(15,0,10) should be 10, got: {}",
+        out.trim()
+    );
 }

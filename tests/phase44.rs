@@ -141,7 +141,19 @@ def f() -> i64 {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("iris_map_new"), "expected iris_map_new in LLVM:\n{}", ll);
-    assert!(ll.contains("iris_map_set"), "expected iris_map_set in LLVM:\n{}", ll);
-    assert!(ll.contains("iris_map_len"), "expected iris_map_len in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("iris_map_new"),
+        "expected iris_map_new in LLVM:\n{}",
+        ll
+    );
+    assert!(
+        ll.contains("iris_map_set"),
+        "expected iris_map_set in LLVM:\n{}",
+        ll
+    );
+    assert!(
+        ll.contains("iris_map_len"),
+        "expected iris_map_len in LLVM:\n{}",
+        ll
+    );
 }

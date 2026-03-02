@@ -121,7 +121,15 @@ impl Pass for TypeInferPass {
                                     ScalarUnaryOp::BitNot => {
                                         if !matches!(
                                             ty,
-                                            IrType::Scalar(DType::I32 | DType::I64 | DType::U8 | DType::I8 | DType::U32 | DType::U64 | DType::USize)
+                                            IrType::Scalar(
+                                                DType::I32
+                                                    | DType::I64
+                                                    | DType::U8
+                                                    | DType::I8
+                                                    | DType::U32
+                                                    | DType::U64
+                                                    | DType::USize
+                                            )
                                         ) {
                                             return Err(PassError::TypeError {
                                                 func: func.name.clone(),
@@ -195,7 +203,9 @@ impl Pass for TypeInferPass {
                             }
                         }
 
-                        IrInstr::GetField { base, field_index, .. } => {
+                        IrInstr::GetField {
+                            base, field_index, ..
+                        } => {
                             if let Some(ty) = func.value_type(*base) {
                                 if !matches!(ty, IrType::Struct { .. }) {
                                     return Err(PassError::TypeError {

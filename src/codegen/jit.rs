@@ -32,13 +32,11 @@
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
+use crate::codegen::build::{
+    find_clang, msys2_gcc_lib, msys2_ucrt64_include, msys2_ucrt64_lib, RUNTIME_C_SRC, RUNTIME_H_SRC,
+};
 use crate::error::CodegenError;
 use crate::ir::module::IrModule;
-use crate::codegen::build::{
-    find_clang,
-    msys2_ucrt64_lib, msys2_ucrt64_include, msys2_gcc_lib,
-    RUNTIME_H_SRC, RUNTIME_C_SRC,
-};
 
 // ---------------------------------------------------------------------------
 // JIT cache
@@ -89,7 +87,9 @@ pub struct JitCompiler {
 
 impl JitCompiler {
     pub fn new() -> Self {
-        Self { cache: HashMap::new() }
+        Self {
+            cache: HashMap::new(),
+        }
     }
 
     /// Compile and execute the first zero-argument function in `module`.
@@ -138,7 +138,7 @@ impl JitCompiler {
     /// function's return value so stdout matches the interpreter tier.
     fn compile_native(&self, module: &IrModule, fn_name: &str) -> Result<JitResult, CodegenError> {
         use crate::codegen::llvm_ir::emit_llvm_ir;
-        use crate::ir::types::{IrType, DType};
+        use crate::ir::types::{DType, IrType};
         use std::process::Command;
 
         // Use emit_llvm_ir (no binary wrapper) so functions keep their names.
@@ -155,12 +155,13 @@ impl JitCompiler {
         // and exits with code 0.
         if let Some(func) = entry_func {
             let (llvm_ret, print_call) = match &func.return_ty {
-                IrType::Scalar(DType::I64) | IrType::Scalar(DType::I32)
-                | IrType::Scalar(DType::U32) | IrType::Scalar(DType::U64)
+                IrType::Scalar(DType::I64)
+                | IrType::Scalar(DType::I32)
+                | IrType::Scalar(DType::U32)
+                | IrType::Scalar(DType::U64)
                 | IrType::Scalar(DType::USize)
-                | IrType::Scalar(DType::I8) | IrType::Scalar(DType::U8) => {
-                    ("i64", "  call void @iris_print_i64(i64 %r)\n")
-                }
+                | IrType::Scalar(DType::I8)
+                | IrType::Scalar(DType::U8) => ("i64", "  call void @iris_print_i64(i64 %r)\n"),
                 IrType::Scalar(DType::F64) => {
                     ("double", "  call void @iris_print_f64(double %r)\n")
                 }
@@ -168,12 +169,8 @@ impl JitCompiler {
                     // Runtime prints f64; extend f32 → f64 first.
                     ("float", "  %rd = fpext float %r to double\n  call void @iris_print_f64(double %rd)\n")
                 }
-                IrType::Scalar(DType::Bool) => {
-                    ("i1", "  call void @iris_print_bool(i1 %r)\n")
-                }
-                IrType::Str => {
-                    ("ptr", "  call void @iris_print_str(ptr %r)\n")
-                }
+                IrType::Scalar(DType::Bool) => ("i1", "  call void @iris_print_bool(i1 %r)\n"),
+                IrType::Str => ("ptr", "  call void @iris_print_str(ptr %r)\n"),
                 _ => ("i64", "  call void @iris_print_i64(i64 %r)\n"),
             };
 
@@ -185,7 +182,9 @@ impl JitCompiler {
                  ret i32 0\n\
                  }}\n",
                 "  call void @iris_set_argv(i32 %argc, ptr %argv)\n",
-                llvm_ret, func.name, print_call
+                llvm_ret,
+                func.name,
+                print_call
             ));
         }
 
@@ -195,7 +194,11 @@ impl JitCompiler {
         let _ = std::fs::create_dir_all(&tmp_dir);
 
         let ir_path = tmp_dir.join("module.ll");
-        let exe_ext = if cfg!(target_os = "windows") { "exe" } else { "out" };
+        let exe_ext = if cfg!(target_os = "windows") {
+            "exe"
+        } else {
+            "out"
+        };
         let out_path = tmp_dir.join(format!("module.{}", exe_ext));
 
         std::fs::write(&ir_path, &ir_text).map_err(|e| CodegenError::Unsupported {
@@ -234,10 +237,13 @@ impl JitCompiler {
         let mut rt_cmd = Command::new(&clang);
         rt_cmd.args(&target_args);
         rt_cmd.args([
-            "-O2", "-c",
+            "-O2",
+            "-c",
             c_path.to_str().unwrap_or(""),
-            "-o", rt_obj.to_str().unwrap_or(""),
-            "-I", tmp_dir.to_str().unwrap_or(""),
+            "-o",
+            rt_obj.to_str().unwrap_or(""),
+            "-I",
+            tmp_dir.to_str().unwrap_or(""),
             "-Wno-pragma-pack",
         ]);
         if let Some(ref inc) = msys2_inc {
@@ -254,9 +260,11 @@ impl JitCompiler {
         let mut ir_cmd = Command::new(&clang);
         ir_cmd.args(&target_args);
         ir_cmd.args([
-            "-O2", "-c",
+            "-O2",
+            "-c",
             ir_path.to_str().unwrap_or(""),
-            "-o", mod_obj.to_str().unwrap_or(""),
+            "-o",
+            mod_obj.to_str().unwrap_or(""),
             "-Wno-override-module",
         ]);
         let ir_result = ir_cmd.stderr(std::process::Stdio::null()).output();
@@ -273,8 +281,10 @@ impl JitCompiler {
             "-O2",
             mod_obj.to_str().unwrap_or(""),
             rt_obj.to_str().unwrap_or(""),
-            "-o", out_path.to_str().unwrap_or(""),
-            "-lm", "-lpthread",
+            "-o",
+            out_path.to_str().unwrap_or(""),
+            "-lm",
+            "-lpthread",
         ]);
         // Windows: link WinSock2 for TCP/HTTP builtins
         #[cfg(target_os = "windows")]
@@ -298,12 +308,13 @@ impl JitCompiler {
             out_path.clone()
         };
 
-        let run_output = Command::new(&run_path)
-            .output()
-            .map_err(|e| CodegenError::Unsupported {
-                backend: "jit-native".into(),
-                detail: format!("cannot run compiled binary: {}", e),
-            })?;
+        let run_output =
+            Command::new(&run_path)
+                .output()
+                .map_err(|e| CodegenError::Unsupported {
+                    backend: "jit-native".into(),
+                    detail: format!("cannot run compiled binary: {}", e),
+                })?;
 
         let stdout = String::from_utf8_lossy(&run_output.stdout).to_string();
         let _ = std::fs::remove_dir_all(&tmp_dir);
@@ -327,8 +338,8 @@ impl JitCompiler {
                 detail: "no zero-argument function found".into(),
             })?;
 
-        let results = eval_function_in_module(module, func, &[])
-            .map_err(|e| CodegenError::Unsupported {
+        let results =
+            eval_function_in_module(module, func, &[]).map_err(|e| CodegenError::Unsupported {
                 backend: "jit-interp".into(),
                 detail: format!("interpreter error: {:?}", e),
             })?;
@@ -338,7 +349,10 @@ impl JitCompiler {
             output.push_str(&format!("{}\n", val));
         }
 
-        Ok(JitResult { output, tier: JitTier::Interpreter })
+        Ok(JitResult {
+            output,
+            tier: JitTier::Interpreter,
+        })
     }
 }
 
@@ -373,11 +387,18 @@ pub fn emit_jit(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out, ";")?;
     writeln!(out, "; Functions available for JIT:")?;
     for func in module.functions() {
-        let params: Vec<String> = func.params
+        let params: Vec<String> = func
+            .params
             .iter()
             .map(|p| format!("{}: {}", p.name, p.ty))
             .collect();
-        writeln!(out, ";   {} ({}) -> {}", func.name, params.join(", "), func.return_ty)?;
+        writeln!(
+            out,
+            ";   {} ({}) -> {}",
+            func.name,
+            params.join(", "),
+            func.return_ty
+        )?;
     }
     writeln!(out, ";")?;
     writeln!(out, "; Execution output:")?;
@@ -432,11 +453,18 @@ pub fn emit_jit_plan(module: &IrModule) -> Result<String, CodegenError> {
         if func.params.is_empty() {
             writeln!(out, ";   [ENTRY] {} () -> {}", func.name, func.return_ty)?;
         } else {
-            let params: Vec<String> = func.params
+            let params: Vec<String> = func
+                .params
                 .iter()
                 .map(|p| format!("{}: {}", p.name, p.ty))
                 .collect();
-            writeln!(out, ";   {} ({}) -> {}", func.name, params.join(", "), func.return_ty)?;
+            writeln!(
+                out,
+                ";   {} ({}) -> {}",
+                func.name,
+                params.join(", "),
+                func.return_ty
+            )?;
         }
     }
 

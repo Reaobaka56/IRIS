@@ -76,7 +76,9 @@ impl ProfileData {
 
     /// Return the execution count for a block, or `None` if not profiled.
     pub fn block_count(&self, fn_name: &str, block_label: &str) -> Option<u64> {
-        self.counts.get(&(fn_name.to_owned(), block_label.to_owned())).copied()
+        self.counts
+            .get(&(fn_name.to_owned(), block_label.to_owned()))
+            .copied()
     }
 
     /// Return the entry count for a function (i.e. the count of the entry block).
@@ -111,14 +113,20 @@ pub fn emit_pgo_instrument(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out, "; IRIS PGO Instrumented IR — phase 53")?;
     writeln!(out, "; Compile: clang -fprofile-instr-generate -O1")?;
     writeln!(out, "; Profile: LLVM_PROFILE_FILE=iris.profraw ./a.out")?;
-    writeln!(out, "; Convert: llvm-profdata merge -output=iris.profdata iris.profraw\n")?;
+    writeln!(
+        out,
+        "; Convert: llvm-profdata merge -output=iris.profdata iris.profraw\n"
+    )?;
 
     // Pass through the base IR unchanged (the block counter injection
     // is done at the text level here for simplicity).
     out.push_str(&base);
 
     writeln!(out)?;
-    writeln!(out, "; ── PGO counter globals ──────────────────────────────────────────────")?;
+    writeln!(
+        out,
+        "; ── PGO counter globals ──────────────────────────────────────────────"
+    )?;
 
     // Emit one counter global per basic block.
     for func in module.functions() {
@@ -137,15 +145,24 @@ pub fn emit_pgo_instrument(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out)?;
 
     // Emit profile runtime declarations.
-    writeln!(out, "; ── PGO runtime declarations ─────────────────────────────────────────")?;
+    writeln!(
+        out,
+        "; ── PGO runtime declarations ─────────────────────────────────────────"
+    )?;
     writeln!(out, "declare void @__llvm_profile_init()")?;
     writeln!(out, "declare void @__llvm_profile_write_file()")?;
     writeln!(out, "declare i64 @__llvm_profile_get_num_counters()")?;
     writeln!(out)?;
 
     // Emit a module ctor that initialises profiling.
-    writeln!(out, "; ── Module constructor: initialise profiling ─────────────────────────")?;
-    writeln!(out, "@llvm.global_ctors = appending global [1 x {{i32, ptr, ptr}}] [")?;
+    writeln!(
+        out,
+        "; ── Module constructor: initialise profiling ─────────────────────────"
+    )?;
+    writeln!(
+        out,
+        "@llvm.global_ctors = appending global [1 x {{i32, ptr, ptr}}] ["
+    )?;
     writeln!(out, "  {{i32 65535, ptr @iris_profile_init, ptr null}}")?;
     writeln!(out, "]")?;
     writeln!(out)?;
@@ -156,15 +173,14 @@ pub fn emit_pgo_instrument(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out)?;
 
     // Emit inline counter increment wrappers (one per function × block).
-    writeln!(out, "; ── Block execution counter increments ───────────────────────────────")?;
+    writeln!(
+        out,
+        "; ── Block execution counter increments ───────────────────────────────"
+    )?;
     for func in module.functions() {
         for (bi, block) in func.blocks().iter().enumerate() {
             let label = block_label_str(block.name.as_deref(), block.id);
-            writeln!(
-                out,
-                "; counter for {}:{} at index {}",
-                func.name, label, bi
-            )?;
+            writeln!(out, "; counter for {}:{} at index {}", func.name, label, bi)?;
         }
     }
 
@@ -210,12 +226,13 @@ pub fn emit_pgo_optimize(module: &IrModule, profile: &str) -> Result<String, Cod
             if let Some(name) = extract_fn_name(trimmed) {
                 if let Some(count) = pdata.entry_count(&name) {
                     meta_counter += 1;
-                    let line_with_meta = line.replacen(" {", &format!(" !{{!\"function_entry_count\", i64 {}}} {{", count), 1);
+                    let line_with_meta = line.replacen(
+                        " {",
+                        &format!(" !{{!\"function_entry_count\", i64 {}}} {{", count),
+                        1,
+                    );
                     writeln!(out, "{}", line_with_meta)?;
-                    annotations.push(format!(
-                        "; entry count for {} = {}",
-                        name, count
-                    ));
+                    annotations.push(format!("; entry count for {} = {}", name, count));
                     continue;
                 }
             }
@@ -228,7 +245,10 @@ pub fn emit_pgo_optimize(module: &IrModule, profile: &str) -> Result<String, Cod
     // Emit branch weight metadata at the end.
     if !annotations.is_empty() {
         writeln!(out)?;
-        writeln!(out, "; ── PGO branch weight metadata ───────────────────────────────────────")?;
+        writeln!(
+            out,
+            "; ── PGO branch weight metadata ───────────────────────────────────────"
+        )?;
         for ann in &annotations {
             writeln!(out, "{}", ann)?;
         }
@@ -236,7 +256,10 @@ pub fn emit_pgo_optimize(module: &IrModule, profile: &str) -> Result<String, Cod
 
     // Emit hot/cold function summary.
     writeln!(out)?;
-    writeln!(out, "; ── PGO function heat summary ────────────────────────────────────────")?;
+    writeln!(
+        out,
+        "; ── PGO function heat summary ────────────────────────────────────────"
+    )?;
     for func in module.functions() {
         let count = pdata.entry_count(&func.name).unwrap_or(0);
         let heat = if count > 1000 {
@@ -284,7 +307,11 @@ pub fn generate_synthetic_profile(module: &IrModule, entry_count: u64) -> String
     for func in module.functions() {
         for (bi, block) in func.blocks().iter().enumerate() {
             let label = block_label_str(block.name.as_deref(), block.id);
-            let count = if bi == 0 { entry_count } else { entry_count / 2 };
+            let count = if bi == 0 {
+                entry_count
+            } else {
+                entry_count / 2
+            };
             out.push_str(&format!("{}:{}:{}\n", func.name, label, count));
         }
     }

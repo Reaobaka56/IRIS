@@ -118,6 +118,9 @@ def add_u32(a: u32, b: u32) -> u32 { a + b }
 def add_usize(a: usize, b: usize) -> usize { a + b }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
-    assert!(ir.contains("u32") || ir.contains("usize"),
-        "expected new type names in IR: {}", ir);
+    assert!(
+        ir.contains("u32") || ir.contains("usize"),
+        "expected new type names in IR: {}",
+        ir
+    );
 }

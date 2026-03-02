@@ -125,7 +125,11 @@ model M {
     };
 
     let cat = graph.node_by_name("cat").expect("cat");
-    assert_eq!(shapes.get(&cat.id()).unwrap(), &expected, "Concat should sum axis=1 dims");
+    assert_eq!(
+        shapes.get(&cat.id()).unwrap(),
+        &expected,
+        "Concat should sum axis=1 dims"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -185,7 +189,10 @@ model M {
     gpm.add_pass(DeadNodePass);
     gpm.run(&mut graph).expect("GraphPassManager::run");
 
-    assert!(graph.node_by_name("unused").is_none(), "unused node removed");
+    assert!(
+        graph.node_by_name("unused").is_none(),
+        "unused node removed"
+    );
     assert!(graph.node_by_name("used").is_some(), "used node present");
 }
 
@@ -206,12 +213,32 @@ model Net {
 fn test_emit_onnx_basic() {
     let output = compile(NET_SRC, "net_module", EmitKind::Onnx).expect("compile onnx");
 
-    assert!(output.contains("ir_version: 7"), "missing ir_version\n{}", output);
+    assert!(
+        output.contains("ir_version: 7"),
+        "missing ir_version\n{}",
+        output
+    );
     assert!(output.contains("\"Net\""), "missing graph name\n{}", output);
-    assert!(output.contains("Gemm"), "Dense should map to Gemm\n{}", output);
-    assert!(output.contains("Softmax"), "Softmax should appear\n{}", output);
-    assert!(output.contains("input"), "missing input declaration\n{}", output);
-    assert!(output.contains("output"), "missing output declaration\n{}", output);
+    assert!(
+        output.contains("Gemm"),
+        "Dense should map to Gemm\n{}",
+        output
+    );
+    assert!(
+        output.contains("Softmax"),
+        "Softmax should appear\n{}",
+        output
+    );
+    assert!(
+        output.contains("input"),
+        "missing input declaration\n{}",
+        output
+    );
+    assert!(
+        output.contains("output"),
+        "missing output declaration\n{}",
+        output
+    );
 }
 
 // ---------------------------------------------------------------------------

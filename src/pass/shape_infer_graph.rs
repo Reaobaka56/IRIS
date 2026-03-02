@@ -36,7 +36,13 @@ pub fn infer_shapes(graph: &GraphIr) -> Result<HashMap<NodeId, IrType>, LowerErr
             GraphNode::Input { id, ty, .. } => {
                 shapes.insert(*id, ty.clone());
             }
-            GraphNode::Layer { id, op, params, inputs, .. } => {
+            GraphNode::Layer {
+                id,
+                op,
+                params,
+                inputs,
+                ..
+            } => {
                 let input_tys: Vec<&IrType> =
                     inputs.iter().filter_map(|pid| shapes.get(pid)).collect();
                 let output_ty = infer_op_output_ty(op, params, &input_tys)?;
@@ -110,7 +116,10 @@ fn infer_op_output_ty(
                             *n = n.saturating_div(stride);
                         }
                     }
-                    Ok(IrType::Tensor { dtype: *dtype, shape: Shape(dims) })
+                    Ok(IrType::Tensor {
+                        dtype: *dtype,
+                        shape: Shape(dims),
+                    })
                 }
                 _ => Err(LowerError::UnknownOp {
                     op: "MaxPool: input must be a tensor type".into(),
@@ -143,7 +152,10 @@ fn infer_op_output_ty(
                             }
                         }
                     }
-                    Ok(IrType::Tensor { dtype: *dtype, shape: Shape(dims) })
+                    Ok(IrType::Tensor {
+                        dtype: *dtype,
+                        shape: Shape(dims),
+                    })
                 }
                 _ => Err(LowerError::UnknownOp {
                     op: "Concat: input must be a tensor type".into(),
@@ -164,7 +176,10 @@ fn infer_op_output_ty(
                             *n = n.saturating_div(stride);
                         }
                     }
-                    Ok(IrType::Tensor { dtype: *dtype, shape: Shape(dims) })
+                    Ok(IrType::Tensor {
+                        dtype: *dtype,
+                        shape: Shape(dims),
+                    })
                 }
                 _ => Err(LowerError::UnknownOp {
                     op: "AvgPool: input must be a tensor type".into(),
@@ -179,7 +194,10 @@ fn infer_op_output_ty(
                 let rank = dims.len();
                 dims[rank - 2] = Dim::Literal(1);
                 dims[rank - 1] = Dim::Literal(1);
-                Ok(IrType::Tensor { dtype: *dtype, shape: Shape(dims) })
+                Ok(IrType::Tensor {
+                    dtype: *dtype,
+                    shape: Shape(dims),
+                })
             }
             _ => Ok(first),
         },
@@ -203,21 +221,31 @@ fn infer_op_output_ty(
         // Conv2D: NCHW convention — [N, C_in, H, W] → [N, filters, H_out, W_out]
         // H_out = (H + 2*padding - kernel_size) / stride + 1
         "Conv2D" => {
-            let kernel  = get_param_int(params, "kernel_size").unwrap_or(3) as u64;
-            let stride  = get_param_int(params, "stride").unwrap_or(1).max(1) as u64;
+            let kernel = get_param_int(params, "kernel_size").unwrap_or(3) as u64;
+            let stride = get_param_int(params, "stride").unwrap_or(1).max(1) as u64;
             let padding = get_param_int(params, "padding").unwrap_or(0) as u64;
             match &first {
                 IrType::Tensor { dtype, shape } if shape.rank() == 4 => {
                     let filters = get_param_int(params, "filters")
                         .map(|f| f as u64)
                         .unwrap_or_else(|| {
-                            if let Dim::Literal(c) = shape.0[1] { c } else { 1 }
+                            if let Dim::Literal(c) = shape.0[1] {
+                                c
+                            } else {
+                                1
+                            }
                         });
-                    let spatial = |n: u64| {
-                        (n + 2 * padding).saturating_sub(kernel) / stride + 1
+                    let spatial = |n: u64| (n + 2 * padding).saturating_sub(kernel) / stride + 1;
+                    let h_out = if let Dim::Literal(h) = shape.0[2] {
+                        spatial(h)
+                    } else {
+                        0
                     };
-                    let h_out = if let Dim::Literal(h) = shape.0[2] { spatial(h) } else { 0 };
-                    let w_out = if let Dim::Literal(w) = shape.0[3] { spatial(w) } else { 0 };
+                    let w_out = if let Dim::Literal(w) = shape.0[3] {
+                        spatial(w)
+                    } else {
+                        0
+                    };
                     Ok(IrType::Tensor {
                         dtype: *dtype,
                         shape: Shape(vec![
@@ -238,16 +266,14 @@ fn infer_op_output_ty(
         "Embedding" => {
             let embed_dim = get_param_int(params, "embed_dim").unwrap_or(64) as u64;
             match &first {
-                IrType::Tensor { dtype, shape } if shape.rank() == 2 => {
-                    Ok(IrType::Tensor {
-                        dtype: *dtype,
-                        shape: Shape(vec![
-                            shape.0[0].clone(),
-                            shape.0[1].clone(),
-                            Dim::Literal(embed_dim),
-                        ]),
-                    })
-                }
+                IrType::Tensor { dtype, shape } if shape.rank() == 2 => Ok(IrType::Tensor {
+                    dtype: *dtype,
+                    shape: Shape(vec![
+                        shape.0[0].clone(),
+                        shape.0[1].clone(),
+                        Dim::Literal(embed_dim),
+                    ]),
+                }),
                 _ => Err(LowerError::UnknownOp {
                     op: "Embedding: requires a 2-D [batch, seq_len] input".into(),
                 }),
@@ -264,6 +290,10 @@ fn infer_op_output_ty(
 /// or non-integer.
 fn get_param_int(params: &[LayerParam], key: &str) -> Option<i64> {
     params.iter().find(|p| p.key == key).and_then(|p| {
-        if let ParamValue::Int(n) = p.value { Some(n) } else { None }
+        if let ParamValue::Int(n) = p.value {
+            Some(n)
+        } else {
+            None
+        }
     })
 }

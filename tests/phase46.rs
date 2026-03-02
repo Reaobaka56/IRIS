@@ -132,7 +132,11 @@ def f() -> str {
 }
 "#;
     let ir = compile(src, "test", EmitKind::Ir).unwrap();
-    assert!(ir.contains("Show__i64__show"), "expected mangled name in IR:\n{}", ir);
+    assert!(
+        ir.contains("Show__i64__show"),
+        "expected mangled name in IR:\n{}",
+        ir
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -153,7 +157,11 @@ def f() -> str {
 }
 "#;
     let ll = compile(src, "test", EmitKind::Llvm).unwrap();
-    assert!(ll.contains("Show__i64__show"), "expected mangled name in LLVM:\n{}", ll);
+    assert!(
+        ll.contains("Show__i64__show"),
+        "expected mangled name in LLVM:\n{}",
+        ll
+    );
 }
 
 // ---------------------------------------------------------------------------

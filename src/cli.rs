@@ -68,9 +68,9 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
                 i += 1;
             }
             "repl" => return Ok(ParseArgsResult::Repl),
-            "lsp"  => return Ok(ParseArgsResult::Lsp),
-            "dap"  => return Ok(ParseArgsResult::Dap),
-            "pkg"  => return Ok(ParseArgsResult::Pkg),
+            "lsp" => return Ok(ParseArgsResult::Lsp),
+            "dap" => return Ok(ParseArgsResult::Dap),
+            "pkg" => return Ok(ParseArgsResult::Pkg),
             "bench" => return Ok(ParseArgsResult::Bench),
             _ => {}
         }
@@ -126,18 +126,18 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
                 let n = args
                     .get(i)
                     .ok_or_else(|| "--max-steps requires an argument".to_owned())?;
-                max_steps = n.parse::<usize>().map_err(|_| {
-                    format!("--max-steps: '{}' is not a valid positive integer", n)
-                })?;
+                max_steps = n
+                    .parse::<usize>()
+                    .map_err(|_| format!("--max-steps: '{}' is not a valid positive integer", n))?;
             }
             "--max-depth" => {
                 i += 1;
                 let n = args
                     .get(i)
                     .ok_or_else(|| "--max-depth requires an argument".to_owned())?;
-                max_depth = n.parse::<usize>().map_err(|_| {
-                    format!("--max-depth: '{}' is not a valid positive integer", n)
-                })?;
+                max_depth = n
+                    .parse::<usize>()
+                    .map_err(|_| format!("--max-depth: '{}' is not a valid positive integer", n))?;
             }
             "--no-cache" => {
                 no_cache = true;
@@ -151,7 +151,16 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
     }
 
     let path = path.ok_or_else(|| "no input file specified".to_owned())?;
-    Ok(ParseArgsResult::Args(CliArgs { path, emit, output, run_after_build, dump_ir_after, max_steps, max_depth, no_cache }))
+    Ok(ParseArgsResult::Args(CliArgs {
+        path,
+        emit,
+        output,
+        run_after_build,
+        dump_ir_after,
+        max_steps,
+        max_depth,
+        no_cache,
+    }))
 }
 
 /// Returns the version string for the CLI (GCC-style verbose output).
@@ -175,7 +184,11 @@ pub fn version_text() -> String {
         "posix"
     };
 
-    let dirty_flag = if git_dirty == "true" { " (modified)" } else { "" };
+    let dirty_flag = if git_dirty == "true" {
+        " (modified)"
+    } else {
+        ""
+    };
 
     format!(
         "iris {version} ({git_hash_short} {build_date}){dirty}\n\

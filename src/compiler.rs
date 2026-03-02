@@ -33,12 +33,18 @@ impl FileCompiler {
         } else {
             BuildCache::disabled()
         };
-        Self { search_paths: Vec::new(), cache }
+        Self {
+            search_paths: Vec::new(),
+            cache,
+        }
     }
 
     /// Create a compiler with an explicit cache.
     pub fn with_cache(cache: BuildCache) -> Self {
-        Self { search_paths: Vec::new(), cache }
+        Self {
+            search_paths: Vec::new(),
+            cache,
+        }
     }
 
     pub fn with_search_paths(paths: Vec<PathBuf>) -> Self {
@@ -47,7 +53,10 @@ impl FileCompiler {
         } else {
             BuildCache::disabled()
         };
-        Self { search_paths: paths, cache }
+        Self {
+            search_paths: paths,
+            cache,
+        }
     }
 
     /// Disable the incremental cache for this compiler instance.
@@ -73,11 +82,8 @@ impl FileCompiler {
         path: &Path,
         extra_paths: &[&Path],
     ) -> Result<AstModule, Error> {
-        let canonical = path.canonicalize()
-            .map_err(|e| Error::Io(e))?;
-        let base_dir = canonical.parent()
-            .unwrap_or(Path::new("."))
-            .to_path_buf();
+        let canonical = path.canonicalize().map_err(Error::Io)?;
+        let base_dir = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
 
         // Build the full search path list.
         let mut search: Vec<PathBuf> = vec![base_dir.clone()];
@@ -100,11 +106,8 @@ impl FileCompiler {
         source: &str,
         extra_paths: &[&Path],
     ) -> Result<AstModule, Error> {
-        let canonical = path.canonicalize()
-            .map_err(|e| Error::Io(e))?;
-        let base_dir = canonical.parent()
-            .unwrap_or(Path::new("."))
-            .to_path_buf();
+        let canonical = path.canonicalize().map_err(Error::Io)?;
+        let base_dir = canonical.parent().unwrap_or(Path::new(".")).to_path_buf();
 
         let mut search: Vec<PathBuf> = vec![base_dir.clone()];
         search.extend(extra_paths.iter().map(|p| p.to_path_buf()));
@@ -141,9 +144,7 @@ impl FileCompiler {
                         visited.insert(resolved.clone());
                         let dep_src = std::fs::read_to_string(&resolved)?;
                         let dep_ast = self.parse_source(&dep_src)?;
-                        let dep_dir = resolved.parent()
-                            .unwrap_or(Path::new("."))
-                            .to_path_buf();
+                        let dep_dir = resolved.parent().unwrap_or(Path::new(".")).to_path_buf();
                         for dep_bring in &dep_ast.brings {
                             queue.push_back((dep_bring.path.clone(), dep_dir.clone()));
                         }
@@ -223,9 +224,13 @@ impl FileCompiler {
 }
 
 impl Default for FileCompiler {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Drop for FileCompiler {
-    fn drop(&mut self) { self.cache.flush(); }
+    fn drop(&mut self) {
+        self.cache.flush();
+    }
 }

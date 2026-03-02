@@ -3,6 +3,8 @@
 //! `const NAME = expr` defines a module-level constant that is inlined
 //! (as a compile-time value) at every use within functions.
 
+#![allow(clippy::approx_constant)]
+
 use iris::{compile, EmitKind};
 
 // ---------------------------------------------------------------------------
@@ -35,7 +37,11 @@ def f() -> f64 {
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     let v: f64 = out.trim().parse().expect("should parse as f64");
-    assert!((v - 3.14159).abs() < 1e-5, "PI should be ~3.14159, got: {}", v);
+    assert!(
+        (v - 3.14159).abs() < 1e-5,
+        "PI should be ~3.14159, got: {}",
+        v
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -118,7 +124,11 @@ def f() -> str {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert!(out.contains("hello"), "GREETING should contain 'hello', got: {}", out.trim());
+    assert!(
+        out.contains("hello"),
+        "GREETING should contain 'hello', got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------

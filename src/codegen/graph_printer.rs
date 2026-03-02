@@ -41,7 +41,14 @@ pub fn emit_graph_text(graph: &GraphIr) -> Result<String, CodegenError> {
         writeln!(out)?;
     }
     for node in graph.layers() {
-        if let GraphNode::Layer { name, op, params, inputs, .. } = node {
+        if let GraphNode::Layer {
+            name,
+            op,
+            params,
+            inputs,
+            ..
+        } = node
+        {
             let input_names: Vec<&str> = inputs
                 .iter()
                 .filter_map(|id| graph.node(*id).map(|n| n.name()))

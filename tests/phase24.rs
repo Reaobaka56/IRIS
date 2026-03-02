@@ -52,7 +52,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "100", "unwrap(some(100)) should be 100, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "100",
+        "unwrap(some(100)) should be 100, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -67,7 +72,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "true", "is_some(some(5)) should be true, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "true",
+        "is_some(some(5)) should be true, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +92,12 @@ def f() -> bool {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "false", "is_some(none) should be false, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "false",
+        "is_some(none) should be false, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -96,7 +111,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "unwrap(some(42)) should be 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "unwrap(some(42)) should be 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -112,7 +132,12 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "42", "unwrap(some(21)) * 2 should be 42, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "42",
+        "unwrap(some(21)) * 2 should be 42, got: {}",
+        out.trim()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -127,5 +152,10 @@ def f() -> i64 {
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    assert_eq!(out.trim(), "5", "when some(5) {{ some(v) => v, none => 0 }} should be 5, got: {}", out.trim());
+    assert_eq!(
+        out.trim(),
+        "5",
+        "when some(5) {{ some(v) => v, none => 0 }} should be 5, got: {}",
+        out.trim()
+    );
 }
