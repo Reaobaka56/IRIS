@@ -1,6 +1,6 @@
 # Release — triggered when a version tag (v*) is pushed.
 # Builds release binaries for all platforms, packages the VS Code extension,
-# and creates a GitHub Release with every artifact attached.
+# generates SHA-256 checksums, signs artifacts, and creates a GitHub Release.
 
 name: Release
 
@@ -10,6 +10,8 @@ on:
 
 permissions:
   contents: write        # needed to create the GitHub Release
+  id-token: write        # needed for sigstore signing
+  attestations: write    # needed for artifact attestations
 
 env:
   CARGO_TERM_COLOR: always
@@ -26,7 +28,13 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             ext: .exe
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            ext: .exe
           - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            ext: ''
+          - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
             ext: ''
           - target: x86_64-apple-darwin
@@ -46,6 +54,13 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Install cross-compilation tools (Linux ARM64)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+          echo "CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc" >> "$GITHUB_ENV"
+
       - name: Cache cargo
         uses: actions/cache@v4
         with:
@@ -60,7 +75,10 @@ jobs:
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Run tests
-        if: matrix.target != 'aarch64-apple-darwin' || runner.arch == 'ARM64'
+        if: >-
+          matrix.target != 'aarch64-apple-darwin' &&
+          matrix.target != 'aarch64-unknown-linux-gnu' &&
+          matrix.target != 'aarch64-pc-windows-msvc'
         run: cargo test --release --target ${{ matrix.target }}
 
       - name: Prepare artifact
@@ -129,6 +147,19 @@ jobs:
         with:
           path: artifacts
 
+      - name: Generate SHA-256 checksums
+        shell: bash
+        run: |
+          cd artifacts
+          # Collect all release archives into one directory
+          mkdir -p ../release-files
+          find . -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.vsix' \) \
+            -exec cp {} ../release-files/ \;
+          cd ../release-files
+          sha256sum * > SHA256SUMS.txt
+          echo "--- SHA-256 Checksums ---"
+          cat SHA256SUMS.txt
+
       - name: Generate release notes
         id: notes
         shell: bash
@@ -140,13 +171,25 @@ jobs:
             echo "### Downloads"
             echo "| Platform | Archive |"
             echo "|----------|---------|"
-            echo "| Windows x64 | \`iris-${TAG}-x86_64-pc-windows-msvc.zip\` |"
-            echo "| Linux x64   | \`iris-${TAG}-x86_64-unknown-linux-gnu.tar.gz\` |"
-            echo "| macOS x64   | \`iris-${TAG}-x86_64-apple-darwin.tar.gz\` |"
-            echo "| macOS ARM64 | \`iris-${TAG}-aarch64-apple-darwin.tar.gz\` |"
-            echo "| VS Code     | \`iris-lang-*.vsix\` (install via \`code --install-extension\`) |"
+            echo "| Windows x64   | \`iris-${TAG}-x86_64-pc-windows-msvc.zip\` |"
+            echo "| Windows ARM64 | \`iris-${TAG}-aarch64-pc-windows-msvc.zip\` |"
+            echo "| Linux x64     | \`iris-${TAG}-x86_64-unknown-linux-gnu.tar.gz\` |"
+            echo "| Linux ARM64   | \`iris-${TAG}-aarch64-unknown-linux-gnu.tar.gz\` |"
+            echo "| macOS x64     | \`iris-${TAG}-x86_64-apple-darwin.tar.gz\` |"
+            echo "| macOS ARM64   | \`iris-${TAG}-aarch64-apple-darwin.tar.gz\` |"
+            echo "| VS Code       | \`iris-lang-*.vsix\` (install via \`code --install-extension\`) |"
             echo ""
-            echo "### Verify"
+            echo "### Verify integrity"
+            echo "Download \`SHA256SUMS.txt\` and verify:"
+            echo "\`\`\`bash"
+            echo "sha256sum -c SHA256SUMS.txt"
+            echo "\`\`\`"
+            echo "Or check a single file:"
+            echo "\`\`\`bash"
+            echo "sha256sum iris-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
+            echo "\`\`\`"
+            echo ""
+            echo "### Quick start"
             echo "\`\`\`"
             echo "iris --version"
             echo "\`\`\`"
@@ -154,14 +197,20 @@ jobs:
             echo "Full changelog: https://github.com/moon9t/iris/compare/...${TAG}"
           } > release_body.md
 
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'release-files/*'
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
           body_path: release_body.md
           files: |
-            artifacts/**/*.zip
-            artifacts/**/*.tar.gz
-            artifacts/**/*.vsix
+            release-files/*.zip
+            release-files/*.tar.gz
+            release-files/*.vsix
+            release-files/SHA256SUMS.txt
           generate_release_notes: true
           draft: false
           prerelease: false

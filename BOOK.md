@@ -1690,7 +1690,8 @@ def main() -> i64 {
     }
 
     val total = atomic_load(counter);
-    print(total)
+    print(total);
+    0
 }
 ```
 
@@ -1741,7 +1742,7 @@ For timing and delays:
 def main() -> i64 {
     val t0 = time_now_ms();
     for i in 0..1000000 {
-        val _ = i * i
+        val _ = i * i;
     }
     val t1 = time_now_ms();
     val elapsed = t1 - t0;
@@ -1797,7 +1798,7 @@ def poly_deriv(x_val: f64) -> f64 {
     // f(x) = x^3 + 2x + 1
     // f'(x) = 3x^2 + 2
     val x_sq = x_val * x_val;
-    3.0 to f64 * x_sq + 2.0 to f64
+    (3.0 to f64) * x_sq + (2.0 to f64)
 }
 
 def main() -> i64 {
@@ -1813,13 +1814,13 @@ Gradient descent uses derivatives to minimize a function. Here we minimize `f(x)
 
 ```iris
 def f(x: f64) -> f64 {
-    val diff = x - 3.0 to f64;
+    val diff = x - (3.0 to f64);
     diff * diff
 }
 
 def f_prime(x: f64) -> f64 {
     // Derivative of (x-3)^2 = 2*(x-3)
-    2.0 to f64 * (x - 3.0 to f64)
+    (2.0 to f64) * (x - (3.0 to f64))
 }
 
 def gradient_descent(start: f64, lr: f64, steps: i64) -> f64 {
@@ -1856,12 +1857,12 @@ def loss(w: f64, b: f64, x: f64, y: f64) -> f64 {
 // Compute gradients numerically (finite differences)
 def grad_w(w: f64, b: f64, x: f64, y: f64) -> f64 {
     val h = 0.0001 to f64;
-    (loss(w + h, b, x, y) - loss(w - h, b, x, y)) / (2.0 to f64 * h)
+    (loss(w + h, b, x, y) - loss(w - h, b, x, y)) / ((2.0 to f64) * h)
 }
 
 def grad_b(w: f64, b: f64, x: f64, y: f64) -> f64 {
     val h = 0.0001 to f64;
-    (loss(w, b + h, x, y) - loss(w, b - h, x, y)) / (2.0 to f64 * h)
+    (loss(w, b + h, x, y) - loss(w, b - h, x, y)) / ((2.0 to f64) * h)
 }
 
 def train(epochs: i64) -> i64 {
@@ -3391,7 +3392,7 @@ def main() -> i64 {
     if listener == -1 {
         print("Error: could not bind to port 8080");
         return 1;
-    }
+    };
     print("Server listening on port 8080...");
 
     val conn = tcp_accept(listener);
@@ -3399,7 +3400,7 @@ def main() -> i64 {
         print("Error: failed to accept connection");
         tcp_close(listener);
         return 1;
-    }
+    };
     print("Client connected");
     handle_client(conn);
 
@@ -3425,14 +3426,14 @@ def main() -> i64 {
     if conn == -1 {
         print("Error: could not connect");
         return 1;
-    }
+    };
 
     // Send an HTTP GET request manually
     tcp_write(conn, "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n");
 
     // Read and print the response
     var done = false;
-    while not done {
+    while !done {
         val chunk = tcp_read(conn);
         if len(chunk) == 0 {
             done = true
@@ -3587,7 +3588,7 @@ def http_fetch(host: str, path: str) -> str {
     val conn = tcp_connect(host, 80);
     if conn == -1 {
         return "Error: connection failed";
-    }
+    };
 
     val request = http_get_request(host, path);
     tcp_write(conn, request);
@@ -3595,7 +3596,7 @@ def http_fetch(host: str, path: str) -> str {
     // Read the full response
     var response = "";
     var done = false;
-    while not done {
+    while !done {
         val chunk = tcp_read(conn);
         if len(chunk) == 0 {
             done = true
@@ -3612,8 +3613,9 @@ def main() -> i64 {
     val status = http_status_code(raw_response);
     val body = http_body(raw_response);
 
+    val body_len = len(body);
     print(f"Status: {status}");
-    print(f"Body length: {len(body)} bytes");
+    print(f"Body length: {body_len} bytes");
     print(body);
     0
 }
@@ -3631,7 +3633,7 @@ def serve_request(conn: i64) -> i64 {
     if len(raw) == 0 {
         tcp_close(conn);
         return 0;
-    }
+    };
 
     val method = http_request_method(raw);
     val path = http_request_path(raw);
@@ -3660,7 +3662,7 @@ def main() -> i64 {
     if listener == -1 {
         print("Error: could not bind to port 3000");
         return 1;
-    }
+    };
     print("HTTP server listening on http://localhost:3000");
 
     var running = true;
@@ -3696,18 +3698,18 @@ def api_handler(conn: i64) -> i64 {
     if len(raw) == 0 {
         tcp_close(conn);
         return 0;
-    }
+    };
 
     val method = http_request_method(raw);
     val path = http_request_path(raw);
 
-    val response_body = if method == "GET" and path == "/api/greeting" {
+    val response_body = if method == "GET" && path == "/api/greeting" {
         val data = map();
         map_set(data, "message", "Hello from IRIS!");
         map_set(data, "timestamp", to_str(time_now_ms()));
         json_stringify(data)
     } else {
-        if method == "POST" and path == "/api/echo" {
+        if method == "POST" && path == "/api/echo" {
             val body = http_body(raw);
             val parsed = json_parse(body);
             json_stringify(parsed)
@@ -3752,7 +3754,7 @@ def safe_connect(host: str, port: i64) -> i64 {
     if conn == -1 {
         print(f"Error: could not connect to {host}:{port}");
         return -1;
-    }
+    };
     print(f"Connected to {host}:{port}");
     conn
 }
@@ -3760,7 +3762,7 @@ def safe_connect(host: str, port: i64) -> i64 {
 def safe_read_all(conn: i64) -> str {
     var buf = "";
     var done = false;
-    while not done {
+    while !done {
         val chunk = tcp_read(conn);
         if len(chunk) == 0 {
             done = true
@@ -3775,11 +3777,12 @@ def main() -> i64 {
     val conn = safe_connect("example.com", 80);
     if conn == -1 {
         return 1;
-    }
+    };
 
     tcp_write(conn, "GET / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n");
     val response = safe_read_all(conn);
-    print(f"Received {len(response)} bytes");
+    val resp_len = len(response);
+    print(f"Received {resp_len} bytes");
     tcp_close(conn);
     0
 }
