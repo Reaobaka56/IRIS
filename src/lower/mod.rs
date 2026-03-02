@@ -2793,6 +2793,161 @@ impl<'m> Lowerer<'m> {
             }
         }
 
+        // ── Phase 104: New runtime builtins (HTTP, JSON, Regex, DateTime, OS, etc.) ──
+        // NOTE: set_*, json_parse, path_exists are NOT here — they are stdlib .iris functions.
+        {
+            let builtin_info: Option<(&str, IrType)> = match callee.name.as_str() {
+                // HTTP
+                "http_get"  => Some(("http_get", IrType::Str)),
+                "http_post" => Some(("http_post", IrType::Str)),
+                // JSON (json_parse is in stdlib; json_stringify is a new builtin)
+                "json_stringify" => Some(("json_stringify", IrType::Str)),
+                // Regex
+                "regex_match"    => Some(("regex_match", IrType::Scalar(DType::Bool))),
+                "regex_find_all" => Some(("regex_find_all", IrType::List(Box::new(IrType::Str)))),
+                "regex_replace"  => Some(("regex_replace", IrType::Str)),
+                // DateTime
+                "datetime_now"       => Some(("datetime_now", IrType::Str)),
+                "datetime_timestamp" => Some(("datetime_timestamp", IrType::Scalar(DType::F64))),
+                "datetime_format"    => Some(("datetime_format", IrType::Str)),
+                // OS / Path (path_exists is in stdlib fs.iris)
+                "cwd"         => Some(("cwd", IrType::Str)),
+                "list_dir"    => Some(("listdir", IrType::List(Box::new(IrType::Str)))),
+                "path_join"   => Some(("path_join", IrType::Str)),
+                "mkdir"       => Some(("mkdir", IrType::Scalar(DType::Bool))),
+                "remove_file" => Some(("remove_file", IrType::Scalar(DType::Bool))),
+                // Type introspection
+                "type_of" => Some(("type_of", IrType::Str)),
+                // Random
+                "random"       => Some(("random", IrType::Scalar(DType::F64))),
+                "random_range" => Some(("random_range", IrType::Scalar(DType::I64))),
+                // Hashing / Encoding
+                "hash"          => Some(("hash", IrType::Scalar(DType::I64))),
+                "base64_encode" => Some(("base64_encode", IrType::Str)),
+                "base64_decode" => Some(("base64_decode", IrType::Str)),
+                // String extras
+                "char_at"     => Some(("char_at", IrType::Str)),
+                "str_reverse" => Some(("str_reverse", IrType::Str)),
+
+                // ── Phase 105: Async/Concurrency extensions ──
+                "chan_try_recv" => Some(("chan_try_recv", IrType::Infer)),
+                "chan_len"      => Some(("chan_len", IrType::Scalar(DType::I64))),
+                "select"       => Some(("select", IrType::Scalar(DType::I64))),
+                "timeout"      => Some(("timeout", IrType::Scalar(DType::Bool))),
+                "thread_count" => Some(("thread_count", IrType::Scalar(DType::I64))),
+
+                // ── Phase 105: Deque (double-ended queue) ──
+                "deque_new"       => Some(("deque_new", IrType::List(Box::new(IrType::Infer)))),
+                "deque_push_front"=> Some(("deque_push_front", IrType::List(Box::new(IrType::Infer)))),
+                "deque_push_back" => Some(("deque_push_back", IrType::List(Box::new(IrType::Infer)))),
+                "deque_pop_front" => Some(("deque_pop_front", IrType::Infer)),
+                "deque_pop_back"  => Some(("deque_pop_back", IrType::Infer)),
+                "deque_len"       => Some(("deque_len", IrType::Scalar(DType::I64))),
+                "deque_front"     => Some(("deque_front", IrType::Infer)),
+                "deque_back"      => Some(("deque_back", IrType::Infer)),
+
+                // ── Phase 105: Sorted collection helpers ──
+                "sorted_keys"     => Some(("sorted_keys", IrType::List(Box::new(IrType::Str)))),
+
+                // ── Phase 105: BitSet ──
+                "bitset_new"   => Some(("bitset_new", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "bitset_set"   => Some(("bitset_set", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "bitset_get"   => Some(("bitset_get", IrType::Scalar(DType::Bool))),
+                "bitset_count" => Some(("bitset_count", IrType::Scalar(DType::I64))),
+                "bitset_clear" => Some(("bitset_clear", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+
+                // ── Phase 105: FFI (dynamic library loading) ──
+                "ffi_open"  => Some(("ffi_open", IrType::Scalar(DType::I64))),
+                "ffi_call"  => Some(("ffi_call", IrType::Infer)),
+                "ffi_close" => Some(("ffi_close", IrType::Scalar(DType::Bool))),
+
+                // ── Phase 106: Expanded FFI — C / Python / Rust ──
+                // C FFI with typed arguments
+                "ffi_call_i64"   => Some(("ffi_call_i64",   IrType::Scalar(DType::I64))),
+                "ffi_call_f64"   => Some(("ffi_call_f64",   IrType::Scalar(DType::F64))),
+                "ffi_call_str"   => Some(("ffi_call_str",   IrType::Str)),
+                "ffi_call_void"  => Some(("ffi_call_void",  IrType::Scalar(DType::I64))),
+                "ffi_call_args"  => Some(("ffi_call_args",  IrType::Infer)),
+                // Python FFI
+                "python_eval"    => Some(("python_eval",    IrType::Str)),
+                "python_exec"    => Some(("python_exec",    IrType::Scalar(DType::I64))),
+                "python_call"    => Some(("python_call",    IrType::Str)),
+                "python_version" => Some(("python_version", IrType::Str)),
+                // Rust FFI (cdylib — uses same dlopen mechanism as C)
+                "rust_lib_open"  => Some(("rust_lib_open",  IrType::Scalar(DType::I64))),
+                "rust_call_i64"  => Some(("rust_call_i64",  IrType::Scalar(DType::I64))),
+                "rust_call_f64"  => Some(("rust_call_f64",  IrType::Scalar(DType::F64))),
+                "rust_call_void" => Some(("rust_call_void", IrType::Scalar(DType::I64))),
+
+                // ── Phase 105: OS / System (env, exec, pid) ──
+                "env_get"    => Some(("env_get", IrType::Str)),
+                "env_set"    => Some(("env_set", IrType::Scalar(DType::Bool))),
+                "exit_code"  => Some(("exit_code", IrType::Scalar(DType::I64))),
+                "exec_cmd"   => Some(("exec_cmd", IrType::Str)),
+                "pid"        => Some(("pid", IrType::Scalar(DType::I64))),
+
+                // ── Phase 105: Crypto / UUID ──
+                "uuid"       => Some(("uuid", IrType::Str)),
+                "sha256"     => Some(("sha256", IrType::Str)),
+                "hex_encode" => Some(("hex_encode", IrType::Str)),
+                "hex_decode" => Some(("hex_decode", IrType::Str)),
+
+                // ── Phase 105: String extras ──
+                "str_pad_left"  => Some(("str_pad_left", IrType::Str)),
+                "str_pad_right" => Some(("str_pad_right", IrType::Str)),
+                "str_chars"     => Some(("str_chars", IrType::List(Box::new(IrType::Str)))),
+                "str_bytes"     => Some(("str_bytes", IrType::List(Box::new(IrType::Scalar(DType::I64))))),
+                "str_count"     => Some(("str_count", IrType::Scalar(DType::I64))),
+
+                // ── Phase 105: Math constants and predicates ──
+                "math_pi"   => Some(("math_pi", IrType::Scalar(DType::F64))),
+                "math_e"    => Some(("math_e", IrType::Scalar(DType::F64))),
+                "math_inf"  => Some(("math_inf", IrType::Scalar(DType::F64))),
+                "is_nan"    => Some(("is_nan", IrType::Scalar(DType::Bool))),
+                "is_inf"    => Some(("is_inf", IrType::Scalar(DType::Bool))),
+
+                // ── Phase 105: Functional list operations ──
+                "list_map"       => Some(("list_map", IrType::List(Box::new(IrType::Infer)))),
+                "list_filter"    => Some(("list_filter", IrType::List(Box::new(IrType::Infer)))),
+                "list_reduce"    => Some(("list_reduce", IrType::Infer)),
+                "list_any"       => Some(("list_any", IrType::Scalar(DType::Bool))),
+                "list_all"       => Some(("list_all", IrType::Scalar(DType::Bool))),
+                "list_zip"       => Some(("list_zip", IrType::List(Box::new(IrType::Infer)))),
+                "list_enumerate" => Some(("list_enumerate", IrType::List(Box::new(IrType::Infer)))),
+                "list_flatten"   => Some(("list_flatten", IrType::List(Box::new(IrType::Infer)))),
+                "list_unique"    => Some(("list_unique", IrType::List(Box::new(IrType::Infer)))),
+                "list_reverse"   => Some(("list_reverse", IrType::List(Box::new(IrType::Infer)))),
+                "list_sorted"    => Some(("list_sorted", IrType::List(Box::new(IrType::Infer)))),
+                "list_sum"       => Some(("list_sum", IrType::Scalar(DType::F64))),
+                "list_min"       => Some(("list_min", IrType::Infer)),
+                "list_max"       => Some(("list_max", IrType::Infer)),
+                "list_index_of"  => Some(("list_index_of", IrType::Scalar(DType::I64))),
+                "list_count"     => Some(("list_count", IrType::Scalar(DType::I64))),
+                "list_take"      => Some(("list_take", IrType::List(Box::new(IrType::Infer)))),
+                "list_drop"      => Some(("list_drop", IrType::List(Box::new(IrType::Infer)))),
+
+                _ => None,
+            };
+            if let Some((rt_name, ret_ty)) = builtin_info {
+                let mut arg_vals = Vec::with_capacity(args.len());
+                for arg in args {
+                    let (v, _) = self.lower_expr(arg)?;
+                    arg_vals.push(v);
+                }
+                let result = self.builder.fresh_value();
+                self.builder.push_instr(
+                    IrInstr::BuiltinCall {
+                        result,
+                        name: rt_name.to_string(),
+                        args: arg_vals,
+                        result_ty: ret_ty.clone(),
+                    },
+                    Some(ret_ty.clone()),
+                );
+                return Ok((result, ret_ty));
+            }
+        }
+
         // Generic function call — monomorphize on demand.
         if let Some(generic_fn) = self.generic_fns.get(&callee.name).cloned() {
             // Lower each argument and collect concrete types.

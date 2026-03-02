@@ -61,7 +61,7 @@
   },
   "Bring stdlib": {
     "prefix": "bring",
-    "body": ["bring std.${1|math,string,fmt,json,csv,http,fs,path,time,set,queue,heap,kv,table,dataset,dataframe|}"],
+    "body": ["bring std.${1|math,string,fmt,json,csv,http,fs,path,time,set,queue,heap,kv,table,dataset,dataframe,ffi,crypto,os,testing,log,async,deque,sorted,bitset|}"],
     "description": "Import a stdlib module"
   },
   "List operations": {
@@ -83,6 +83,19 @@
     ],
     "description": "Option type with is_some check"
   },
+  "Result handling": {
+    "prefix": "result",
+    "body": [
+      "val ${1:res} = ${2:ok(value)}",
+      "if is_ok(${1:res}) {",
+      "\tval ${3:v} = unwrap(${1:res})",
+      "\t$0",
+      "} else {",
+      "\tpanic(\"error\")",
+      "}"
+    ],
+    "description": "Result type with is_ok check"
+  },
   "Print to_str": {
     "prefix": "print",
     "body": ["print(to_str(${1:value}));"],
@@ -92,5 +105,101 @@
     "prefix": "defg",
     "body": ["def ${1:name}[${2:T}](${3:a}: ${2:T}) -> ${2:T} {", "\t$0", "}"],
     "description": "Define a generic function"
+  },
+  "FFI C call": {
+    "prefix": "ffi",
+    "body": [
+      "bring std.ffi",
+      "val ${1:lib} = ffi_open(\"${2:libname}\")",
+      "val ${3:result} = ffi_call_i64(${1:lib}, \"${4:function}\", ${5:arg})",
+      "ffi_close(${1:lib});"
+    ],
+    "description": "Open a C shared library and call a function via FFI"
+  },
+  "Python eval": {
+    "prefix": "pyeval",
+    "body": ["val ${1:result} = python_eval(\"${2:expression}\")"],
+    "description": "Evaluate a Python expression and get the result"
+  },
+  "Python exec": {
+    "prefix": "pyexec",
+    "body": ["python_exec(\"${1:python_code}\");"],
+    "description": "Execute Python code"
+  },
+  "Channel send/recv": {
+    "prefix": "chan",
+    "body": [
+      "val ${1:ch} = channel()",
+      "send(${1:ch}, ${2:value});",
+      "val ${3:received} = recv(${1:ch})"
+    ],
+    "description": "Create a channel and send/receive a value"
+  },
+  "Spawn async": {
+    "prefix": "spawn",
+    "body": [
+      "spawn {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Spawn an asynchronous task"
+  },
+  "List map/filter": {
+    "prefix": "listmap",
+    "body": [
+      "val ${1:mapped} = list_map(${2:lst}, |${3:x}| { ${4:x * 2} })",
+      "val ${5:filtered} = list_filter(${2:lst}, |${3:x}| { ${6:x > 0} })"
+    ],
+    "description": "Map and filter a list with closures"
+  },
+  "Error handling": {
+    "prefix": "trycatch",
+    "body": [
+      "val ${1:res} = ${2:ok(value)}",
+      "when ${1:res} {",
+      "\tok(${3:v}) => $4,",
+      "\terr(${5:e}) => panic(to_str(${5:e}))",
+      "}"
+    ],
+    "description": "Pattern-match on a result value"
+  },
+  "HTTP GET": {
+    "prefix": "httpget",
+    "body": [
+      "bring std.http",
+      "val ${1:response} = http_get(\"${2:https://api.example.com/data}\")",
+      "print(${1:response});"
+    ],
+    "description": "Make an HTTP GET request"
+  },
+  "Constant": {
+    "prefix": "const",
+    "body": ["const ${1:NAME}: ${2:i64} = ${3:value}"],
+    "description": "Define a constant"
+  },
+  "Deque operations": {
+    "prefix": "deque",
+    "body": [
+      "val ${1:dq} = deque_new()",
+      "deque_push_back(${1:dq}, ${2:value});",
+      "val ${3:front} = deque_pop_front(${1:dq})"
+    ],
+    "description": "Create and use a double-ended queue"
+  },
+  "Test function": {
+    "prefix": "test",
+    "body": [
+      "def test_${1:name}() -> bool {",
+      "\tval ${2:result} = ${3:expr}",
+      "\tassert(${2:result} == ${4:expected})",
+      "\ttrue",
+      "}"
+    ],
+    "description": "Define a test function"
+  },
+  "Doc comment": {
+    "prefix": "///",
+    "body": ["/// ${1:Description of the function}"],
+    "description": "Documentation comment"
   }
 }

@@ -15,6 +15,27 @@
 #include <assert.h>
 #include <stdarg.h>
 #include <errno.h>
+#include <time.h>
+
+#ifdef _WIN32
+  #include <winsock2.h>
+  #include <ws2tcpip.h>
+  #include <windows.h>
+  #include <winhttp.h>
+  #include <direct.h>
+  #include <io.h>
+  #pragma comment(lib, "ws2_32.lib")
+  #pragma comment(lib, "winhttp.lib")
+#else
+  #include <sys/socket.h>
+  #include <netinet/in.h>
+  #include <arpa/inet.h>
+  #include <netdb.h>
+  #include <unistd.h>
+  #include <dirent.h>
+  #include <sys/stat.h>
+  #include <dlfcn.h>
+#endif
 
 // ---------------------------------------------------------------------------
 // Internal memory helpers
@@ -1188,4 +1209,1519 @@ IrisVal* iris_call_closure(IrisVal* closure, ...) {
 
 void iris_call_closure_void(IrisVal* closure, ...) {
     (void)closure;
+}
+
+/* ======================================================================== */
+/*  TCP Networking                                                          */
+/* ======================================================================== */
+
+#ifdef _WIN32
+static int wsa_initialized = 0;
+static void ensure_wsa(void) {
+    if (!wsa_initialized) {
+        WSADATA wsa;
+        WSAStartup(MAKEWORD(2, 2), &wsa);
+        wsa_initialized = 1;
+    }
+}
+#endif
+
+int64_t iris_tcp_connect(const char* host, int64_t port) {
+#ifdef _WIN32
+    ensure_wsa();
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET) return -1;
+    struct addrinfo hints = {0}, *res = NULL;
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%lld", (long long)port);
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) { closesocket(s); return -1; }
+    if (connect(s, res->ai_addr, (int)res->ai_addrlen) != 0) { freeaddrinfo(res); closesocket(s); return -1; }
+    freeaddrinfo(res);
+    return (int64_t)s;
+#else
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return -1;
+    struct addrinfo hints = {0}, *res = NULL;
+    hints.ai_family   = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    char port_str[16];
+    snprintf(port_str, sizeof(port_str), "%lld", (long long)port);
+    if (getaddrinfo(host, port_str, &hints, &res) != 0) { close(s); return -1; }
+    if (connect(s, res->ai_addr, res->ai_addrlen) != 0) { freeaddrinfo(res); close(s); return -1; }
+    freeaddrinfo(res);
+    return (int64_t)s;
+#endif
+}
+
+int64_t iris_tcp_listen(int64_t port) {
+#ifdef _WIN32
+    ensure_wsa();
+    SOCKET s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s == INVALID_SOCKET) return -1;
+    int opt = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
+    struct sockaddr_in addr = {0};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port        = htons((u_short)port);
+    if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) { closesocket(s); return -1; }
+    if (listen(s, SOMAXCONN) != 0) { closesocket(s); return -1; }
+    return (int64_t)s;
+#else
+    int s = socket(AF_INET, SOCK_STREAM, 0);
+    if (s < 0) return -1;
+    int opt = 1;
+    setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+    struct sockaddr_in addr = {0};
+    addr.sin_family      = AF_INET;
+    addr.sin_addr.s_addr = INADDR_ANY;
+    addr.sin_port        = htons((uint16_t)port);
+    if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) { close(s); return -1; }
+    if (listen(s, SOMAXCONN) != 0) { close(s); return -1; }
+    return (int64_t)s;
+#endif
+}
+
+int64_t iris_tcp_accept(int64_t listener) {
+#ifdef _WIN32
+    SOCKET c = accept((SOCKET)listener, NULL, NULL);
+    return (c == INVALID_SOCKET) ? -1 : (int64_t)c;
+#else
+    int c = accept((int)listener, NULL, NULL);
+    return (int64_t)c;
+#endif
+}
+
+char* iris_tcp_read(int64_t conn) {
+    char buf[8192];
+    int n;
+#ifdef _WIN32
+    n = recv((SOCKET)conn, buf, sizeof(buf) - 1, 0);
+#else
+    n = recv((int)conn, buf, sizeof(buf) - 1, 0);
+#endif
+    if (n <= 0) {
+        char* e = (char*)xmalloc(1);
+        e[0] = '\0';
+        return e;
+    }
+    buf[n] = '\0';
+    char* result = (char*)xmalloc(n + 1);
+    memcpy(result, buf, n + 1);
+    return result;
+}
+
+void iris_tcp_write(int64_t conn, const char* data) {
+    if (!data) return;
+    size_t len = strlen(data);
+#ifdef _WIN32
+    send((SOCKET)conn, data, (int)len, 0);
+#else
+    send((int)conn, data, len, 0);
+#endif
+}
+
+void iris_tcp_close(int64_t conn) {
+#ifdef _WIN32
+    closesocket((SOCKET)conn);
+#else
+    close((int)conn);
+#endif
+}
+
+/* ======================================================================== */
+/*  HTTP (simple implementation using TCP sockets)                          */
+/* ======================================================================== */
+
+/* Parse a URL into host, port, path.  Returns 0 on success. */
+static int parse_url(const char* url, char* host, int* port, char* path) {
+    *port = 80;
+    const char* p = url;
+    if (strncmp(p, "http://", 7) == 0)       { p += 7; *port = 80; }
+    else if (strncmp(p, "https://", 8) == 0)  { p += 8; *port = 443; }
+    const char* slash = strchr(p, '/');
+    const char* colon = strchr(p, ':');
+    if (colon && (!slash || colon < slash)) {
+        size_t hlen = colon - p;
+        memcpy(host, p, hlen); host[hlen] = '\0';
+        *port = atoi(colon + 1);
+        p = slash ? slash : p + strlen(p);
+    } else if (slash) {
+        size_t hlen = slash - p;
+        memcpy(host, p, hlen); host[hlen] = '\0';
+        p = slash;
+    } else {
+        strcpy(host, p);
+        p = p + strlen(p);
+    }
+    if (*p == '/') strcpy(path, p);
+    else           strcpy(path, "/");
+    return 0;
+}
+
+char* iris_http_get(const char* url) {
+    char host[256] = {0}, path[2048] = {0};
+    int port = 80;
+    if (parse_url(url, host, &port, path) != 0) {
+        char* e = (char*)xmalloc(1); e[0] = '\0'; return e;
+    }
+    int64_t fd = iris_tcp_connect(host, port);
+    if (fd < 0) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+
+    /* Send HTTP/1.0 GET request */
+    char req[4096];
+    snprintf(req, sizeof(req),
+        "GET %s HTTP/1.0\r\nHost: %s\r\nConnection: close\r\n\r\n", path, host);
+    iris_tcp_write(fd, req);
+
+    /* Read full response */
+    size_t cap = 16384, len = 0;
+    char* resp = (char*)xmalloc(cap);
+    for (;;) {
+        char buf[4096];
+        int n;
+#ifdef _WIN32
+        n = recv((SOCKET)fd, buf, sizeof(buf), 0);
+#else
+        n = recv((int)fd, buf, sizeof(buf), 0);
+#endif
+        if (n <= 0) break;
+        while (len + n + 1 > cap) { cap *= 2; resp = (char*)realloc(resp, cap); }
+        memcpy(resp + len, buf, n);
+        len += n;
+    }
+    resp[len] = '\0';
+    iris_tcp_close(fd);
+
+    /* Skip HTTP headers — find \r\n\r\n */
+    char* body = strstr(resp, "\r\n\r\n");
+    if (body) {
+        body += 4;
+        size_t blen = len - (body - resp);
+        char* result = (char*)xmalloc(blen + 1);
+        memcpy(result, body, blen);
+        result[blen] = '\0';
+        free(resp);
+        return result;
+    }
+    return resp; /* No header separator found — return as-is */
+}
+
+char* iris_http_post(const char* url, const char* body, const char* content_type) {
+    char host[256] = {0}, path[2048] = {0};
+    int port = 80;
+    if (parse_url(url, host, &port, path) != 0) {
+        char* e = (char*)xmalloc(1); e[0] = '\0'; return e;
+    }
+    int64_t fd = iris_tcp_connect(host, port);
+    if (fd < 0) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+
+    size_t body_len = body ? strlen(body) : 0;
+    char req[8192];
+    snprintf(req, sizeof(req),
+        "POST %s HTTP/1.0\r\nHost: %s\r\nContent-Type: %s\r\nContent-Length: %zu\r\nConnection: close\r\n\r\n",
+        path, host, content_type ? content_type : "text/plain", body_len);
+    iris_tcp_write(fd, req);
+    if (body) iris_tcp_write(fd, body);
+
+    size_t cap = 16384, len = 0;
+    char* resp = (char*)xmalloc(cap);
+    for (;;) {
+        char buf[4096];
+        int n;
+#ifdef _WIN32
+        n = recv((SOCKET)fd, buf, sizeof(buf), 0);
+#else
+        n = recv((int)fd, buf, sizeof(buf), 0);
+#endif
+        if (n <= 0) break;
+        while (len + n + 1 > cap) { cap *= 2; resp = (char*)realloc(resp, cap); }
+        memcpy(resp + len, buf, n);
+        len += n;
+    }
+    resp[len] = '\0';
+    iris_tcp_close(fd);
+
+    char* hdr_end = strstr(resp, "\r\n\r\n");
+    if (hdr_end) {
+        hdr_end += 4;
+        size_t blen = len - (hdr_end - resp);
+        char* result = (char*)xmalloc(blen + 1);
+        memcpy(result, hdr_end, blen);
+        result[blen] = '\0';
+        free(resp);
+        return result;
+    }
+    return resp;
+}
+
+/* ======================================================================== */
+/*  JSON (minimal recursive descent parser + serializer)                    */
+/* ======================================================================== */
+
+static const char* json_skip_ws(const char* p) {
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    return p;
+}
+
+static IrisVal* json_parse_value(const char** p);
+
+static IrisVal* json_parse_string(const char** p) {
+    if (**p != '"') return iris_box_str("");
+    (*p)++;
+    const char* start = *p;
+    size_t cap = 256, len = 0;
+    char* buf = (char*)xmalloc(cap);
+    while (**p && **p != '"') {
+        if (**p == '\\') {
+            (*p)++;
+            char c = **p;
+            switch (c) {
+                case 'n': buf[len++] = '\n'; break;
+                case 't': buf[len++] = '\t'; break;
+                case 'r': buf[len++] = '\r'; break;
+                case '"': buf[len++] = '"'; break;
+                case '\\': buf[len++] = '\\'; break;
+                case '/': buf[len++] = '/'; break;
+                default: buf[len++] = c; break;
+            }
+        } else {
+            buf[len++] = **p;
+        }
+        if (len + 2 >= cap) { cap *= 2; buf = (char*)realloc(buf, cap); }
+        (*p)++;
+    }
+    if (**p == '"') (*p)++;
+    buf[len] = '\0';
+    IrisVal* v = iris_box_str(buf);
+    free(buf);
+    return v;
+}
+
+static IrisVal* json_parse_number(const char** p) {
+    const char* start = *p;
+    int is_float = 0;
+    if (**p == '-') (*p)++;
+    while (**p >= '0' && **p <= '9') (*p)++;
+    if (**p == '.') { is_float = 1; (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
+    if (**p == 'e' || **p == 'E') { is_float = 1; (*p)++; if (**p == '+' || **p == '-') (*p)++; while (**p >= '0' && **p <= '9') (*p)++; }
+    if (is_float) return iris_box_f64(strtod(start, NULL));
+    return iris_box_i64(strtoll(start, NULL, 10));
+}
+
+static IrisVal* json_parse_array(const char** p) {
+    (*p)++; /* skip '[' */
+    IrisList* list = iris_list_new();
+    *p = json_skip_ws(*p);
+    if (**p == ']') { (*p)++; IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal)); v->tag = IRIS_TAG_LIST; v->ptr = list; return v; }
+    for (;;) {
+        IrisVal* elem = json_parse_value(p);
+        iris_list_push(list, elem);
+        *p = json_skip_ws(*p);
+        if (**p == ',') { (*p)++; *p = json_skip_ws(*p); }
+        else break;
+    }
+    if (**p == ']') (*p)++;
+    IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal));
+    v->tag = IRIS_TAG_LIST;
+    v->ptr = list;
+    return v;
+}
+
+static IrisVal* json_parse_object(const char** p) {
+    (*p)++; /* skip '{' */
+    IrisMap* map = iris_map_new();
+    *p = json_skip_ws(*p);
+    if (**p == '}') { (*p)++; IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal)); v->tag = IRIS_TAG_MAP; v->ptr = map; return v; }
+    for (;;) {
+        *p = json_skip_ws(*p);
+        /* Parse key (must be a string) */
+        if (**p != '"') break;
+        IrisVal* kv = json_parse_string(p);
+        char* key = kv->str ? kv->str : "";
+        *p = json_skip_ws(*p);
+        if (**p == ':') (*p)++;
+        *p = json_skip_ws(*p);
+        IrisVal* val = json_parse_value(p);
+        iris_map_set(map, key, val);
+        *p = json_skip_ws(*p);
+        if (**p == ',') { (*p)++; }
+        else break;
+    }
+    if (**p == '}') (*p)++;
+    IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal));
+    v->tag = IRIS_TAG_MAP;
+    v->ptr = map;
+    return v;
+}
+
+static IrisVal* json_parse_value(const char** p) {
+    *p = json_skip_ws(*p);
+    if (**p == '"') return json_parse_string(p);
+    if (**p == '{') return json_parse_object(p);
+    if (**p == '[') return json_parse_array(p);
+    if (**p == 't' && strncmp(*p, "true", 4) == 0)  { *p += 4; return iris_box_bool(1); }
+    if (**p == 'f' && strncmp(*p, "false", 5) == 0)  { *p += 5; return iris_box_bool(0); }
+    if (**p == 'n' && strncmp(*p, "null", 4) == 0)   { *p += 4; return iris_make_none(); }
+    if (**p == '-' || (**p >= '0' && **p <= '9')) return json_parse_number(p);
+    return iris_box_str(""); /* parse error fallback */
+}
+
+IrisVal* iris_json_parse(const char* str) {
+    if (!str) return iris_box_str("");
+    const char* p = str;
+    return json_parse_value(&p);
+}
+
+/* Stringify helper — recursive */
+static void json_stringify_val(IrisVal* v, char** out, size_t* len, size_t* cap) {
+    #define JSON_APPEND(s) do { \
+        size_t slen = strlen(s); \
+        while (*len + slen + 1 > *cap) { *cap *= 2; *out = (char*)realloc(*out, *cap); } \
+        memcpy(*out + *len, s, slen); *len += slen; \
+    } while(0)
+    #define JSON_APPEND_CHAR(c) do { \
+        if (*len + 2 > *cap) { *cap *= 2; *out = (char*)realloc(*out, *cap); } \
+        (*out)[(*len)++] = (c); \
+    } while(0)
+
+    if (!v) { JSON_APPEND("null"); return; }
+    switch (v->tag) {
+        case IRIS_TAG_I64: {
+            char buf[32]; snprintf(buf, sizeof(buf), "%lld", (long long)v->i64);
+            JSON_APPEND(buf); break;
+        }
+        case IRIS_TAG_I32: {
+            char buf[32]; snprintf(buf, sizeof(buf), "%d", v->i32);
+            JSON_APPEND(buf); break;
+        }
+        case IRIS_TAG_F64: {
+            char buf[64]; snprintf(buf, sizeof(buf), "%.17g", v->f64);
+            JSON_APPEND(buf); break;
+        }
+        case IRIS_TAG_F32: {
+            char buf[64]; snprintf(buf, sizeof(buf), "%.9g", (double)v->f32);
+            JSON_APPEND(buf); break;
+        }
+        case IRIS_TAG_BOOL:
+            JSON_APPEND(v->boolean ? "true" : "false"); break;
+        case IRIS_TAG_STR: {
+            JSON_APPEND_CHAR('"');
+            if (v->str) {
+                for (const char* s = v->str; *s; s++) {
+                    switch (*s) {
+                        case '"':  JSON_APPEND("\\\""); break;
+                        case '\\': JSON_APPEND("\\\\"); break;
+                        case '\n': JSON_APPEND("\\n"); break;
+                        case '\r': JSON_APPEND("\\r"); break;
+                        case '\t': JSON_APPEND("\\t"); break;
+                        default:   JSON_APPEND_CHAR(*s); break;
+                    }
+                }
+            }
+            JSON_APPEND_CHAR('"');
+            break;
+        }
+        case IRIS_TAG_LIST: {
+            IrisList* l = (IrisList*)v->ptr;
+            JSON_APPEND_CHAR('[');
+            if (l) {
+                for (size_t i = 0; i < l->len; i++) {
+                    if (i > 0) JSON_APPEND_CHAR(',');
+                    json_stringify_val(l->data[i], out, len, cap);
+                }
+            }
+            JSON_APPEND_CHAR(']');
+            break;
+        }
+        case IRIS_TAG_MAP: {
+            IrisMap* m = (IrisMap*)v->ptr;
+            JSON_APPEND_CHAR('{');
+            int first = 1;
+            if (m) {
+                for (size_t i = 0; i < m->n_buckets; i++) {
+                    IrisMapEntry* e = m->buckets[i];
+                    while (e) {
+                        if (!first) JSON_APPEND_CHAR(',');
+                        first = 0;
+                        JSON_APPEND_CHAR('"');
+                        if (e->key) JSON_APPEND(e->key);
+                        JSON_APPEND_CHAR('"');
+                        JSON_APPEND_CHAR(':');
+                        json_stringify_val(e->val, out, len, cap);
+                        e = e->next;
+                    }
+                }
+            }
+            JSON_APPEND_CHAR('}');
+            break;
+        }
+        case IRIS_TAG_OPTION: {
+            IrisOption* opt = (IrisOption*)v->ptr;
+            if (opt && opt->has_value) json_stringify_val(opt->value, out, len, cap);
+            else JSON_APPEND("null");
+            break;
+        }
+        default: JSON_APPEND("null"); break;
+    }
+    #undef JSON_APPEND
+    #undef JSON_APPEND_CHAR
+}
+
+char* iris_json_stringify(IrisVal* val) {
+    size_t cap = 256, len = 0;
+    char* out = (char*)xmalloc(cap);
+    json_stringify_val(val, &out, &len, &cap);
+    out[len] = '\0';
+    return out;
+}
+
+/* ======================================================================== */
+/*  Set collection (uses list with linear search — simple and correct)      */
+/* ======================================================================== */
+
+/* iris_val_equal already defined above */
+
+IrisList* iris_set_new(void) { return iris_list_new(); }
+
+void iris_set_add(IrisList* set, IrisVal* val) {
+    if (!set || !val) return;
+    for (size_t i = 0; i < set->len; i++) {
+        if (iris_val_equal(set->data[i], val)) return; /* already present */
+    }
+    iris_list_push(set, val);
+}
+
+int iris_set_contains(IrisList* set, IrisVal* val) {
+    if (!set || !val) return 0;
+    for (size_t i = 0; i < set->len; i++) {
+        if (iris_val_equal(set->data[i], val)) return 1;
+    }
+    return 0;
+}
+
+void iris_set_remove(IrisList* set, IrisVal* val) {
+    if (!set || !val) return;
+    for (size_t i = 0; i < set->len; i++) {
+        if (iris_val_equal(set->data[i], val)) {
+            /* Shift remaining elements */
+            for (size_t j = i; j + 1 < set->len; j++)
+                set->data[j] = set->data[j+1];
+            set->len--;
+            return;
+        }
+    }
+}
+
+int64_t iris_set_len(IrisList* set) { return set ? (int64_t)set->len : 0; }
+
+IrisList* iris_set_to_list(IrisList* set) {
+    IrisList* out = iris_list_new();
+    if (!set) return out;
+    for (size_t i = 0; i < set->len; i++) iris_list_push(out, set->data[i]);
+    return out;
+}
+
+/* ======================================================================== */
+/*  Regex (simple pattern matching — no external dependency)                */
+/* ======================================================================== */
+/* We implement a simple regex subset: exact match, ., *, +, ?, ^, $        */
+/* For full regex, compiled code can use platform regex via FFI.             */
+
+static int simple_match(const char* pat, const char* str);
+
+static int match_here(const char* re, const char* text) {
+    if (re[0] == '\0') return 1;
+    if (re[0] == '$' && re[1] == '\0') return *text == '\0';
+    if (re[1] == '*') {
+        /* Match zero or more of re[0] */
+        do {
+            if (match_here(re + 2, text)) return 1;
+        } while (*text != '\0' && (re[0] == '.' || *text == re[0]) && text++);
+        return 0;
+    }
+    if (re[1] == '+') {
+        /* Match one or more of re[0] */
+        while (*text != '\0' && (re[0] == '.' || *text == re[0])) {
+            text++;
+            if (match_here(re + 2, text)) return 1;
+        }
+        return 0;
+    }
+    if (re[1] == '?') {
+        /* Match zero or one of re[0] */
+        if (match_here(re + 2, text)) return 1;
+        if (*text != '\0' && (re[0] == '.' || *text == re[0]))
+            return match_here(re + 2, text + 1);
+        return 0;
+    }
+    if (*text != '\0' && (re[0] == '.' || *text == re[0]))
+        return match_here(re + 1, text + 1);
+    return 0;
+}
+
+static int simple_match(const char* pat, const char* str) {
+    if (pat[0] == '^') return match_here(pat + 1, str);
+    /* Unanchored: try at every position */
+    do {
+        if (match_here(pat, str)) return 1;
+    } while (*str++ != '\0');
+    return 0;
+}
+
+int iris_regex_match(const char* pattern, const char* str) {
+    if (!pattern || !str) return 0;
+    return simple_match(pattern, str);
+}
+
+IrisList* iris_regex_find_all(const char* pattern, const char* str) {
+    IrisList* results = iris_list_new();
+    if (!pattern || !str) return results;
+    /* For simple patterns, find all substrings matching */
+    size_t plen = strlen(pattern);
+    size_t slen = strlen(str);
+    /* Handle anchored patterns */
+    if (pattern[0] == '^') {
+        if (match_here(pattern + 1, str)) {
+            /* Find how many chars matched (greedy — take longest) */
+            for (size_t end = slen; end > 0; end--) {
+                char* sub = (char*)xmalloc(end + 1);
+                memcpy(sub, str, end); sub[end] = '\0';
+                if (match_here(pattern + 1, sub)) {
+                    iris_list_push(results, iris_box_str(sub));
+                    free(sub);
+                    break;
+                }
+                free(sub);
+            }
+        }
+        return results;
+    }
+    /* Unanchored: simple contains-based search for literal patterns */
+    /* For general patterns, find all non-overlapping occurrences */
+    for (size_t i = 0; i < slen; i++) {
+        if (match_here(pattern, str + i)) {
+            /* Find the end of the match */
+            size_t best_end = i + 1;
+            for (size_t end = slen; end > i; end--) {
+                /* Check if pattern matches str[i..end] */
+                char saved = 0;
+                char* mutable_str = (char*)(str + i);
+                /* Just take single char for now as simple heuristic */
+                best_end = i + 1;
+                break;
+            }
+            char* sub = (char*)xmalloc(best_end - i + 1);
+            memcpy(sub, str + i, best_end - i);
+            sub[best_end - i] = '\0';
+            iris_list_push(results, iris_box_str(sub));
+            free(sub);
+            i = best_end - 1; /* Skip past match */
+        }
+    }
+    return results;
+}
+
+char* iris_regex_replace(const char* pattern, const char* str, const char* replacement) {
+    if (!pattern || !str || !replacement) {
+        char* e = (char*)xmalloc(1); e[0] = '\0'; return e;
+    }
+    /* Simple implementation: use str_replace for literal patterns */
+    /* For regex, do character-by-character replacement of first match */
+    size_t slen = strlen(str);
+    size_t rlen = strlen(replacement);
+    size_t cap = slen + rlen + 64;
+    char* out = (char*)xmalloc(cap);
+    size_t olen = 0;
+    int replaced = 0;
+    for (size_t i = 0; i < slen; i++) {
+        if (!replaced && match_here(pattern[0] == '^' ? pattern + 1 : pattern, str + i)) {
+            /* Replace at this position — skip one char of match, insert replacement */
+            while (olen + rlen + 1 > cap) { cap *= 2; out = (char*)realloc(out, cap); }
+            memcpy(out + olen, replacement, rlen);
+            olen += rlen;
+            replaced = 1;
+        } else {
+            if (olen + 2 > cap) { cap *= 2; out = (char*)realloc(out, cap); }
+            out[olen++] = str[i];
+        }
+    }
+    out[olen] = '\0';
+    return out;
+}
+
+/* ======================================================================== */
+/*  DateTime                                                                */
+/* ======================================================================== */
+
+char* iris_datetime_now(void) {
+    time_t t = time(NULL);
+    struct tm* tm = localtime(&t);
+    char buf[64];
+    strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", tm);
+    return iris_box_str(buf)->str;
+}
+
+int64_t iris_datetime_timestamp(void) {
+    return (int64_t)time(NULL);
+}
+
+char* iris_datetime_format(int64_t timestamp, const char* fmt) {
+    time_t t = (time_t)timestamp;
+    struct tm* tm = localtime(&t);
+    char buf[256];
+    strftime(buf, sizeof(buf), fmt ? fmt : "%Y-%m-%dT%H:%M:%S", tm);
+    size_t len = strlen(buf);
+    char* result = (char*)xmalloc(len + 1);
+    memcpy(result, buf, len + 1);
+    return result;
+}
+
+/* ======================================================================== */
+/*  OS / Path                                                               */
+/* ======================================================================== */
+
+char* iris_cwd(void) {
+    char buf[4096];
+#ifdef _WIN32
+    if (_getcwd(buf, sizeof(buf)))
+#else
+    if (getcwd(buf, sizeof(buf)))
+#endif
+    {
+        size_t len = strlen(buf);
+        char* result = (char*)xmalloc(len + 1);
+        memcpy(result, buf, len + 1);
+        return result;
+    }
+    char* e = (char*)xmalloc(1); e[0] = '\0'; return e;
+}
+
+IrisList* iris_listdir(const char* path) {
+    IrisList* list = iris_list_new();
+    if (!path) return list;
+#ifdef _WIN32
+    char pattern[4096];
+    snprintf(pattern, sizeof(pattern), "%s\\*", path);
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(pattern, &fd);
+    if (h == INVALID_HANDLE_VALUE) return list;
+    do {
+        if (strcmp(fd.cFileName, ".") != 0 && strcmp(fd.cFileName, "..") != 0)
+            iris_list_push(list, iris_box_str(fd.cFileName));
+    } while (FindNextFileA(h, &fd));
+    FindClose(h);
+#else
+    DIR* d = opendir(path);
+    if (!d) return list;
+    struct dirent* ent;
+    while ((ent = readdir(d)) != NULL) {
+        if (strcmp(ent->d_name, ".") != 0 && strcmp(ent->d_name, "..") != 0)
+            iris_list_push(list, iris_box_str(ent->d_name));
+    }
+    closedir(d);
+#endif
+    return list;
+}
+
+char* iris_path_join(const char* a, const char* b) {
+    if (!a || !b) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t alen = strlen(a), blen = strlen(b);
+    char* result = (char*)xmalloc(alen + blen + 2);
+#ifdef _WIN32
+    char sep = '\\';
+#else
+    char sep = '/';
+#endif
+    memcpy(result, a, alen);
+    if (alen > 0 && a[alen-1] != '/' && a[alen-1] != '\\') {
+        result[alen] = sep;
+        memcpy(result + alen + 1, b, blen);
+        result[alen + 1 + blen] = '\0';
+    } else {
+        memcpy(result + alen, b, blen);
+        result[alen + blen] = '\0';
+    }
+    return result;
+}
+
+int iris_path_exists(const char* path) {
+    if (!path) return 0;
+#ifdef _WIN32
+    return _access(path, 0) == 0;
+#else
+    return access(path, F_OK) == 0;
+#endif
+}
+
+int iris_mkdir(const char* path) {
+    if (!path) return -1;
+#ifdef _WIN32
+    return _mkdir(path) == 0 ? 0 : -1;
+#else
+    return mkdir(path, 0755) == 0 ? 0 : -1;
+#endif
+}
+
+int iris_remove_file(const char* path) {
+    if (!path) return -1;
+    return remove(path) == 0 ? 0 : -1;
+}
+
+/* ======================================================================== */
+/*  Type introspection                                                      */
+/* ======================================================================== */
+
+char* iris_type_of(IrisVal* val) {
+    if (!val) return iris_box_str("unit")->str;
+    const char* name;
+    switch (val->tag) {
+        case IRIS_TAG_I64:     name = "i64"; break;
+        case IRIS_TAG_I32:     name = "i32"; break;
+        case IRIS_TAG_F64:     name = "f64"; break;
+        case IRIS_TAG_F32:     name = "f32"; break;
+        case IRIS_TAG_BOOL:    name = "bool"; break;
+        case IRIS_TAG_STR:     name = "str"; break;
+        case IRIS_TAG_LIST:    name = "list"; break;
+        case IRIS_TAG_MAP:     name = "map"; break;
+        case IRIS_TAG_OPTION:  name = "option"; break;
+        case IRIS_TAG_RESULT:  name = "result"; break;
+        case IRIS_TAG_CLOSURE: name = "closure"; break;
+        case IRIS_TAG_TUPLE:   name = "tuple"; break;
+        case IRIS_TAG_STRUCT:  name = "struct"; break;
+        case IRIS_TAG_CHAN:     name = "channel"; break;
+        case IRIS_TAG_ATOMIC:  name = "atomic"; break;
+        case IRIS_TAG_GRAD:    name = "grad"; break;
+        case IRIS_TAG_SPARSE:  name = "sparse"; break;
+        case IRIS_TAG_UNIT:    name = "unit"; break;
+        case IRIS_TAG_ENUM:    name = "enum"; break;
+        default:               name = "unknown"; break;
+    }
+    size_t len = strlen(name);
+    char* result = (char*)xmalloc(len + 1);
+    memcpy(result, name, len + 1);
+    return result;
+}
+
+/* ======================================================================== */
+/*  Random                                                                  */
+/* ======================================================================== */
+
+static int rand_seeded = 0;
+static void ensure_rand(void) {
+    if (!rand_seeded) { srand((unsigned int)time(NULL)); rand_seeded = 1; }
+}
+
+double iris_random(void) {
+    ensure_rand();
+    return (double)rand() / (double)RAND_MAX;
+}
+
+int64_t iris_random_range(int64_t lo, int64_t hi) {
+    ensure_rand();
+    if (hi <= lo) return lo;
+    return lo + (int64_t)(rand() % (int)(hi - lo));
+}
+
+/* ======================================================================== */
+/*  Hashing / Encoding                                                      */
+/* ======================================================================== */
+
+int64_t iris_hash(const char* str) {
+    if (!str) return 0;
+    /* djb2 hash */
+    uint64_t hash = 5381;
+    int c;
+    while ((c = (unsigned char)*str++))
+        hash = ((hash << 5) + hash) + c;
+    return (int64_t)hash;
+}
+
+static const char b64_table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+char* iris_base64_encode(const char* str) {
+    if (!str) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t slen = strlen(str);
+    size_t olen = 4 * ((slen + 2) / 3);
+    char* out = (char*)xmalloc(olen + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < slen; i += 3) {
+        uint32_t a = (unsigned char)str[i];
+        uint32_t b = (i + 1 < slen) ? (unsigned char)str[i+1] : 0;
+        uint32_t c = (i + 2 < slen) ? (unsigned char)str[i+2] : 0;
+        uint32_t triple = (a << 16) | (b << 8) | c;
+        out[j++] = b64_table[(triple >> 18) & 0x3F];
+        out[j++] = b64_table[(triple >> 12) & 0x3F];
+        out[j++] = (i + 1 < slen) ? b64_table[(triple >> 6) & 0x3F] : '=';
+        out[j++] = (i + 2 < slen) ? b64_table[triple & 0x3F] : '=';
+    }
+    out[j] = '\0';
+    return out;
+}
+
+static int b64_decode_char(char c) {
+    if (c >= 'A' && c <= 'Z') return c - 'A';
+    if (c >= 'a' && c <= 'z') return c - 'a' + 26;
+    if (c >= '0' && c <= '9') return c - '0' + 52;
+    if (c == '+') return 62;
+    if (c == '/') return 63;
+    return -1;
+}
+
+char* iris_base64_decode(const char* str) {
+    if (!str) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t slen = strlen(str);
+    size_t olen = slen / 4 * 3;
+    char* out = (char*)xmalloc(olen + 1);
+    size_t j = 0;
+    for (size_t i = 0; i < slen; i += 4) {
+        int a = b64_decode_char(str[i]);
+        int b = (i+1 < slen) ? b64_decode_char(str[i+1]) : 0;
+        int c = (i+2 < slen) ? b64_decode_char(str[i+2]) : 0;
+        int d = (i+3 < slen) ? b64_decode_char(str[i+3]) : 0;
+        if (a < 0) a = 0; if (b < 0) b = 0; if (c < 0) c = 0; if (d < 0) d = 0;
+        uint32_t triple = ((uint32_t)a << 18) | ((uint32_t)b << 12) | ((uint32_t)c << 6) | (uint32_t)d;
+        if (j < olen) out[j++] = (triple >> 16) & 0xFF;
+        if (j < olen && str[i+2] != '=') out[j++] = (triple >> 8) & 0xFF;
+        if (j < olen && str[i+3] != '=') out[j++] = triple & 0xFF;
+    }
+    out[j] = '\0';
+    return out;
+}
+
+/* ======================================================================== */
+/*  String extras                                                           */
+/* ======================================================================== */
+
+char* iris_char_at(const char* str, int64_t idx) {
+    if (!str) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t len = strlen(str);
+    if (idx < 0 || (size_t)idx >= len) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    char* result = (char*)xmalloc(2);
+    result[0] = str[idx];
+    result[1] = '\0';
+    return result;
+}
+
+char* iris_str_reverse(const char* str) {
+    if (!str) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t len = strlen(str);
+    char* result = (char*)xmalloc(len + 1);
+    for (size_t i = 0; i < len; i++) result[i] = str[len - 1 - i];
+    result[len] = '\0';
+    return result;
+}
+
+/* ======================================================================== */
+/*  Phase 105: Extended builtins                                            */
+/* ======================================================================== */
+
+/* -- String extras -- */
+
+char* iris_str_pad_left(const char* str, int64_t width, const char* pad) {
+    if (!str) str = "";
+    if (!pad || pad[0] == '\0') pad = " ";
+    size_t slen = strlen(str);
+    if ((int64_t)slen >= width) {
+        char* r = (char*)xmalloc(slen + 1);
+        memcpy(r, str, slen + 1);
+        return r;
+    }
+    size_t pad_needed = (size_t)(width - (int64_t)slen);
+    char* r = (char*)xmalloc((size_t)width + 1);
+    for (size_t i = 0; i < pad_needed; i++) r[i] = pad[0];
+    memcpy(r + pad_needed, str, slen + 1);
+    return r;
+}
+
+char* iris_str_pad_right(const char* str, int64_t width, const char* pad) {
+    if (!str) str = "";
+    if (!pad || pad[0] == '\0') pad = " ";
+    size_t slen = strlen(str);
+    if ((int64_t)slen >= width) {
+        char* r = (char*)xmalloc(slen + 1);
+        memcpy(r, str, slen + 1);
+        return r;
+    }
+    size_t pad_needed = (size_t)(width - (int64_t)slen);
+    char* r = (char*)xmalloc((size_t)width + 1);
+    memcpy(r, str, slen);
+    for (size_t i = 0; i < pad_needed; i++) r[slen + i] = pad[0];
+    r[(size_t)width] = '\0';
+    return r;
+}
+
+IrisList* iris_str_chars(const char* str) {
+    if (!str) return iris_list_new();
+    IrisList* l = iris_list_new();
+    size_t len = strlen(str);
+    for (size_t i = 0; i < len; i++) {
+        char* c = (char*)xmalloc(2);
+        c[0] = str[i]; c[1] = '\0';
+        IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal));
+        v->tag = IRIS_TAG_STR;
+        v->str = c;
+        iris_list_push(l, v);
+    }
+    return l;
+}
+
+IrisList* iris_str_bytes(const char* str) {
+    if (!str) return iris_list_new();
+    IrisList* l = iris_list_new();
+    size_t len = strlen(str);
+    for (size_t i = 0; i < len; i++) {
+        IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal));
+        v->tag = IRIS_TAG_I64;
+        v->i64 = (int64_t)(unsigned char)str[i];
+        iris_list_push(l, v);
+    }
+    return l;
+}
+
+int64_t iris_str_count(const char* str, const char* sub) {
+    if (!str || !sub || sub[0] == '\0') return 0;
+    int64_t count = 0;
+    size_t sublen = strlen(sub);
+    const char* p = str;
+    while ((p = strstr(p, sub)) != NULL) {
+        count++;
+        p += sublen;
+    }
+    return count;
+}
+
+/* -- Math constants / predicates -- */
+
+double iris_math_pi(void) { return 3.14159265358979323846; }
+double iris_math_e(void)  { return 2.71828182845904523536; }
+double iris_math_inf(void) { return 1.0 / 0.0; /* +Infinity */ }
+int    iris_is_nan(double x) { return x != x; }
+int    iris_is_inf(double x) { return (x == (1.0/0.0)) || (x == -(1.0/0.0)); }
+
+/* -- OS / System -- */
+
+char* iris_env_get(const char* key) {
+    if (!key) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    const char* val = getenv(key);
+    if (!val) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t len = strlen(val);
+    char* r = (char*)xmalloc(len + 1);
+    memcpy(r, val, len + 1);
+    return r;
+}
+
+void iris_env_set(const char* key, const char* val) {
+    if (!key) return;
+#ifdef _WIN32
+    _putenv_s(key, val ? val : "");
+#else
+    setenv(key, val ? val : "", 1);
+#endif
+}
+
+void iris_exit_code(int64_t code) {
+    exit((int)code);
+}
+
+char* iris_exec_cmd(const char* cmd) {
+    if (!cmd) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+#ifdef _WIN32
+    FILE* fp = _popen(cmd, "r");
+#else
+    FILE* fp = popen(cmd, "r");
+#endif
+    if (!fp) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t cap = 1024, len = 0;
+    char* buf = (char*)xmalloc(cap);
+    char tmp[256];
+    while (fgets(tmp, sizeof(tmp), fp)) {
+        size_t tlen = strlen(tmp);
+        if (len + tlen >= cap) { cap *= 2; buf = (char*)realloc(buf, cap); }
+        memcpy(buf + len, tmp, tlen);
+        len += tlen;
+    }
+    buf[len] = '\0';
+#ifdef _WIN32
+    _pclose(fp);
+#else
+    pclose(fp);
+#endif
+    return buf;
+}
+
+int64_t iris_pid(void) {
+#ifdef _WIN32
+    return (int64_t)GetCurrentProcessId();
+#else
+    return (int64_t)getpid();
+#endif
+}
+
+/* -- Crypto / UUID -- */
+
+static uint64_t uuid_state = 0;
+
+char* iris_uuid(void) {
+    if (uuid_state == 0) {
+        uuid_state = (uint64_t)time(NULL) ^ 0xDEADBEEFCAFEBABEULL;
+    }
+    /* xorshift64 */
+    uuid_state ^= uuid_state << 13;
+    uuid_state ^= uuid_state >> 7;
+    uuid_state ^= uuid_state << 17;
+    uint64_t a = uuid_state;
+    uuid_state ^= uuid_state << 13;
+    uuid_state ^= uuid_state >> 7;
+    uuid_state ^= uuid_state << 17;
+    uint64_t b = uuid_state;
+    a = (a & 0xFFFFFFFFFFFF0FFFULL) | 0x4000ULL; /* version 4 */
+    b = (b & 0x3FFFFFFFFFFFFFFFULL) | 0x8000000000000000ULL; /* variant 1 */
+    char* r = (char*)xmalloc(37);
+    snprintf(r, 37, "%08x-%04x-%04x-%04x-%012llx",
+        (uint32_t)(a >> 32),
+        (uint16_t)((a >> 16) & 0xFFFF),
+        (uint16_t)(a & 0xFFFF),
+        (uint16_t)((b >> 48) & 0xFFFF),
+        (unsigned long long)(b & 0xFFFFFFFFFFFFULL));
+    return r;
+}
+
+/* Minimal SHA-256 */
+static const uint32_t sha256_K[64] = {
+    0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+    0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+    0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+    0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+    0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+    0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+    0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+    0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2,
+};
+
+static uint32_t sha256_rotr(uint32_t x, int n) { return (x >> n) | (x << (32 - n)); }
+
+char* iris_sha256(const char* input) {
+    if (!input) { char* e = (char*)xmalloc(65); memset(e, '0', 64); e[64] = '\0'; return e; }
+    size_t ilen = strlen(input);
+    uint64_t bit_len = (uint64_t)ilen * 8;
+    /* Padding */
+    size_t padded = ilen + 1;
+    while (padded % 64 != 56) padded++;
+    padded += 8;
+    uint8_t* msg = (uint8_t*)xmalloc(padded);
+    memset(msg, 0, padded);
+    memcpy(msg, input, ilen);
+    msg[ilen] = 0x80;
+    for (int i = 0; i < 8; i++) msg[padded - 1 - i] = (uint8_t)(bit_len >> (i * 8));
+    uint32_t h[8] = {0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                     0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19};
+    for (size_t off = 0; off < padded; off += 64) {
+        uint32_t w[64];
+        for (int i = 0; i < 16; i++)
+            w[i] = ((uint32_t)msg[off+i*4]<<24)|((uint32_t)msg[off+i*4+1]<<16)|((uint32_t)msg[off+i*4+2]<<8)|msg[off+i*4+3];
+        for (int i = 16; i < 64; i++) {
+            uint32_t s0 = sha256_rotr(w[i-15],7)^sha256_rotr(w[i-15],18)^(w[i-15]>>3);
+            uint32_t s1 = sha256_rotr(w[i-2],17)^sha256_rotr(w[i-2],19)^(w[i-2]>>10);
+            w[i] = w[i-16]+s0+w[i-7]+s1;
+        }
+        uint32_t a=h[0],b=h[1],c=h[2],d=h[3],e=h[4],f=h[5],g=h[6],hh=h[7];
+        for (int i = 0; i < 64; i++) {
+            uint32_t S1 = sha256_rotr(e,6)^sha256_rotr(e,11)^sha256_rotr(e,25);
+            uint32_t ch = (e&f)^((~e)&g);
+            uint32_t t1 = hh+S1+ch+sha256_K[i]+w[i];
+            uint32_t S0 = sha256_rotr(a,2)^sha256_rotr(a,13)^sha256_rotr(a,22);
+            uint32_t maj = (a&b)^(a&c)^(b&c);
+            uint32_t t2 = S0+maj;
+            hh=g; g=f; f=e; e=d+t1; d=c; c=b; b=a; a=t1+t2;
+        }
+        h[0]+=a; h[1]+=b; h[2]+=c; h[3]+=d; h[4]+=e; h[5]+=f; h[6]+=g; h[7]+=hh;
+    }
+    free(msg);
+    char* out = (char*)xmalloc(65);
+    snprintf(out, 65, "%08x%08x%08x%08x%08x%08x%08x%08x", h[0],h[1],h[2],h[3],h[4],h[5],h[6],h[7]);
+    return out;
+}
+
+char* iris_hex_encode(const char* input) {
+    if (!input) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t len = strlen(input);
+    char* r = (char*)xmalloc(len * 2 + 1);
+    for (size_t i = 0; i < len; i++) snprintf(r + i*2, 3, "%02x", (unsigned char)input[i]);
+    r[len * 2] = '\0';
+    return r;
+}
+
+static int hex_digit(char c) {
+    if (c >= '0' && c <= '9') return c - '0';
+    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+    return 0;
+}
+
+char* iris_hex_decode(const char* input) {
+    if (!input) { char* e = (char*)xmalloc(1); e[0] = '\0'; return e; }
+    size_t len = strlen(input);
+    size_t olen = len / 2;
+    char* r = (char*)xmalloc(olen + 1);
+    for (size_t i = 0; i < olen; i++)
+        r[i] = (char)((hex_digit(input[i*2]) << 4) | hex_digit(input[i*2+1]));
+    r[olen] = '\0';
+    return r;
+}
+
+/* -- Deque (reuses IrisList) -- */
+
+IrisList* iris_deque_new(void) { return iris_list_new(); }
+
+void iris_deque_push_front(IrisList* dq, IrisVal* val) {
+    if (!dq || !val) return;
+    /* shift elements right */
+    if (dq->len >= dq->cap) {
+        dq->cap = dq->cap ? dq->cap * 2 : 8;
+        dq->data = (IrisVal**)realloc(dq->data, sizeof(IrisVal*) * dq->cap);
+    }
+    memmove(dq->data + 1, dq->data, sizeof(IrisVal*) * dq->len);
+    dq->data[0] = val;
+    dq->len++;
+}
+
+void iris_deque_push_back(IrisList* dq, IrisVal* val) {
+    iris_list_push(dq, val);
+}
+
+IrisVal* iris_deque_pop_front(IrisList* dq) {
+    if (!dq || dq->len == 0) return NULL;
+    IrisVal* v = dq->data[0];
+    memmove(dq->data, dq->data + 1, sizeof(IrisVal*) * (dq->len - 1));
+    dq->len--;
+    return v;
+}
+
+IrisVal* iris_deque_pop_back(IrisList* dq) {
+    if (!dq || dq->len == 0) return NULL;
+    return dq->data[--dq->len];
+}
+
+int64_t iris_deque_len(IrisList* dq) {
+    return dq ? (int64_t)dq->len : 0;
+}
+
+/* -- FFI -- */
+
+void* iris_ffi_open(const char* path) {
+    if (!path) return NULL;
+#ifdef _WIN32
+    return (void*)LoadLibraryA(path);
+#elif defined(__unix__) || defined(__APPLE__)
+    return dlopen(path, RTLD_LAZY);
+#else
+    return NULL;
+#endif
+}
+
+int64_t iris_ffi_call(void* handle, const char* func_name) {
+    if (!handle || !func_name) return -1;
+#ifdef _WIN32
+    typedef int64_t (*fn_t)(void);
+    fn_t f = (fn_t)GetProcAddress((HMODULE)handle, func_name);
+    if (!f) return -1;
+    return f();
+#elif defined(__unix__) || defined(__APPLE__)
+    typedef int64_t (*fn_t)(void);
+    fn_t f = (fn_t)dlsym(handle, func_name);
+    if (!f) return -1;
+    return f();
+#else
+    return -1;
+#endif
+}
+
+int iris_ffi_close(void* handle) {
+    if (!handle) return 0;
+#ifdef _WIN32
+    return FreeLibrary((HMODULE)handle) ? 1 : 0;
+#elif defined(__unix__) || defined(__APPLE__)
+    return dlclose(handle) == 0 ? 1 : 0;
+#else
+    return 0;
+#endif
+}
+
+/* -- Expanded C FFI with typed arguments -- */
+
+static void* ffi_get_sym(void* handle, const char* func_name) {
+    if (!handle || !func_name) return NULL;
+#ifdef _WIN32
+    return (void*)GetProcAddress((HMODULE)handle, func_name);
+#elif defined(__unix__) || defined(__APPLE__)
+    return dlsym(handle, func_name);
+#else
+    return NULL;
+#endif
+}
+
+static int64_t ffi_dispatch_i64(void* fn_ptr, int64_t* args, int n) {
+    typedef int64_t (*fn0)(void);
+    typedef int64_t (*fn1)(int64_t);
+    typedef int64_t (*fn2)(int64_t, int64_t);
+    typedef int64_t (*fn3)(int64_t, int64_t, int64_t);
+    typedef int64_t (*fn4)(int64_t, int64_t, int64_t, int64_t);
+    typedef int64_t (*fn5)(int64_t, int64_t, int64_t, int64_t, int64_t);
+    typedef int64_t (*fn6)(int64_t, int64_t, int64_t, int64_t, int64_t, int64_t);
+    if (!fn_ptr) return -1;
+    switch (n) {
+        case 0: return ((fn0)fn_ptr)();
+        case 1: return ((fn1)fn_ptr)(args[0]);
+        case 2: return ((fn2)fn_ptr)(args[0], args[1]);
+        case 3: return ((fn3)fn_ptr)(args[0], args[1], args[2]);
+        case 4: return ((fn4)fn_ptr)(args[0], args[1], args[2], args[3]);
+        case 5: return ((fn5)fn_ptr)(args[0], args[1], args[2], args[3], args[4]);
+        default: return ((fn6)fn_ptr)(args[0], args[1], args[2], args[3], args[4], args[5]);
+    }
+}
+
+int64_t iris_ffi_call_i64(void* handle, const char* func_name, int64_t* args, int nargs) {
+    void* sym = ffi_get_sym(handle, func_name);
+    return ffi_dispatch_i64(sym, args, nargs);
+}
+
+double iris_ffi_call_f64(void* handle, const char* func_name, int64_t* args, int nargs) {
+    typedef double (*fn0)(void);
+    typedef double (*fn1)(int64_t);
+    typedef double (*fn2)(int64_t, int64_t);
+    void* sym = ffi_get_sym(handle, func_name);
+    if (!sym) return 0.0;
+    switch (nargs) {
+        case 0: return ((fn0)sym)();
+        case 1: return ((fn1)sym)(args[0]);
+        default: return ((fn2)sym)(args[0], args[1]);
+    }
+}
+
+const char* iris_ffi_call_str(void* handle, const char* func_name, int64_t* args, int nargs) {
+    typedef const char* (*fn0)(void);
+    typedef const char* (*fn1)(int64_t);
+    typedef const char* (*fn2)(int64_t, int64_t);
+    void* sym = ffi_get_sym(handle, func_name);
+    if (!sym) return "";
+    switch (nargs) {
+        case 0: return ((fn0)sym)();
+        case 1: return ((fn1)sym)(args[0]);
+        default: return ((fn2)sym)(args[0], args[1]);
+    }
+}
+
+void iris_ffi_call_void(void* handle, const char* func_name, int64_t* args, int nargs) {
+    typedef void (*fn0)(void);
+    typedef void (*fn1)(int64_t);
+    typedef void (*fn2)(int64_t, int64_t);
+    void* sym = ffi_get_sym(handle, func_name);
+    if (!sym) return;
+    switch (nargs) {
+        case 0: ((fn0)sym)(); break;
+        case 1: ((fn1)sym)(args[0]); break;
+        default: ((fn2)sym)(args[0], args[1]); break;
+    }
+}
+
+/* -- Python FFI -- */
+
+static char python_buf[65536];
+
+static const char* find_python_cmd(void) {
+#ifdef _WIN32
+    /* On Windows, try python first (py launcher), then python3. */
+    if (system("python --version >nul 2>&1") == 0) return "python";
+    if (system("python3 --version >nul 2>&1") == 0) return "python3";
+#else
+    if (system("python3 --version >/dev/null 2>&1") == 0) return "python3";
+    if (system("python --version >/dev/null 2>&1") == 0) return "python";
+#endif
+    return NULL;
+}
+
+const char* iris_python_eval(const char* code) {
+    const char* py = find_python_cmd();
+    if (!py || !code) { snprintf(python_buf, sizeof(python_buf), "error: python not found"); return python_buf; }
+    char cmd[8192];
+    snprintf(cmd, sizeof(cmd), "%s -c \"import sys; sys.stdout.write(str(%s))\"", py, code);
+#ifdef _WIN32
+    FILE* fp = _popen(cmd, "r");
+#else
+    FILE* fp = popen(cmd, "r");
+#endif
+    if (!fp) { snprintf(python_buf, sizeof(python_buf), "error: popen failed"); return python_buf; }
+    size_t n = fread(python_buf, 1, sizeof(python_buf) - 1, fp);
+    python_buf[n] = '\0';
+#ifdef _WIN32
+    _pclose(fp);
+#else
+    pclose(fp);
+#endif
+    return python_buf;
+}
+
+int64_t iris_python_exec(const char* code_or_path) {
+    const char* py = find_python_cmd();
+    if (!py || !code_or_path) return -1;
+    char cmd[8192];
+    /* Check if it looks like a file path */
+    FILE* test = fopen(code_or_path, "r");
+    if (test) {
+        fclose(test);
+        snprintf(cmd, sizeof(cmd), "%s \"%s\"", py, code_or_path);
+    } else {
+        snprintf(cmd, sizeof(cmd), "%s -c \"%s\"", py, code_or_path);
+    }
+    return (int64_t)system(cmd);
+}
+
+const char* iris_python_call(const char* module, const char* func, const char* args_json) {
+    const char* py = find_python_cmd();
+    if (!py || !module || !func) { snprintf(python_buf, sizeof(python_buf), "error: python not found"); return python_buf; }
+    char cmd[8192];
+    const char* a = args_json ? args_json : "";
+    snprintf(cmd, sizeof(cmd),
+        "%s -c \"import %s; print(%s.%s(%s))\"",
+        py, module, module, func, a);
+#ifdef _WIN32
+    FILE* fp = _popen(cmd, "r");
+#else
+    FILE* fp = popen(cmd, "r");
+#endif
+    if (!fp) { snprintf(python_buf, sizeof(python_buf), "error: popen failed"); return python_buf; }
+    size_t n = fread(python_buf, 1, sizeof(python_buf) - 1, fp);
+    python_buf[n] = '\0';
+    /* Trim trailing newline */
+    while (n > 0 && (python_buf[n-1] == '\n' || python_buf[n-1] == '\r')) { python_buf[--n] = '\0'; }
+#ifdef _WIN32
+    _pclose(fp);
+#else
+    pclose(fp);
+#endif
+    return python_buf;
+}
+
+const char* iris_python_version(void) {
+    const char* py = find_python_cmd();
+    if (!py) return "Python not found";
+    char cmd[256];
+    snprintf(cmd, sizeof(cmd), "%s --version", py);
+#ifdef _WIN32
+    FILE* fp = _popen(cmd, "r");
+#else
+    FILE* fp = popen(cmd, "r");
+#endif
+    if (!fp) return "unknown";
+    size_t n = fread(python_buf, 1, sizeof(python_buf) - 1, fp);
+    python_buf[n] = '\0';
+    while (n > 0 && (python_buf[n-1] == '\n' || python_buf[n-1] == '\r')) { python_buf[--n] = '\0'; }
+#ifdef _WIN32
+    _pclose(fp);
+#else
+    pclose(fp);
+#endif
+    return python_buf;
+}
+
+/* -- Rust FFI (aliases for C FFI — Rust cdylibs export extern "C") -- */
+
+void* iris_rust_lib_open(const char* path) { return iris_ffi_open(path); }
+int64_t iris_rust_call_i64(void* h, const char* fn_name, int64_t* args, int n) { return iris_ffi_call_i64(h, fn_name, args, n); }
+double  iris_rust_call_f64(void* h, const char* fn_name, int64_t* args, int n) { return iris_ffi_call_f64(h, fn_name, args, n); }
+void    iris_rust_call_void(void* h, const char* fn_name, int64_t* args, int n) { iris_ffi_call_void(h, fn_name, args, n); }
+
+/* -- Functional list ops (numeric) -- */
+
+int64_t iris_list_sum(IrisList* list) {
+    if (!list) return 0;
+    int64_t s = 0;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->data[i] && list->data[i]->tag == IRIS_TAG_I64)
+            s += list->data[i]->i64;
+    }
+    return s;
+}
+
+int64_t iris_list_min(IrisList* list) {
+    if (!list || list->len == 0) return 0;
+    int64_t m = INT64_MAX;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->data[i] && list->data[i]->tag == IRIS_TAG_I64 && list->data[i]->i64 < m)
+            m = list->data[i]->i64;
+    }
+    return m;
+}
+
+int64_t iris_list_max(IrisList* list) {
+    if (!list || list->len == 0) return 0;
+    int64_t m = INT64_MIN;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->data[i] && list->data[i]->tag == IRIS_TAG_I64 && list->data[i]->i64 > m)
+            m = list->data[i]->i64;
+    }
+    return m;
+}
+
+int64_t iris_list_index_of(IrisList* list, int64_t val) {
+    if (!list) return -1;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->data[i] && list->data[i]->tag == IRIS_TAG_I64 && list->data[i]->i64 == val)
+            return (int64_t)i;
+    }
+    return -1;
+}
+
+int64_t iris_list_count(IrisList* list, int64_t val) {
+    if (!list) return 0;
+    int64_t c = 0;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->data[i] && list->data[i]->tag == IRIS_TAG_I64 && list->data[i]->i64 == val)
+            c++;
+    }
+    return c;
+}
+
+IrisList* iris_list_reverse(IrisList* list) {
+    IrisList* r = iris_list_new();
+    if (!list) return r;
+    for (size_t i = list->len; i > 0; i--)
+        iris_list_push(r, list->data[i-1]);
+    return r;
+}
+
+IrisList* iris_list_take(IrisList* list, int64_t n) {
+    IrisList* r = iris_list_new();
+    if (!list) return r;
+    size_t take = (n < 0) ? 0 : ((size_t)n > list->len ? list->len : (size_t)n);
+    for (size_t i = 0; i < take; i++)
+        iris_list_push(r, list->data[i]);
+    return r;
+}
+
+IrisList* iris_list_drop(IrisList* list, int64_t n) {
+    IrisList* r = iris_list_new();
+    if (!list) return r;
+    size_t start = (n < 0) ? 0 : ((size_t)n > list->len ? list->len : (size_t)n);
+    for (size_t i = start; i < list->len; i++)
+        iris_list_push(r, list->data[i]);
+    return r;
+}
+
+/* -- Concurrency extras -- */
+
+int64_t iris_thread_count(void) {
+#ifdef _WIN32
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return (int64_t)si.dwNumberOfProcessors;
+#elif defined(__unix__) || defined(__APPLE__)
+    long n = sysconf(_SC_NPROCESSORS_ONLN);
+    return n > 0 ? (int64_t)n : 1;
+#else
+    return 1;
+#endif
 }

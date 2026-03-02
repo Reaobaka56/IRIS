@@ -120,7 +120,7 @@
         },
         {
           "name": "support.type.iris",
-          "match": "\\b(option|result|list|map|tensor|tuple|chan|atomic|grad|sparse)\\b"
+          "match": "\\b(option|result|list|map|tensor|tuple|chan|atomic|grad|sparse|deque|bitset|mutex)\\b"
         }
       ]
     },
@@ -151,8 +151,89 @@
     "builtins": {
       "patterns": [
         {
+          "comment": "Core builtins: I/O, assertions, conversions",
           "name": "support.function.builtin.iris",
-          "match": "\\b(print|panic|assert|len|concat|contains|starts_with|ends_with|to_upper|to_lower|trim|repeat|to_str|format|read_line|read_i64|read_f64|split|join|find|slice|str_index|parse_i64|parse_f64|list|push|pop|list_get|list_set|list_len|list_pop|map|map_get|map_set|map_keys|map_values|map_contains|some|none|is_some|unwrap|ok|err|is_ok|is_err|cell|cell_get|cell_set|zeros|ones|fill|linspace|sqrt|abs|floor|ceil|sin|cos|tan|exp|log|log2|round|sign|pow|min|max|clamp|band|bor|bxor|shl|shr|bitnot|grad|grad_of|sparsify|densify|atomic|atomic_load|atomic_store|atomic_add|channel|send|recv|einsum|to_str|some|none)\\b"
+          "match": "\\b(print|panic|assert|len|to_str|format|read_line|read_i64|read_f64|type_of)\\b"
+        },
+        {
+          "comment": "String builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(concat|contains|starts_with|ends_with|to_upper|to_lower|trim|repeat|split|join|find|slice|str_index|parse_i64|parse_f64|char_at|str_reverse|str_pad_left|str_pad_right|str_chars|str_bytes|str_count)\\b"
+        },
+        {
+          "comment": "Math builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(sqrt|abs|floor|ceil|sin|cos|tan|exp|log|log2|round|sign|pow|min|max|clamp|math_pi|math_e|math_inf|is_nan|is_inf)\\b"
+        },
+        {
+          "comment": "Bitwise builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(band|bor|bxor|shl|shr|bitnot)\\b"
+        },
+        {
+          "comment": "Option / Result builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(some|none|is_some|unwrap|ok|err|is_ok|is_err)\\b"
+        },
+        {
+          "comment": "List builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(list|push|pop|list_get|list_set|list_len|list_pop|list_map|list_filter|list_reduce|list_any|list_all|list_zip|list_enumerate|list_flatten|list_unique|list_reverse|list_sorted|list_sum|list_min|list_max|list_index_of|list_count|list_take|list_drop)\\b"
+        },
+        {
+          "comment": "Map builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(map|map_get|map_set|map_keys|map_values|map_contains)\\b"
+        },
+        {
+          "comment": "Cell builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(cell|cell_get|cell_set)\\b"
+        },
+        {
+          "comment": "Tensor / linear algebra builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(zeros|ones|fill|linspace|grad|grad_of|sparsify|densify|einsum)\\b"
+        },
+        {
+          "comment": "Concurrency builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(atomic|atomic_load|atomic_store|atomic_add|channel|send|recv|chan_try_recv|chan_len|select|timeout|thread_count)\\b"
+        },
+        {
+          "comment": "Deque builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(deque_new|deque_push_front|deque_push_back|deque_pop_front|deque_pop_back|deque_len|deque_front|deque_back)\\b"
+        },
+        {
+          "comment": "Sorted / BitSet builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(sorted_keys|bitset_new|bitset_set|bitset_get|bitset_count|bitset_clear)\\b"
+        },
+        {
+          "comment": "FFI builtins — C, Python, Rust",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(ffi_open|ffi_call|ffi_close|ffi_call_i64|ffi_call_f64|ffi_call_str|ffi_call_void|ffi_call_args|python_eval|python_exec|python_call|python_version|rust_lib_open|rust_call_i64|rust_call_f64|rust_call_void)\\b"
+        },
+        {
+          "comment": "HTTP / JSON / Regex builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(http_get|http_post|json_stringify|regex_match|regex_find_all|regex_replace)\\b"
+        },
+        {
+          "comment": "Date / Time builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(datetime_now|datetime_timestamp|datetime_format)\\b"
+        },
+        {
+          "comment": "OS / System builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(cwd|list_dir|path_join|mkdir|remove_file|env_get|env_set|exit_code|exec_cmd|pid)\\b"
+        },
+        {
+          "comment": "Random / Hash / Crypto builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(random|random_range|hash|base64_encode|base64_decode|uuid|sha256|hex_encode|hex_decode)\\b"
         }
       ]
     },

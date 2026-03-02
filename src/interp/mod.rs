@@ -246,6 +246,7 @@ pub fn collect_trace(
             line: 0,
             column: 0,
             variables: Vec::new(),
+            depth: 0,
         });
     }
 
@@ -342,6 +343,7 @@ impl<'m> Interpreter<'m> {
                             line,
                             column: col,
                             variables,
+                            depth: self.depth as u32,
                         });
                     }
                 }
@@ -1838,6 +1840,27 @@ impl<'m> Interpreter<'m> {
                         std::thread::sleep(std::time::Duration::from_millis(n as u64));
                         self.values.insert(*result, IrValue::I64(0));
                     }
+                    // Phase 104: BuiltinCall — unified dispatch for new builtins
+                    IrInstr::BuiltinCall { result, name, args, result_ty: _ } => {
+                        let arg_vals: Vec<IrValue> = args.iter()
+                            .map(|a| self.get(*a))
+                            .collect::<Result<Vec<_>, _>>()?;
+
+                        // Handle closure-invoking builtins here (need `self` for function dispatch).
+                        let ret = match name.as_str() {
+                            "list_map" => {
+                                self.builtin_list_map(&arg_vals)?
+                            }
+                            "list_filter" => {
+                                self.builtin_list_filter(&arg_vals)?
+                            }
+                            "list_reduce" => {
+                                self.builtin_list_reduce(&arg_vals)?
+                            }
+                            _ => interp_builtin(name, &arg_vals)?,
+                        };
+                        self.values.insert(*result, ret);
+                    }
                 }
             }
 
@@ -1923,6 +1946,97 @@ impl<'m> Interpreter<'m> {
                 detail: "expected tensor for index computation".into(),
             })
         }
+    }
+
+    // ------------------------------------------------------------------
+    // Closure-invoking list builtins (need `self` to dispatch functions)
+    // ------------------------------------------------------------------
+
+    /// Calls a closure value with the given arguments, returning the result.
+    fn call_closure_val(&mut self, closure: &IrValue, call_args: &[IrValue]) -> Result<IrValue, InterpError> {
+        let (fn_name, captured) = match closure {
+            IrValue::Closure { fn_name, captured, .. } => (fn_name.clone(), captured.clone()),
+            other => return Err(InterpError::TypeError {
+                detail: format!("expected closure, got {:?}", other),
+            }),
+        };
+        let callee = self.module
+            .and_then(|m| m.function_by_name(&fn_name))
+            .ok_or_else(|| InterpError::Unsupported {
+                detail: format!("undefined closure function: {}", fn_name),
+            })?
+            .clone();
+        let mut args_full: Vec<IrValue> = captured;
+        args_full.extend_from_slice(call_args);
+        if self.depth >= self.opts.max_depth {
+            return Err(InterpError::Unsupported {
+                detail: format!("call depth exceeded {} (infinite recursion?)", self.opts.max_depth),
+            });
+        }
+        let mut sub = Interpreter::new(self.module, self.opts, self.depth + 1);
+        let ret = sub.run(&callee, &args_full)?;
+        Ok(ret.into_iter().next().unwrap_or(IrValue::Unit))
+    }
+
+    /// list_map(list, closure) — apply closure to each element, return new list.
+    fn builtin_list_map(&mut self, args: &[IrValue]) -> Result<IrValue, InterpError> {
+        if args.len() < 2 {
+            return Err(InterpError::TypeError { detail: "list_map: expected 2 arguments (list, closure)".into() });
+        }
+        let items = match &args[0] {
+            IrValue::List(rc) => rc.borrow().clone(),
+            _ => return Err(InterpError::TypeError { detail: "list_map: first argument must be a list".into() }),
+        };
+        let closure = &args[1];
+        let mut result = Vec::with_capacity(items.len());
+        for item in &items {
+            let mapped = self.call_closure_val(closure, &[item.clone()])?;
+            result.push(mapped);
+        }
+        Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(result))))
+    }
+
+    /// list_filter(list, closure) — keep elements where closure returns true.
+    fn builtin_list_filter(&mut self, args: &[IrValue]) -> Result<IrValue, InterpError> {
+        if args.len() < 2 {
+            return Err(InterpError::TypeError { detail: "list_filter: expected 2 arguments (list, closure)".into() });
+        }
+        let items = match &args[0] {
+            IrValue::List(rc) => rc.borrow().clone(),
+            _ => return Err(InterpError::TypeError { detail: "list_filter: first argument must be a list".into() }),
+        };
+        let closure = &args[1];
+        let mut result = Vec::new();
+        for item in &items {
+            let keep = self.call_closure_val(closure, &[item.clone()])?;
+            let truthy = match &keep {
+                IrValue::Bool(b) => *b,
+                IrValue::I64(n) => *n != 0,
+                IrValue::I32(n) => *n != 0,
+                _ => true,
+            };
+            if truthy {
+                result.push(item.clone());
+            }
+        }
+        Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(result))))
+    }
+
+    /// list_reduce(list, initial, closure) — fold list with closure(accumulator, element).
+    fn builtin_list_reduce(&mut self, args: &[IrValue]) -> Result<IrValue, InterpError> {
+        if args.len() < 3 {
+            return Err(InterpError::TypeError { detail: "list_reduce: expected 3 arguments (list, initial, closure)".into() });
+        }
+        let items = match &args[0] {
+            IrValue::List(rc) => rc.borrow().clone(),
+            _ => return Err(InterpError::TypeError { detail: "list_reduce: first argument must be a list".into() }),
+        };
+        let mut acc = args[1].clone();
+        let closure = &args[2];
+        for item in &items {
+            acc = self.call_closure_val(closure, &[acc.clone(), item.clone()])?;
+        }
+        Ok(acc)
     }
 
     /// Dispatch an extern call by name to a built-in Rust stub.
@@ -2266,4 +2380,1549 @@ fn eval_binop(op: BinOp, lv: &IrValue, rv: &IrValue) -> Result<IrValue, InterpEr
             detail: format!("unsupported binop {:?} on {:?} and {:?}", op, lv, rv),
         }),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 104: Builtin function interpreter dispatch
+// ---------------------------------------------------------------------------
+
+/// Thread-local store for TCP streams/listeners used by the interpreter.
+mod tcp_store {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    use std::net::{TcpStream, TcpListener};
+
+    thread_local! {
+        static STREAMS: RefCell<HashMap<i64, TcpStream>> = RefCell::new(HashMap::new());
+        static LISTENERS: RefCell<HashMap<i64, TcpListener>> = RefCell::new(HashMap::new());
+        static NEXT_ID: RefCell<i64> = RefCell::new(1);
+    }
+
+    fn next_handle() -> i64 {
+        NEXT_ID.with(|c| { let id = *c.borrow(); *c.borrow_mut() = id + 1; id })
+    }
+
+    pub fn store_stream(s: TcpStream) -> i64 {
+        let id = next_handle();
+        STREAMS.with(|m| m.borrow_mut().insert(id, s));
+        id
+    }
+    pub fn store_listener(l: TcpListener) -> i64 {
+        let id = next_handle();
+        LISTENERS.with(|m| m.borrow_mut().insert(id, l));
+        id
+    }
+    pub fn read_stream(id: i64) -> Result<String, ()> {
+        use std::io::Read;
+        STREAMS.with(|m| {
+            let mut map = m.borrow_mut();
+            if let Some(stream) = map.get_mut(&id) {
+                let mut buf = vec![0u8; 8192];
+                match stream.read(&mut buf) {
+                    Ok(n) => Ok(String::from_utf8_lossy(&buf[..n]).to_string()),
+                    Err(_) => Err(()),
+                }
+            } else { Err(()) }
+        })
+    }
+    pub fn write_stream(id: i64, data: &str) {
+        use std::io::Write;
+        STREAMS.with(|m| {
+            let mut map = m.borrow_mut();
+            if let Some(stream) = map.get_mut(&id) {
+                let _ = stream.write_all(data.as_bytes());
+            }
+        });
+    }
+    pub fn accept_listener(id: i64) -> Result<i64, ()> {
+        LISTENERS.with(|m| {
+            let map = m.borrow();
+            if let Some(listener) = map.get(&id) {
+                match listener.accept() {
+                    Ok((stream, _)) => Ok(store_stream(stream)),
+                    Err(_) => Err(()),
+                }
+            } else { Err(()) }
+        })
+    }
+    pub fn close(id: i64) {
+        STREAMS.with(|m| { m.borrow_mut().remove(&id); });
+        LISTENERS.with(|m| { m.borrow_mut().remove(&id); });
+    }
+}
+
+/// Helper: dispatch a C/Rust FFI call with up to 6 i64 arguments via transmuted pointers.
+/// The function pointer `proc` must point to a valid extern "C" function.
+unsafe fn ffi_dispatch_call(proc: *const u8, args: &[i64]) -> i64 {
+    match args.len() {
+        0 => {
+            let f: extern "C" fn() -> i64 = std::mem::transmute(proc);
+            f()
+        }
+        1 => {
+            let f: extern "C" fn(i64) -> i64 = std::mem::transmute(proc);
+            f(args[0])
+        }
+        2 => {
+            let f: extern "C" fn(i64, i64) -> i64 = std::mem::transmute(proc);
+            f(args[0], args[1])
+        }
+        3 => {
+            let f: extern "C" fn(i64, i64, i64) -> i64 = std::mem::transmute(proc);
+            f(args[0], args[1], args[2])
+        }
+        4 => {
+            let f: extern "C" fn(i64, i64, i64, i64) -> i64 = std::mem::transmute(proc);
+            f(args[0], args[1], args[2], args[3])
+        }
+        5 => {
+            let f: extern "C" fn(i64, i64, i64, i64, i64) -> i64 = std::mem::transmute(proc);
+            f(args[0], args[1], args[2], args[3], args[4])
+        }
+        _ => {
+            let f: extern "C" fn(i64, i64, i64, i64, i64, i64) -> i64 = std::mem::transmute(proc);
+            f(args[0], args[1], args[2], args[3], args[4], args[5])
+        }
+    }
+}
+
+fn str_arg(v: &IrValue) -> String {
+    match v { IrValue::Str(s) => s.clone(), _ => format!("{}", v) }
+}
+fn i64_arg(v: &IrValue) -> i64 {
+    match v { IrValue::I64(n) => *n, IrValue::I32(n) => *n as i64, IrValue::F64(f) => *f as i64, _ => 0 }
+}
+
+fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> {
+    match name {
+        // ---- TCP ----
+        "tcp_connect" => {
+            let host = str_arg(&args[0]);
+            let port = i64_arg(&args[1]);
+            match std::net::TcpStream::connect(format!("{}:{}", host, port)) {
+                Ok(stream) => Ok(IrValue::I64(tcp_store::store_stream(stream))),
+                Err(_) => Ok(IrValue::I64(-1)),
+            }
+        }
+        "tcp_listen" => {
+            let port = i64_arg(&args[0]);
+            match std::net::TcpListener::bind(format!("0.0.0.0:{}", port)) {
+                Ok(listener) => Ok(IrValue::I64(tcp_store::store_listener(listener))),
+                Err(_) => Ok(IrValue::I64(-1)),
+            }
+        }
+        "tcp_accept" => {
+            let id = i64_arg(&args[0]);
+            Ok(IrValue::I64(tcp_store::accept_listener(id).unwrap_or(-1)))
+        }
+        "tcp_read" => {
+            let id = i64_arg(&args[0]);
+            Ok(IrValue::Str(tcp_store::read_stream(id).unwrap_or_default()))
+        }
+        "tcp_write" => {
+            let id = i64_arg(&args[0]);
+            let data = str_arg(&args[1]);
+            tcp_store::write_stream(id, &data);
+            Ok(IrValue::I64(0))
+        }
+        "tcp_close" => {
+            let id = i64_arg(&args[0]);
+            tcp_store::close(id);
+            Ok(IrValue::I64(0))
+        }
+        // ---- HTTP ----
+        "http_get" => {
+            let url = str_arg(&args[0]);
+            Ok(IrValue::Str(http_request("GET", &url, "")))
+        }
+        "http_post" => {
+            let url = str_arg(&args[0]);
+            let body = str_arg(&args[1]);
+            Ok(IrValue::Str(http_request("POST", &url, &body)))
+        }
+        // ---- JSON ----
+        "json_parse" => {
+            let s = str_arg(&args[0]);
+            match serde_json::from_str::<serde_json::Value>(&s) {
+                Ok(v) => Ok(json_to_irvalue(&v)),
+                Err(_) => Ok(IrValue::Str("null".into())),
+            }
+        }
+        "json_stringify" => {
+            let v = &args[0];
+            Ok(IrValue::Str(irvalue_to_json(v)))
+        }
+        // ---- Set (list-backed) ----
+        "set_new" => {
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+        }
+        "set_add" => {
+            if let IrValue::List(rc) = &args[0] {
+                let mut list = rc.borrow_mut();
+                let item = &args[1];
+                if !list.iter().any(|x| irvalue_eq(x, item)) {
+                    list.push(item.clone());
+                }
+            }
+            Ok(args[0].clone())
+        }
+        "set_contains" => {
+            if let IrValue::List(rc) = &args[0] {
+                let list = rc.borrow();
+                let item = &args[1];
+                Ok(IrValue::Bool(list.iter().any(|x| irvalue_eq(x, item))))
+            } else {
+                Ok(IrValue::Bool(false))
+            }
+        }
+        "set_remove" => {
+            if let IrValue::List(rc) = &args[0] {
+                let mut list = rc.borrow_mut();
+                let item = &args[1];
+                list.retain(|x| !irvalue_eq(x, item));
+            }
+            Ok(args[0].clone())
+        }
+        "set_len" => {
+            if let IrValue::List(rc) = &args[0] {
+                Ok(IrValue::I64(rc.borrow().len() as i64))
+            } else {
+                Ok(IrValue::I64(0))
+            }
+        }
+        "set_to_list" => {
+            Ok(args[0].clone())
+        }
+        // ---- Regex ----
+        "regex_match" => {
+            let pattern = str_arg(&args[0]);
+            let text = str_arg(&args[1]);
+            Ok(IrValue::Bool(simple_regex_match(&pattern, &text)))
+        }
+        "regex_find_all" => {
+            let pattern = str_arg(&args[0]);
+            let text = str_arg(&args[1]);
+            let matches = simple_regex_find_all(&pattern, &text);
+            let list: Vec<IrValue> = matches.into_iter().map(IrValue::Str).collect();
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(list))))
+        }
+        "regex_replace" => {
+            let pattern = str_arg(&args[0]);
+            let text = str_arg(&args[1]);
+            let replacement = str_arg(&args[2]);
+            Ok(IrValue::Str(simple_regex_replace(&pattern, &text, &replacement)))
+        }
+        // ---- DateTime ----
+        "datetime_now" => {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let s = secs as i64;
+            let (y, m, d) = days_to_ymd(s / 86400);
+            let time_of_day = s % 86400;
+            Ok(IrValue::Str(format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z",
+                y, m, d, time_of_day / 3600, (time_of_day % 3600) / 60, time_of_day % 60)))
+        }
+        "datetime_timestamp" => {
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs() as f64).unwrap_or(0.0);
+            Ok(IrValue::F64(secs))
+        }
+        "datetime_format" => {
+            let fmt = str_arg(&args[0]);
+            use std::time::{SystemTime, UNIX_EPOCH};
+            let secs = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let s = secs as i64;
+            let (y, mo, da) = days_to_ymd(s / 86400);
+            let tod = s % 86400;
+            let out = fmt.replace("%Y", &format!("{:04}", y))
+                .replace("%m", &format!("{:02}", mo))
+                .replace("%d", &format!("{:02}", da))
+                .replace("%H", &format!("{:02}", tod / 3600))
+                .replace("%M", &format!("{:02}", (tod % 3600) / 60))
+                .replace("%S", &format!("{:02}", tod % 60));
+            Ok(IrValue::Str(out))
+        }
+        // ---- OS / Path ----
+        "cwd" => {
+            Ok(IrValue::Str(std::env::current_dir().map(|p| p.display().to_string()).unwrap_or_default()))
+        }
+        "listdir" => {
+            let path = str_arg(&args[0]);
+            let entries: Vec<IrValue> = std::fs::read_dir(&path)
+                .into_iter().flatten()
+                .filter_map(|e| e.ok().map(|e| IrValue::Str(e.file_name().to_string_lossy().into_owned())))
+                .collect();
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(entries))))
+        }
+        "path_join" => {
+            let a = str_arg(&args[0]);
+            let b = str_arg(&args[1]);
+            Ok(IrValue::Str(std::path::PathBuf::from(&a).join(&b).display().to_string()))
+        }
+        "path_exists" => {
+            let p = str_arg(&args[0]);
+            Ok(IrValue::Bool(std::path::Path::new(&p).exists()))
+        }
+        "mkdir" => {
+            let p = str_arg(&args[0]);
+            Ok(IrValue::Bool(std::fs::create_dir_all(&p).is_ok()))
+        }
+        "remove_file" => {
+            let p = str_arg(&args[0]);
+            Ok(IrValue::Bool(std::fs::remove_file(&p).is_ok()))
+        }
+        // ---- Type introspection ----
+        "type_of" => {
+            let t = match &args[0] {
+                IrValue::I64(_) => "int", IrValue::I32(_) => "i32",
+                IrValue::F64(_) => "float", IrValue::F32(_) => "f32",
+                IrValue::Bool(_) => "bool", IrValue::Str(_) => "str",
+                IrValue::List(_) => "list", IrValue::Map(_) => "map",
+                IrValue::Tuple(_) => "tuple", IrValue::Struct(_) => "struct",
+                IrValue::Enum(_, _) => "enum", IrValue::Array(_) => "array",
+                IrValue::Tensor(_, _) => "tensor", IrValue::Closure { .. } => "closure",
+                IrValue::OptionVal(_) => "option", IrValue::ResultVal(_) => "result",
+                IrValue::Chan(_) => "chan", IrValue::Atomic(_) => "atomic",
+                IrValue::Unit => "unit", IrValue::Grad { .. } => "grad",
+                IrValue::Sparse(_) => "sparse",
+            };
+            Ok(IrValue::Str(t.to_string()))
+        }
+        // ---- Random ----
+        "random" => {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            thread_local! {
+                static SEED: std::cell::Cell<u64> = std::cell::Cell::new(
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64).unwrap_or(42)
+                );
+            }
+            let val = SEED.with(|s| {
+                let mut h = DefaultHasher::new();
+                s.get().hash(&mut h);
+                let next = h.finish();
+                s.set(next);
+                (next >> 11) as f64 / (1u64 << 53) as f64
+            });
+            Ok(IrValue::F64(val))
+        }
+        "random_range" => {
+            let lo = i64_arg(&args[0]);
+            let hi = i64_arg(&args[1]);
+            if hi <= lo { return Ok(IrValue::I64(lo)); }
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            thread_local! {
+                static SEED2: std::cell::Cell<u64> = std::cell::Cell::new(
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64).unwrap_or(99)
+                );
+            }
+            let val = SEED2.with(|s| {
+                let mut h = DefaultHasher::new();
+                s.get().hash(&mut h);
+                let next = h.finish();
+                s.set(next);
+                lo + (next % (hi - lo) as u64) as i64
+            });
+            Ok(IrValue::I64(val))
+        }
+        // ---- Hash ----
+        "hash" => {
+            let s = str_arg(&args[0]);
+            let mut h: u64 = 5381;
+            for b in s.bytes() { h = h.wrapping_mul(33).wrapping_add(b as u64); }
+            Ok(IrValue::I64(h as i64))
+        }
+        // ---- Base64 ----
+        "base64_encode" => {
+            let s = str_arg(&args[0]);
+            Ok(IrValue::Str(base64_encode(s.as_bytes())))
+        }
+        "base64_decode" => {
+            let s = str_arg(&args[0]);
+            Ok(IrValue::Str(base64_decode(&s)))
+        }
+        // ---- String extras ----
+        "char_at" => {
+            let s = str_arg(&args[0]);
+            let idx = i64_arg(&args[1]) as usize;
+            Ok(IrValue::Str(s.chars().nth(idx).map(|c| c.to_string()).unwrap_or_default()))
+        }
+        "str_reverse" => {
+            let s = str_arg(&args[0]);
+            Ok(IrValue::Str(s.chars().rev().collect()))
+        }
+
+        // ====================================================================
+        // Phase 105 builtins
+        // ====================================================================
+
+        // ---- Async/Concurrency extensions ----
+        "chan_try_recv" => {
+            if let IrValue::Chan(rc) = &args[0] {
+                let mut q = rc.borrow_mut();
+                match q.pop_front() {
+                    Some(v) => Ok(IrValue::OptionVal(Some(Box::new(v)))),
+                    None => Ok(IrValue::OptionVal(None)),
+                }
+            } else {
+                Ok(IrValue::OptionVal(None))
+            }
+        }
+        "chan_len" => {
+            if let IrValue::Chan(rc) = &args[0] {
+                Ok(IrValue::I64(rc.borrow().len() as i64))
+            } else {
+                Ok(IrValue::I64(0))
+            }
+        }
+        "select" => {
+            // select(chan1, chan2, ...) → index of the first non-empty channel, or -1
+            for (i, arg) in args.iter().enumerate() {
+                if let IrValue::Chan(rc) = arg {
+                    if !rc.borrow().is_empty() {
+                        return Ok(IrValue::I64(i as i64));
+                    }
+                }
+            }
+            Ok(IrValue::I64(-1))
+        }
+        "timeout" => {
+            // timeout(ms) → always true in single-threaded interp (sleep then return)
+            let ms = i64_arg(&args[0]);
+            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+            Ok(IrValue::Bool(true))
+        }
+        "thread_count" => {
+            Ok(IrValue::I64(std::thread::available_parallelism().map(|n| n.get() as i64).unwrap_or(1)))
+        }
+
+        // ---- Deque (double-ended queue, backed by VecDeque stored as List) ----
+        "deque_new" => {
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+        }
+        "deque_push_front" => {
+            if let IrValue::List(rc) = &args[0] {
+                let mut v = rc.borrow_mut();
+                v.insert(0, args[1].clone());
+            }
+            Ok(args[0].clone())
+        }
+        "deque_push_back" => {
+            if let IrValue::List(rc) = &args[0] {
+                rc.borrow_mut().push(args[1].clone());
+            }
+            Ok(args[0].clone())
+        }
+        "deque_pop_front" => {
+            if let IrValue::List(rc) = &args[0] {
+                let mut v = rc.borrow_mut();
+                if !v.is_empty() { return Ok(v.remove(0)); }
+            }
+            Ok(IrValue::Unit)
+        }
+        "deque_pop_back" => {
+            if let IrValue::List(rc) = &args[0] {
+                let mut v = rc.borrow_mut();
+                if let Some(val) = v.pop() { return Ok(val); }
+            }
+            Ok(IrValue::Unit)
+        }
+        "deque_len" => {
+            if let IrValue::List(rc) = &args[0] {
+                Ok(IrValue::I64(rc.borrow().len() as i64))
+            } else { Ok(IrValue::I64(0)) }
+        }
+        "deque_front" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                if let Some(val) = v.first() { return Ok(val.clone()); }
+            }
+            Ok(IrValue::Unit)
+        }
+        "deque_back" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                if let Some(val) = v.last() { return Ok(val.clone()); }
+            }
+            Ok(IrValue::Unit)
+        }
+
+        // ---- Sorted collection helpers ----
+        "sorted_keys" => {
+            if let IrValue::Map(rc) = &args[0] {
+                let m = rc.borrow();
+                let mut keys: Vec<String> = m.keys().cloned().collect();
+                keys.sort();
+                let list: Vec<IrValue> = keys.into_iter().map(IrValue::Str).collect();
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(list))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+
+        // ---- BitSet (backed by list of i64 as bit-words) ----
+        "bitset_new" => {
+            // Create an empty bitset (list of i64 words, each holding 64 bits)
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+        }
+        "bitset_set" => {
+            if let IrValue::List(rc) = &args[0] {
+                let bit = i64_arg(&args[1]) as usize;
+                let word_idx = bit / 64;
+                let bit_idx = bit % 64;
+                let mut v = rc.borrow_mut();
+                while v.len() <= word_idx { v.push(IrValue::I64(0)); }
+                if let IrValue::I64(w) = &v[word_idx] {
+                    v[word_idx] = IrValue::I64(w | (1i64 << bit_idx));
+                }
+            }
+            Ok(args[0].clone())
+        }
+        "bitset_get" => {
+            if let IrValue::List(rc) = &args[0] {
+                let bit = i64_arg(&args[1]) as usize;
+                let word_idx = bit / 64;
+                let bit_idx = bit % 64;
+                let v = rc.borrow();
+                if word_idx < v.len() {
+                    if let IrValue::I64(w) = &v[word_idx] {
+                        return Ok(IrValue::Bool((w >> bit_idx) & 1 == 1));
+                    }
+                }
+            }
+            Ok(IrValue::Bool(false))
+        }
+        "bitset_count" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let count: u32 = v.iter().map(|x| match x { IrValue::I64(w) => w.count_ones(), _ => 0 }).sum();
+                Ok(IrValue::I64(count as i64))
+            } else { Ok(IrValue::I64(0)) }
+        }
+        "bitset_clear" => {
+            if let IrValue::List(rc) = &args[0] {
+                let bit = i64_arg(&args[1]) as usize;
+                let word_idx = bit / 64;
+                let bit_idx = bit % 64;
+                let mut v = rc.borrow_mut();
+                if word_idx < v.len() {
+                    if let IrValue::I64(w) = &v[word_idx] {
+                        v[word_idx] = IrValue::I64(w & !(1i64 << bit_idx));
+                    }
+                }
+            }
+            Ok(args[0].clone())
+        }
+
+        // ---- FFI (dynamic library loading) ----
+        "ffi_open" => {
+            // ffi_open(path) -> handle (i64), -1 on error
+            let _path = str_arg(&args[0]);
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(_path.as_bytes()).unwrap_or_default();
+                let h = unsafe { winapi_LoadLibraryA(cs.as_ptr()) };
+                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                Ok(IrValue::I64(h as i64))
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(_path.as_bytes()).unwrap_or_default();
+                let h = unsafe { libc_dlopen(cs.as_ptr(), 1) }; // RTLD_LAZY = 1
+                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                Ok(IrValue::I64(h as i64))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::I64(-1))
+            }
+        }
+        "ffi_call" => {
+            // ffi_call(handle, func_name, arg1...) -> i64
+            // Simplified: calls a function that takes no args and returns i64
+            let _handle = i64_arg(&args[0]);
+            let _func_name = str_arg(&args[1]);
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(_func_name.as_bytes()).unwrap_or_default();
+                let proc = unsafe { winapi_GetProcAddress(_handle as *mut u8, cs.as_ptr()) };
+                if proc.is_null() { return Ok(IrValue::I64(-1)); }
+                let f: extern "C" fn() -> i64 = unsafe { std::mem::transmute(proc) };
+                Ok(IrValue::I64(f()))
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(_func_name.as_bytes()).unwrap_or_default();
+                let sym = unsafe { libc_dlsym(_handle as *mut u8, cs.as_ptr()) };
+                if sym.is_null() { return Ok(IrValue::I64(-1)); }
+                let f: extern "C" fn() -> i64 = unsafe { std::mem::transmute(sym) };
+                Ok(IrValue::I64(f()))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::I64(-1))
+            }
+        }
+        "ffi_close" => {
+            let _handle = i64_arg(&args[0]);
+            #[cfg(windows)]
+            {
+                let r = unsafe { winapi_FreeLibrary(_handle as *mut u8) };
+                Ok(IrValue::Bool(r != 0))
+            }
+            #[cfg(unix)]
+            {
+                let r = unsafe { libc_dlclose(_handle as *mut u8) };
+                Ok(IrValue::Bool(r == 0))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::Bool(false))
+            }
+        }
+
+        // ---- Expanded FFI: C with typed arguments ----
+        "ffi_call_i64" | "ffi_call_f64" | "ffi_call_str" | "ffi_call_void" | "ffi_call_args" => {
+            // ffi_call_i64(handle, func_name, arg1, arg2, ...) -> i64/f64/str
+            // Supports up to 6 i64 arguments via transmuted function pointers.
+            let _handle = i64_arg(&args[0]);
+            let _func_name = str_arg(&args[1]);
+            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+
+            let result_raw: i64;
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(_func_name.as_bytes()).unwrap_or_default();
+                let proc = unsafe { winapi_GetProcAddress(_handle as *mut u8, cs.as_ptr()) };
+                if proc.is_null() {
+                    return match name {
+                        "ffi_call_str" => Ok(IrValue::Str(String::new())),
+                        "ffi_call_f64" => Ok(IrValue::F64(0.0)),
+                        _ => Ok(IrValue::I64(-1)),
+                    };
+                }
+                result_raw = unsafe { ffi_dispatch_call(proc, &extra_args) };
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(_func_name.as_bytes()).unwrap_or_default();
+                let sym = unsafe { libc_dlsym(_handle as *mut u8, cs.as_ptr()) };
+                if sym.is_null() {
+                    return match name {
+                        "ffi_call_str" => Ok(IrValue::Str(String::new())),
+                        "ffi_call_f64" => Ok(IrValue::F64(0.0)),
+                        _ => Ok(IrValue::I64(-1)),
+                    };
+                }
+                result_raw = unsafe { ffi_dispatch_call(sym, &extra_args) };
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                result_raw = -1;
+            }
+
+            match name {
+                "ffi_call_f64" => Ok(IrValue::F64(f64::from_bits(result_raw as u64))),
+                "ffi_call_str" => {
+                    // Interpret return as a *const c_char pointer
+                    if result_raw == 0 {
+                        Ok(IrValue::Str(String::new()))
+                    } else {
+                        let cstr = unsafe { std::ffi::CStr::from_ptr(result_raw as *const i8) };
+                        Ok(IrValue::Str(cstr.to_string_lossy().to_string()))
+                    }
+                }
+                "ffi_call_void" => Ok(IrValue::I64(0)),
+                _ => Ok(IrValue::I64(result_raw)),
+            }
+        }
+
+        // ---- Python FFI ----
+        "python_eval" => {
+            // python_eval(code_str) -> str (stdout from python -c "print(<code>)")
+            let code = str_arg(&args[0]);
+            let output = std::process::Command::new("python3")
+                .args(&["-c", &format!("import sys; sys.stdout.write(str({}))", code)])
+                .output()
+                .or_else(|_| std::process::Command::new("python")
+                    .args(&["-c", &format!("import sys; sys.stdout.write(str({}))", code)])
+                    .output());
+            match output {
+                Ok(o) => Ok(IrValue::Str(String::from_utf8_lossy(&o.stdout).to_string())),
+                Err(_) => Ok(IrValue::Str("error: python not found".to_owned())),
+            }
+        }
+        "python_exec" => {
+            // python_exec(script_path_or_code) -> exit code
+            let code = str_arg(&args[0]);
+            let result = if std::path::Path::new(&code).exists() {
+                std::process::Command::new("python3")
+                    .arg(&code)
+                    .status()
+                    .or_else(|_| std::process::Command::new("python").arg(&code).status())
+            } else {
+                std::process::Command::new("python3")
+                    .args(&["-c", &code])
+                    .status()
+                    .or_else(|_| std::process::Command::new("python").args(&["-c", &code]).status())
+            };
+            match result {
+                Ok(s) => Ok(IrValue::I64(s.code().unwrap_or(-1) as i64)),
+                Err(_) => Ok(IrValue::I64(-1)),
+            }
+        }
+        "python_call" => {
+            // python_call(module_or_script, func_name, arg1, arg2, ...) -> str
+            let module = str_arg(&args[0]);
+            let func = str_arg(&args[1]);
+            let py_args: Vec<String> = args[2..].iter().map(|a| match a {
+                IrValue::Str(s) => format!("'{}'", s.replace('\'', "\\'")),
+                IrValue::I64(n) => n.to_string(),
+                IrValue::F64(f) => f.to_string(),
+                IrValue::Bool(b) => (if *b { "True" } else { "False" }).to_owned(),
+                _ => "None".to_owned(),
+            }).collect();
+            let py_code = if std::path::Path::new(&module).exists() {
+                // It's a script file — import as module
+                let mod_name = std::path::Path::new(&module)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("mod");
+                format!(
+                    "import sys, importlib.util; \
+                     spec = importlib.util.spec_from_file_location('{}', '{}'); \
+                     mod = importlib.util.module_from_spec(spec); \
+                     spec.loader.exec_module(mod); \
+                     print(mod.{}({}))",
+                    mod_name, module.replace('\\', "\\\\"),
+                    func, py_args.join(", ")
+                )
+            } else {
+                format!("import {}; print({}.{}({}))", module, module, func, py_args.join(", "))
+            };
+            let output = std::process::Command::new("python3")
+                .args(&["-c", &py_code])
+                .output()
+                .or_else(|_| std::process::Command::new("python")
+                    .args(&["-c", &py_code])
+                    .output());
+            match output {
+                Ok(o) => {
+                    let stdout = String::from_utf8_lossy(&o.stdout).trim().to_owned();
+                    let stderr = String::from_utf8_lossy(&o.stderr).trim().to_owned();
+                    if !stderr.is_empty() && stdout.is_empty() {
+                        Ok(IrValue::Str(format!("error: {}", stderr)))
+                    } else {
+                        Ok(IrValue::Str(stdout))
+                    }
+                }
+                Err(_) => Ok(IrValue::Str("error: python not found".to_owned())),
+            }
+        }
+        "python_version" => {
+            let output = std::process::Command::new("python3")
+                .arg("--version")
+                .output()
+                .or_else(|_| std::process::Command::new("python").arg("--version").output());
+            match output {
+                Ok(o) => Ok(IrValue::Str(String::from_utf8_lossy(&o.stdout).trim().to_owned())),
+                Err(_) => Ok(IrValue::Str("Python not found".to_owned())),
+            }
+        }
+
+        // ---- Rust FFI (cdylib — same mechanism as C FFI via dlopen) ----
+        "rust_lib_open" => {
+            // Alias for ffi_open — open a Rust cdylib (.dll / .so / .dylib)
+            let path = str_arg(&args[0]);
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(path.as_bytes()).unwrap_or_default();
+                let h = unsafe { winapi_LoadLibraryA(cs.as_ptr()) };
+                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                Ok(IrValue::I64(h as i64))
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(path.as_bytes()).unwrap_or_default();
+                let h = unsafe { libc_dlopen(cs.as_ptr(), 1) };
+                if h.is_null() { return Ok(IrValue::I64(-1)); }
+                Ok(IrValue::I64(h as i64))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::I64(-1))
+            }
+        }
+        "rust_call_i64" => {
+            // rust_call_i64(handle, func_name, arg1, ...) -> i64
+            let handle = i64_arg(&args[0]);
+            let func_name = str_arg(&args[1]);
+            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
+                let proc = unsafe { winapi_GetProcAddress(handle as *mut u8, cs.as_ptr()) };
+                if proc.is_null() { return Ok(IrValue::I64(-1)); }
+                Ok(IrValue::I64(unsafe { ffi_dispatch_call(proc, &extra_args) }))
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
+                let sym = unsafe { libc_dlsym(handle as *mut u8, cs.as_ptr()) };
+                if sym.is_null() { return Ok(IrValue::I64(-1)); }
+                Ok(IrValue::I64(unsafe { ffi_dispatch_call(sym, &extra_args) }))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::I64(-1))
+            }
+        }
+        "rust_call_f64" => {
+            let handle = i64_arg(&args[0]);
+            let func_name = str_arg(&args[1]);
+            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
+                let proc = unsafe { winapi_GetProcAddress(handle as *mut u8, cs.as_ptr()) };
+                if proc.is_null() { return Ok(IrValue::F64(0.0)); }
+                let raw = unsafe { ffi_dispatch_call(proc, &extra_args) };
+                Ok(IrValue::F64(f64::from_bits(raw as u64)))
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
+                let sym = unsafe { libc_dlsym(handle as *mut u8, cs.as_ptr()) };
+                if sym.is_null() { return Ok(IrValue::F64(0.0)); }
+                let raw = unsafe { ffi_dispatch_call(sym, &extra_args) };
+                Ok(IrValue::F64(f64::from_bits(raw as u64)))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::F64(0.0))
+            }
+        }
+        "rust_call_void" => {
+            let handle = i64_arg(&args[0]);
+            let func_name = str_arg(&args[1]);
+            let extra_args: Vec<i64> = args[2..].iter().map(|a| i64_arg(a)).collect();
+            #[cfg(windows)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
+                let proc = unsafe { winapi_GetProcAddress(handle as *mut u8, cs.as_ptr()) };
+                if !proc.is_null() { unsafe { ffi_dispatch_call(proc, &extra_args); } }
+                Ok(IrValue::I64(0))
+            }
+            #[cfg(unix)]
+            {
+                use std::ffi::CString;
+                let cs = CString::new(func_name.as_bytes()).unwrap_or_default();
+                let sym = unsafe { libc_dlsym(handle as *mut u8, cs.as_ptr()) };
+                if !sym.is_null() { unsafe { ffi_dispatch_call(sym, &extra_args); } }
+                Ok(IrValue::I64(0))
+            }
+            #[cfg(not(any(windows, unix)))]
+            {
+                Ok(IrValue::I64(0))
+            }
+        }
+
+        // ---- OS / System ----
+        "env_get" => {
+            let key = str_arg(&args[0]);
+            Ok(IrValue::Str(std::env::var(&key).unwrap_or_default()))
+        }
+        "env_set" => {
+            let key = str_arg(&args[0]);
+            let val = str_arg(&args[1]);
+            unsafe { std::env::set_var(&key, &val); }
+            Ok(IrValue::Bool(true))
+        }
+        "exit_code" => {
+            let code = i64_arg(&args[0]);
+            std::process::exit(code as i32);
+        }
+        "exec_cmd" => {
+            let cmd = str_arg(&args[0]);
+            #[cfg(windows)]
+            let output = std::process::Command::new("cmd").args(["/C", &cmd]).output();
+            #[cfg(not(windows))]
+            let output = std::process::Command::new("sh").args(["-c", &cmd]).output();
+            match output {
+                Ok(o) => Ok(IrValue::Str(String::from_utf8_lossy(&o.stdout).to_string())),
+                Err(_) => Ok(IrValue::Str(String::new())),
+            }
+        }
+        "pid" => {
+            Ok(IrValue::I64(std::process::id() as i64))
+        }
+
+        // ---- Crypto / UUID ----
+        "uuid" => {
+            // Generate a v4-like UUID using hash-based RNG
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+            thread_local! {
+                static UUID_SEED: std::cell::Cell<u64> = std::cell::Cell::new(
+                    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos() as u64).unwrap_or(1234) ^ 0xDEADBEEF
+                );
+            }
+            let (a, b) = UUID_SEED.with(|s| {
+                let mut h = DefaultHasher::new();
+                s.get().hash(&mut h);
+                let v1 = h.finish();
+                s.set(v1);
+                let mut h2 = DefaultHasher::new();
+                v1.hash(&mut h2);
+                let v2 = h2.finish();
+                s.set(v2);
+                (v1, v2)
+            });
+            // Format as UUID v4
+            let a = (a & 0xFFFFFFFFFFFF0FFF) | 0x4000; // version 4
+            let b = (b & 0x3FFFFFFFFFFFFFFF) | 0x8000000000000000; // variant 1
+            Ok(IrValue::Str(format!(
+                "{:08x}-{:04x}-{:04x}-{:04x}-{:012x}",
+                (a >> 32) as u32,
+                ((a >> 16) & 0xFFFF) as u16,
+                (a & 0xFFFF) as u16,
+                ((b >> 48) & 0xFFFF) as u16,
+                b & 0xFFFFFFFFFFFF
+            )))
+        }
+        "sha256" => {
+            // Minimal SHA-256 implementation
+            let input = str_arg(&args[0]);
+            Ok(IrValue::Str(sha256_hash(input.as_bytes())))
+        }
+        "hex_encode" => {
+            let s = str_arg(&args[0]);
+            Ok(IrValue::Str(s.bytes().map(|b| format!("{:02x}", b)).collect()))
+        }
+        "hex_decode" => {
+            let s = str_arg(&args[0]);
+            let bytes: Vec<u8> = (0..s.len())
+                .step_by(2)
+                .filter_map(|i| u8::from_str_radix(&s[i..i.min(s.len()-1)+2.min(s.len()-i)], 16).ok())
+                .collect();
+            Ok(IrValue::Str(String::from_utf8_lossy(&bytes).to_string()))
+        }
+
+        // ---- String extras (Phase 105) ----
+        "str_pad_left" => {
+            let s = str_arg(&args[0]);
+            let width = i64_arg(&args[1]) as usize;
+            let pad = str_arg(&args[2]);
+            let pad_char = pad.chars().next().unwrap_or(' ');
+            let cur_len = s.chars().count();
+            if cur_len >= width { Ok(IrValue::Str(s)) }
+            else {
+                let padding: String = std::iter::repeat(pad_char).take(width - cur_len).collect();
+                Ok(IrValue::Str(format!("{}{}", padding, s)))
+            }
+        }
+        "str_pad_right" => {
+            let s = str_arg(&args[0]);
+            let width = i64_arg(&args[1]) as usize;
+            let pad = str_arg(&args[2]);
+            let pad_char = pad.chars().next().unwrap_or(' ');
+            let cur_len = s.chars().count();
+            if cur_len >= width { Ok(IrValue::Str(s)) }
+            else {
+                let padding: String = std::iter::repeat(pad_char).take(width - cur_len).collect();
+                Ok(IrValue::Str(format!("{}{}", s, padding)))
+            }
+        }
+        "str_chars" => {
+            let s = str_arg(&args[0]);
+            let chars: Vec<IrValue> = s.chars().map(|c| IrValue::Str(c.to_string())).collect();
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(chars))))
+        }
+        "str_bytes" => {
+            let s = str_arg(&args[0]);
+            let bytes: Vec<IrValue> = s.bytes().map(|b| IrValue::I64(b as i64)).collect();
+            Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(bytes))))
+        }
+        "str_count" => {
+            let s = str_arg(&args[0]);
+            let sub = str_arg(&args[1]);
+            Ok(IrValue::I64(s.matches(&sub).count() as i64))
+        }
+
+        // ---- Math constants and predicates ----
+        "math_pi" => Ok(IrValue::F64(std::f64::consts::PI)),
+        "math_e"  => Ok(IrValue::F64(std::f64::consts::E)),
+        "math_inf" => Ok(IrValue::F64(f64::INFINITY)),
+        "is_nan" => {
+            match &args[0] {
+                IrValue::F64(f) => Ok(IrValue::Bool(f.is_nan())),
+                IrValue::F32(f) => Ok(IrValue::Bool(f.is_nan())),
+                _ => Ok(IrValue::Bool(false)),
+            }
+        }
+        "is_inf" => {
+            match &args[0] {
+                IrValue::F64(f) => Ok(IrValue::Bool(f.is_infinite())),
+                IrValue::F32(f) => Ok(IrValue::Bool(f.is_infinite())),
+                _ => Ok(IrValue::Bool(false)),
+            }
+        }
+
+        // ---- Functional list operations ----
+        // list_map, list_filter, list_reduce are handled directly in the
+        // Interpreter::run() method (before this function is called) so they
+        // can invoke closures. If we reach here, it's a programming error.
+        "list_map" | "list_filter" | "list_reduce" => {
+            Err(InterpError::Unsupported {
+                detail: format!("{}: should have been handled at the Interpreter level", name),
+            })
+        }
+        "list_any" => {
+            // list_any(list) → true if any element is truthy
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                Ok(IrValue::Bool(v.iter().any(|x| match x {
+                    IrValue::Bool(b) => *b,
+                    IrValue::I64(n) => *n != 0,
+                    IrValue::Str(s) => !s.is_empty(),
+                    _ => true,
+                })))
+            } else { Ok(IrValue::Bool(false)) }
+        }
+        "list_all" => {
+            // list_all(list) → true if all elements are truthy
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                Ok(IrValue::Bool(v.iter().all(|x| match x {
+                    IrValue::Bool(b) => *b,
+                    IrValue::I64(n) => *n != 0,
+                    IrValue::Str(s) => !s.is_empty(),
+                    _ => true,
+                })))
+            } else { Ok(IrValue::Bool(true)) }
+        }
+        "list_zip" => {
+            // list_zip(list1, list2) → list of tuples
+            if let (IrValue::List(a), IrValue::List(b)) = (&args[0], &args[1]) {
+                let va = a.borrow();
+                let vb = b.borrow();
+                let zipped: Vec<IrValue> = va.iter().zip(vb.iter())
+                    .map(|(x, y)| IrValue::Tuple(vec![x.clone(), y.clone()]))
+                    .collect();
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(zipped))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_enumerate" => {
+            // list_enumerate(list) → list of (index, value) tuples
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let enumerated: Vec<IrValue> = v.iter().enumerate()
+                    .map(|(i, val)| IrValue::Tuple(vec![IrValue::I64(i as i64), val.clone()]))
+                    .collect();
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(enumerated))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_flatten" => {
+            // list_flatten(list<list<T>>) → list<T>
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let mut flat = Vec::new();
+                for item in v.iter() {
+                    if let IrValue::List(inner) = item {
+                        flat.extend(inner.borrow().iter().cloned());
+                    } else {
+                        flat.push(item.clone());
+                    }
+                }
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(flat))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_unique" => {
+            // list_unique(list) → list with duplicates removed
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let mut unique = Vec::new();
+                for item in v.iter() {
+                    if !unique.iter().any(|x| irvalue_eq(x, item)) {
+                        unique.push(item.clone());
+                    }
+                }
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(unique))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_reverse" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let reversed: Vec<IrValue> = v.iter().rev().cloned().collect();
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(reversed))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_sorted" => {
+            // list_sorted(list) → sorted copy (works for i64, f64, str)
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let mut sorted: Vec<IrValue> = v.clone();
+                sorted.sort_by(|a, b| irvalue_cmp(a, b));
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(sorted))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_sum" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let sum: f64 = v.iter().map(|x| match x {
+                    IrValue::I64(n) => *n as f64,
+                    IrValue::F64(f) => *f,
+                    IrValue::I32(n) => *n as f64,
+                    IrValue::F32(f) => *f as f64,
+                    _ => 0.0,
+                }).sum();
+                Ok(IrValue::F64(sum))
+            } else { Ok(IrValue::F64(0.0)) }
+        }
+        "list_min" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                if v.is_empty() { return Ok(IrValue::Unit); }
+                let mut min_val = v[0].clone();
+                for item in v.iter().skip(1) {
+                    if irvalue_cmp(item, &min_val) == std::cmp::Ordering::Less {
+                        min_val = item.clone();
+                    }
+                }
+                Ok(min_val)
+            } else { Ok(IrValue::Unit) }
+        }
+        "list_max" => {
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                if v.is_empty() { return Ok(IrValue::Unit); }
+                let mut max_val = v[0].clone();
+                for item in v.iter().skip(1) {
+                    if irvalue_cmp(item, &max_val) == std::cmp::Ordering::Greater {
+                        max_val = item.clone();
+                    }
+                }
+                Ok(max_val)
+            } else { Ok(IrValue::Unit) }
+        }
+        "list_index_of" => {
+            // list_index_of(list, item) → index or -1
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let needle = &args[1];
+                for (i, item) in v.iter().enumerate() {
+                    if irvalue_eq(item, needle) { return Ok(IrValue::I64(i as i64)); }
+                }
+                Ok(IrValue::I64(-1))
+            } else { Ok(IrValue::I64(-1)) }
+        }
+        "list_count" => {
+            // list_count(list, item) → number of occurrences
+            if let IrValue::List(rc) = &args[0] {
+                let v = rc.borrow();
+                let needle = &args[1];
+                let count = v.iter().filter(|x| irvalue_eq(x, needle)).count();
+                Ok(IrValue::I64(count as i64))
+            } else { Ok(IrValue::I64(0)) }
+        }
+        "list_take" => {
+            // list_take(list, n) → first n elements
+            if let IrValue::List(rc) = &args[0] {
+                let n = i64_arg(&args[1]).max(0) as usize;
+                let v = rc.borrow();
+                let taken: Vec<IrValue> = v.iter().take(n).cloned().collect();
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(taken))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+        "list_drop" => {
+            // list_drop(list, n) → elements after first n
+            if let IrValue::List(rc) = &args[0] {
+                let n = i64_arg(&args[1]).max(0) as usize;
+                let v = rc.borrow();
+                let dropped: Vec<IrValue> = v.iter().skip(n).cloned().collect();
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(dropped))))
+            } else {
+                Ok(IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(Vec::new()))))
+            }
+        }
+
+        _ => Err(InterpError::Unsupported {
+            detail: format!("unknown builtin: {}", name),
+        }),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Builtin helpers
+// ---------------------------------------------------------------------------
+
+fn irvalue_eq(a: &IrValue, b: &IrValue) -> bool {
+    match (a, b) {
+        (IrValue::I64(x), IrValue::I64(y)) => x == y,
+        (IrValue::I32(x), IrValue::I32(y)) => x == y,
+        (IrValue::F64(x), IrValue::F64(y)) => x == y,
+        (IrValue::F32(x), IrValue::F32(y)) => x == y,
+        (IrValue::Bool(x), IrValue::Bool(y)) => x == y,
+        (IrValue::Str(x), IrValue::Str(y)) => x == y,
+        _ => false,
+    }
+}
+
+fn irvalue_cmp(a: &IrValue, b: &IrValue) -> std::cmp::Ordering {
+    match (a, b) {
+        (IrValue::I64(x), IrValue::I64(y)) => x.cmp(y),
+        (IrValue::I32(x), IrValue::I32(y)) => x.cmp(y),
+        (IrValue::F64(x), IrValue::F64(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (IrValue::F32(x), IrValue::F32(y)) => x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal),
+        (IrValue::Str(x), IrValue::Str(y)) => x.cmp(y),
+        (IrValue::Bool(x), IrValue::Bool(y)) => x.cmp(y),
+        _ => std::cmp::Ordering::Equal,
+    }
+}
+
+/// Minimal SHA-256 implementation (pure Rust, no deps)
+fn sha256_hash(data: &[u8]) -> String {
+    const K: [u32; 64] = [
+        0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+        0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+        0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+        0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+        0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+        0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+        0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+        0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+    ];
+    let mut h: [u32; 8] = [
+        0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a,
+        0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+    ];
+    // Padding
+    let bit_len = (data.len() as u64) * 8;
+    let mut msg = data.to_vec();
+    msg.push(0x80);
+    while (msg.len() % 64) != 56 { msg.push(0); }
+    msg.extend_from_slice(&bit_len.to_be_bytes());
+    // Process 512-bit blocks
+    for chunk in msg.chunks(64) {
+        let mut w = [0u32; 64];
+        for i in 0..16 {
+            w[i] = u32::from_be_bytes([chunk[i*4], chunk[i*4+1], chunk[i*4+2], chunk[i*4+3]]);
+        }
+        for i in 16..64 {
+            let s0 = w[i-15].rotate_right(7) ^ w[i-15].rotate_right(18) ^ (w[i-15] >> 3);
+            let s1 = w[i-2].rotate_right(17) ^ w[i-2].rotate_right(19) ^ (w[i-2] >> 10);
+            w[i] = w[i-16].wrapping_add(s0).wrapping_add(w[i-7]).wrapping_add(s1);
+        }
+        let (mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut hh) =
+            (h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7]);
+        for i in 0..64 {
+            let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
+            let ch = (e & f) ^ ((!e) & g);
+            let temp1 = hh.wrapping_add(s1).wrapping_add(ch).wrapping_add(K[i]).wrapping_add(w[i]);
+            let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0.wrapping_add(maj);
+            hh = g; g = f; f = e; e = d.wrapping_add(temp1);
+            d = c; c = b; b = a; a = temp1.wrapping_add(temp2);
+        }
+        h[0] = h[0].wrapping_add(a); h[1] = h[1].wrapping_add(b);
+        h[2] = h[2].wrapping_add(c); h[3] = h[3].wrapping_add(d);
+        h[4] = h[4].wrapping_add(e); h[5] = h[5].wrapping_add(f);
+        h[6] = h[6].wrapping_add(g); h[7] = h[7].wrapping_add(hh);
+    }
+    format!("{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}{:08x}", h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7])
+}
+
+// ---- FFI extern declarations ----
+#[cfg(windows)]
+extern "system" {
+    fn LoadLibraryA(name: *const i8) -> *mut u8;
+    fn GetProcAddress(module: *mut u8, name: *const i8) -> *mut u8;
+    fn FreeLibrary(module: *mut u8) -> i32;
+}
+#[cfg(windows)]
+use self::LoadLibraryA as winapi_LoadLibraryA;
+#[cfg(windows)]
+use self::GetProcAddress as winapi_GetProcAddress;
+#[cfg(windows)]
+use self::FreeLibrary as winapi_FreeLibrary;
+
+#[cfg(unix)]
+extern "C" {
+    fn dlopen(filename: *const i8, flags: i32) -> *mut u8;
+    fn dlsym(handle: *mut u8, symbol: *const i8) -> *mut u8;
+    fn dlclose(handle: *mut u8) -> i32;
+}
+#[cfg(unix)]
+use self::dlopen as libc_dlopen;
+#[cfg(unix)]
+use self::dlsym as libc_dlsym;
+#[cfg(unix)]
+use self::dlclose as libc_dlclose;
+
+fn json_to_irvalue(v: &serde_json::Value) -> IrValue {
+    match v {
+        serde_json::Value::Null => IrValue::Str("null".into()),
+        serde_json::Value::Bool(b) => IrValue::Bool(*b),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() { IrValue::I64(i) }
+            else { IrValue::F64(n.as_f64().unwrap_or(0.0)) }
+        }
+        serde_json::Value::String(s) => IrValue::Str(s.clone()),
+        serde_json::Value::Array(arr) => {
+            let items: Vec<IrValue> = arr.iter().map(json_to_irvalue).collect();
+            IrValue::List(std::rc::Rc::new(std::cell::RefCell::new(items)))
+        }
+        serde_json::Value::Object(obj) => {
+            let mut map = std::collections::HashMap::new();
+            for (k, v) in obj { map.insert(k.clone(), json_to_irvalue(v)); }
+            IrValue::Map(std::rc::Rc::new(std::cell::RefCell::new(map)))
+        }
+    }
+}
+
+fn irvalue_to_json(v: &IrValue) -> String {
+    match v {
+        IrValue::I64(n) => n.to_string(),
+        IrValue::I32(n) => n.to_string(),
+        IrValue::F64(f) => format!("{}", f),
+        IrValue::F32(f) => format!("{}", f),
+        IrValue::Bool(b) => if *b { "true".into() } else { "false".into() },
+        IrValue::Str(s) => format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\"")),
+        IrValue::List(rc) => {
+            let items: Vec<String> = rc.borrow().iter().map(irvalue_to_json).collect();
+            format!("[{}]", items.join(","))
+        }
+        IrValue::Map(rc) => {
+            let pairs: Vec<String> = rc.borrow().iter()
+                .map(|(k, v)| format!("\"{}\":{}", k.replace('\\', "\\\\").replace('"', "\\\""), irvalue_to_json(v)))
+                .collect();
+            format!("{{{}}}", pairs.join(","))
+        }
+        _ => "null".into(),
+    }
+}
+
+fn http_request(method: &str, url: &str, body: &str) -> String {
+    let url_trimmed = url.strip_prefix("http://").unwrap_or(url);
+    let (hostport, path) = match url_trimmed.find('/') {
+        Some(i) => (&url_trimmed[..i], &url_trimmed[i..]),
+        None => (url_trimmed, "/"),
+    };
+    let (host, port) = match hostport.rfind(':') {
+        Some(i) => (&hostport[..i], hostport[i+1..].parse::<u16>().unwrap_or(80)),
+        None => (hostport, 80u16),
+    };
+    let req = if method == "POST" {
+        format!("{} {} HTTP/1.0\r\nHost: {}\r\nContent-Length: {}\r\nContent-Type: application/x-www-form-urlencoded\r\nConnection: close\r\n\r\n{}",
+            method, path, host, body.len(), body)
+    } else {
+        format!("{} {} HTTP/1.0\r\nHost: {}\r\nConnection: close\r\n\r\n", method, path, host)
+    };
+    use std::io::{Read, Write};
+    match std::net::TcpStream::connect(format!("{}:{}", host, port)) {
+        Ok(mut stream) => {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+            if stream.write_all(req.as_bytes()).is_err() { return String::new(); }
+            let mut resp = String::new();
+            let _ = stream.read_to_string(&mut resp);
+            if let Some(i) = resp.find("\r\n\r\n") { resp[i+4..].to_string() } else { resp }
+        }
+        Err(_) => String::new(),
+    }
+}
+
+fn simple_regex_match(pattern: &str, text: &str) -> bool {
+    let pat = pattern.as_bytes();
+    let txt = text.as_bytes();
+    if pat.first() == Some(&b'^') { return regex_match_here(&pat[1..], txt); }
+    for i in 0..=txt.len() {
+        if regex_match_here(pat, &txt[i..]) { return true; }
+    }
+    false
+}
+
+fn regex_match_here(pat: &[u8], txt: &[u8]) -> bool {
+    if pat.is_empty() { return true; }
+    if pat == b"$" { return txt.is_empty(); }
+    if pat.len() >= 2 && pat[1] == b'*' { return regex_match_star(pat[0], &pat[2..], txt); }
+    if pat.len() >= 2 && pat[1] == b'+' {
+        if txt.is_empty() || (pat[0] != b'.' && pat[0] != txt[0]) { return false; }
+        return regex_match_star(pat[0], &pat[2..], &txt[1..]);
+    }
+    if pat.len() >= 2 && pat[1] == b'?' {
+        if regex_match_here(&pat[2..], txt) { return true; }
+        if !txt.is_empty() && (pat[0] == b'.' || pat[0] == txt[0]) {
+            return regex_match_here(&pat[2..], &txt[1..]);
+        }
+        return false;
+    }
+    if !txt.is_empty() && (pat[0] == b'.' || pat[0] == txt[0]) {
+        return regex_match_here(&pat[1..], &txt[1..]);
+    }
+    false
+}
+
+fn regex_match_star(c: u8, pat: &[u8], txt: &[u8]) -> bool {
+    let mut i = 0;
+    loop {
+        if regex_match_here(pat, &txt[i..]) { return true; }
+        if i >= txt.len() || (c != b'.' && txt[i] != c) { return false; }
+        i += 1;
+    }
+}
+
+fn simple_regex_find_all(pattern: &str, text: &str) -> Vec<String> {
+    let pat = pattern.as_bytes();
+    let txt = text.as_bytes();
+    let mut results = Vec::new();
+    let mut start = 0;
+    while start <= txt.len() {
+        if let Some((ms, me)) = regex_find_at(pat, &txt[start..]) {
+            if me > ms {
+                results.push(String::from_utf8_lossy(&txt[start+ms..start+me]).to_string());
+                start += ms + (me - ms).max(1);
+            } else { start += 1; }
+        } else { break; }
+    }
+    results
+}
+
+fn regex_find_at(pat: &[u8], txt: &[u8]) -> Option<(usize, usize)> {
+    let anchored = pat.first() == Some(&b'^');
+    let p = if anchored { &pat[1..] } else { pat };
+    let limit = if anchored { 1 } else { txt.len() + 1 };
+    for i in 0..limit.min(txt.len() + 1) {
+        for end in i..=txt.len() {
+            if regex_match_exact(p, &txt[i..end]) {
+                return Some((i, end));
+            }
+        }
+    }
+    None
+}
+
+fn regex_match_exact(pat: &[u8], txt: &[u8]) -> bool {
+    if pat.is_empty() { return txt.is_empty(); }
+    if pat == b"$" { return txt.is_empty(); }
+    if pat.len() >= 2 && pat[1] == b'*' {
+        let c = pat[0];
+        for i in 0..=txt.len() {
+            if (i == 0 || c == b'.' || txt[i-1] == c) && regex_match_exact(&pat[2..], &txt[i..]) {
+                return true;
+            }
+            if i < txt.len() && c != b'.' && txt[i] != c { break; }
+        }
+        return false;
+    }
+    if !txt.is_empty() && (pat[0] == b'.' || pat[0] == txt[0]) {
+        return regex_match_exact(&pat[1..], &txt[1..]);
+    }
+    false
+}
+
+fn simple_regex_replace(pattern: &str, text: &str, replacement: &str) -> String {
+    let matches = simple_regex_find_all(pattern, text);
+    let mut result = text.to_string();
+    for m in &matches {
+        if let Some(pos) = result.find(m.as_str()) {
+            result = format!("{}{}{}", &result[..pos], replacement, &result[pos+m.len()..]);
+        }
+    }
+    result
+}
+
+fn days_to_ymd(mut days: i64) -> (i64, i64, i64) {
+    days += 719468;
+    let era = if days >= 0 { days } else { days - 146096 } / 146097;
+    let doe = days - era * 146097;
+    let yoe = (doe - doe/1460 + doe/36524 - doe/146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365*yoe + yoe/4 - yoe/100);
+    let mp = (5*doy + 2) / 153;
+    let d = doy - (153*mp + 2)/5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    (y, m, d)
+}
+
+fn base64_encode(data: &[u8]) -> String {
+    const CHARS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    let mut i = 0;
+    while i < data.len() {
+        let b0 = data[i] as u32;
+        let b1 = if i+1 < data.len() { data[i+1] as u32 } else { 0 };
+        let b2 = if i+2 < data.len() { data[i+2] as u32 } else { 0 };
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(CHARS[((triple >> 18) & 0x3F) as usize] as char);
+        out.push(CHARS[((triple >> 12) & 0x3F) as usize] as char);
+        if i+1 < data.len() { out.push(CHARS[((triple >> 6) & 0x3F) as usize] as char); } else { out.push('='); }
+        if i+2 < data.len() { out.push(CHARS[(triple & 0x3F) as usize] as char); } else { out.push('='); }
+        i += 3;
+    }
+    out
+}
+
+fn base64_decode(s: &str) -> String {
+    const DTABLE: [u8; 128] = {
+        let mut t = [255u8; 128];
+        let mut i = 0u8;
+        while i < 26 { t[(b'A' + i) as usize] = i; i += 1; }
+        i = 0; while i < 26 { t[(b'a' + i) as usize] = 26 + i; i += 1; }
+        i = 0; while i < 10 { t[(b'0' + i) as usize] = 52 + i; i += 1; }
+        t[b'+' as usize] = 62; t[b'/' as usize] = 63;
+        t
+    };
+    let bytes: Vec<u8> = s.bytes().filter(|&b| b != b'=' && b < 128 && DTABLE[b as usize] != 255).collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i + 3 < bytes.len() {
+        let (a, b, c, d) = (DTABLE[bytes[i] as usize] as u32, DTABLE[bytes[i+1] as usize] as u32,
+            DTABLE[bytes[i+2] as usize] as u32, DTABLE[bytes[i+3] as usize] as u32);
+        let triple = (a << 18) | (b << 12) | (c << 6) | d;
+        out.push((triple >> 16) as u8); out.push((triple >> 8) as u8); out.push(triple as u8);
+        i += 4;
+    }
+    if i + 2 < bytes.len() {
+        let (a, b, c) = (DTABLE[bytes[i] as usize] as u32, DTABLE[bytes[i+1] as usize] as u32, DTABLE[bytes[i+2] as usize] as u32);
+        let triple = (a << 18) | (b << 12) | (c << 6);
+        out.push((triple >> 16) as u8); out.push((triple >> 8) as u8);
+    } else if i + 1 < bytes.len() {
+        let (a, b) = (DTABLE[bytes[i] as usize] as u32, DTABLE[bytes[i+1] as usize] as u32);
+        let triple = (a << 18) | (b << 12);
+        out.push((triple >> 16) as u8);
+    }
+    String::from_utf8_lossy(&out).to_string()
 }

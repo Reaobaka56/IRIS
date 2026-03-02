@@ -11,7 +11,7 @@
 #define AppName      "IRIS Language"
 #define AppVersion   "0.2.0"
 #define AppPublisher "IRIS Language Project"
-#define AppURL       "https://github.com/iris-lang/iris"
+#define AppURL       "https://github.com/moon9t/iris"
 #define AppExeName   "iris.exe"
 
 ; ---------------------------------------------------------------------------

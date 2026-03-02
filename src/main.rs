@@ -46,6 +46,12 @@ fn run() {
                 process::exit(1);
             }
         }
+        Ok(ParseArgsResult::Pkg) => {
+            if let Err(e) = iris::pkg::run_pkg_command(&args) {
+                eprintln!("error: {}", e);
+                process::exit(1);
+            }
+        }
         Ok(ParseArgsResult::Args(cli)) => {
             if cli.emit == iris::EmitKind::Binary {
                 let source = std::fs::read_to_string(&cli.path).unwrap_or_default();
@@ -57,7 +63,10 @@ fn run() {
                     }
                 };
                 let output_path = cli.output.unwrap_or_else(|| {
-                    PathBuf::from(format!("iris_out{}", std::env::consts::EXE_SUFFIX))
+                    let stem = cli.path.file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("iris_out");
+                    PathBuf::from(format!("{}{}", stem, std::env::consts::EXE_SUFFIX))
                 });
                 match iris::codegen::build_binary(&module, &output_path) {
                     Ok(path) => {

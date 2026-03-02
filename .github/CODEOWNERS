@@ -1,0 +1,30 @@
+# IRIS Language — Code Owners
+
+# Reference: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Default: all files owned by the maintainer
+
+* @moon9t
+
+# Compiler core
+
+/src/                   @moon9t
+/tests/                 @moon9t
+
+# Standard library
+
+/stdlib/                @moon9t
+
+# VS Code extension
+
+/vscode-iris/           @moon9t
+
+# Build & CI
+
+/Cargo.toml             @moon9t
+/.github/               @moon9t
+
+# Documentation
+
+/BOOK.md                @moon9t
+/README.md              @moon9t

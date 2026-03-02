@@ -1,0 +1,8 @@
+# Add this to lib/linguist/heuristics.yml under the .iris extension
+# Disambiguates IRIS source files from other uses of .iris extension
+
+disambiguations:
+  - extensions: ['.iris']
+    rules:
+      - language: IRIS
+        pattern: '\b(def|val|var|choice|record|bring|when)\b'

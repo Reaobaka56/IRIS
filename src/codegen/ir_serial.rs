@@ -603,6 +603,12 @@ impl Writer {
             IrInstr::SleepMs { result, ms } => {
                 self.u8(0xF3); self.vid(*result); self.vid(*ms);
             }
+            IrInstr::BuiltinCall { result, name, args, result_ty } => {
+                self.u8(0xF4); self.vid(*result); self.str(name);
+                self.u32(args.len() as u32);
+                for a in args { self.vid(*a); }
+                self.ty(result_ty);
+            }
         }
     }
 }
@@ -1040,6 +1046,15 @@ impl<'a> Reader<'a> {
             0xF1 => { let result = self.vid()?; let list_val = self.vid()?; let delim = self.vid()?; IrInstr::StrJoin { result, list_val, delim } }
             0xF2 => { let result = self.vid()?; IrInstr::NowMs { result } }
             0xF3 => { let result = self.vid()?; let ms = self.vid()?; IrInstr::SleepMs { result, ms } }
+            0xF4 => {
+                let result = self.vid()?;
+                let name = self.str()?;
+                let argc = self.u32()? as usize;
+                let mut args = Vec::with_capacity(argc);
+                for _ in 0..argc { args.push(self.vid()?); }
+                let result_ty = self.ty()?;
+                IrInstr::BuiltinCall { result, name, args, result_ty }
+            }
             t => return Err(format!("unknown opcode 0x{:02x}", t)),
         })
     }

@@ -1,0 +1,46 @@
+// src/stdlib/deque.iris -- IRIS standard double-ended queue library
+
+// Create a new deque (uses builtin deque_new).
+pub def deque_create() -> list<i64> {
+    deque_new()
+}
+
+// Push to front.
+pub def push_front(dq: list<i64>, val: i64) -> list<i64> {
+    deque_push_front(dq, val)
+}
+
+// Push to back.
+pub def push_back(dq: list<i64>, val: i64) -> list<i64> {
+    deque_push_back(dq, val)
+}
+
+// Pop from front.
+pub def pop_front(dq: list<i64>) -> i64 {
+    deque_pop_front(dq)
+}
+
+// Pop from back.
+pub def pop_back(dq: list<i64>) -> i64 {
+    deque_pop_back(dq)
+}
+
+// Length.
+pub def len(dq: list<i64>) -> i64 {
+    deque_len(dq)
+}
+
+// Peek front without removing.
+pub def peek_front(dq: list<i64>) -> i64 {
+    deque_front(dq)
+}
+
+// Peek back without removing.
+pub def peek_back(dq: list<i64>) -> i64 {
+    deque_back(dq)
+}
+
+// Check if empty.
+pub def is_empty(dq: list<i64>) -> bool {
+    deque_len(dq) == 0
+}

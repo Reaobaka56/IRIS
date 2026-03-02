@@ -600,6 +600,11 @@ pub enum IrInstr {
     NowMs { result: ValueId },
     /// Sleep for the given number of milliseconds. Side-effecting; returns i64 (0).
     SleepMs { result: ValueId, ms: ValueId },
+
+    // ---- Phase 104: Generic builtin call for new runtime functions ----
+    /// Calls a named runtime builtin with arbitrary arguments.
+    /// Used for HTTP, JSON, Set, Regex, DateTime, OS, type_of, random, hash, etc.
+    BuiltinCall { result: ValueId, name: String, args: Vec<ValueId>, result_ty: IrType },
 }
 
 impl IrInstr {
@@ -730,6 +735,7 @@ impl IrInstr {
             IrInstr::StrJoin { result, .. } => Some(*result),
             IrInstr::NowMs { result } => Some(*result),
             IrInstr::SleepMs { result, .. } => Some(*result),
+            IrInstr::BuiltinCall { result, .. } => Some(*result),
         }
     }
 
@@ -903,6 +909,7 @@ impl IrInstr {
             IrInstr::StrJoin { list_val, delim, .. } => vec![*list_val, *delim],
             IrInstr::NowMs { .. } => vec![],
             IrInstr::SleepMs { ms, .. } => vec![*ms],
+            IrInstr::BuiltinCall { args, .. } => args.clone(),
         }
     }
 }

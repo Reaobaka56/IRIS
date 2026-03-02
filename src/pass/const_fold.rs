@@ -643,5 +643,6 @@ fn apply_reps(instr: &mut IrInstr, reps: &HashMap<ValueId, ValueId>) {
         IrInstr::DbExec { db, sql, .. } => { replace(db); replace(sql); }
         IrInstr::DbQuery { db, sql, .. } => { replace(db); replace(sql); }
         IrInstr::DbClose { db, .. } => { replace(db); }
+        IrInstr::BuiltinCall { args, .. } => { for a in args { replace(a); } }
     }
 }

@@ -1,12 +1,78 @@
-# IRIS — Intermediate Representation Inference System
+# IRIS — Intermediate Representation for Intelligent Systems
 
-IRIS is a compiled, statically-typed ML-focused DSL written in Rust.
-The goal is to be the "C of ML": low-level control, high-level ML ergonomics,
-first-class tensor/gradient/sparsity types, and static safety guarantees for
-parallel training workloads.
+<p align="center">
+  <strong>A compiled, statically-typed systems &amp; ML language written in Rust.</strong><br/>
+  Low-level control. High-level ML ergonomics. First-class tensor, gradient, and sparsity types.
+</p>
 
-Source files use the `.iris` extension and compile through a full pipeline:
-`.iris` → Lexer → Parser → AST → Lowerer → SSA IR → Passes → Codegen/Interpreter
+<p align="center">
+  <a href="https://github.com/moon9t/iris/actions"><img src="https://github.com/moon9t/iris/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/moon9t/iris/releases"><img src="https://img.shields.io/github/v/release/moon9t/iris?label=release" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--2.0--or--later-blue.svg" alt="License"></a>
+</p>
+
+---
+
+## Quick Start
+
+```sh
+# Install (or download from Releases)
+cargo install --path .
+
+# Hello world
+echo 'def main() -> i64 { print("Hello, IRIS!"); 0 }' > hello.iris
+iris run hello.iris
+
+# Build native binary
+iris build hello.iris        # produces hello.exe (Windows) or ./hello
+./hello
+
+# Check compiler version
+iris --version
+```
+
+**Output of `iris --version`:**
+
+```
+iris 0.2.0 (abc1234 2026-03-02)
+IRIS — Intermediate Representation for Intelligent Systems
+Copyright (C) 2024-2026 Moon & IRIS Project Contributors
+License: GPL-2.0-or-later <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>
+
+Compiler:
+  Version:       0.2.0
+  Git commit:    abc1234567890abcdef1234567890abcdef123456
+  Git branch:    main
+  Build date:    2026-03-02
+
+Platform:
+  Target:        x86_64-pc-windows-msvc
+  Host:          x86_64-pc-windows-msvc
+  Thread model:  win32
+
+Build:
+  Profile:       release
+  Opt level:     3
+  Rust edition:  2021
+  Built with:    rustc 1.78.0 (9b00956e5 2024-04-29)
+```
+
+---
+
+## Features at a Glance
+
+| Category | Highlights |
+|----------|-----------|
+| **Type System** | `i32` `i64` `f32` `f64` `bool` `str`, tensors, arrays, tuples, records, enums, generics, traits |
+| **Collections** | `list<T>`, `map<K,V>`, deque, sorted set, bitset, heap, queue |
+| **ML Built-ins** | `tensor<f32,[M,K]>`, `einsum`, `grad<T>` autodiff, `sparse<T>` |
+| **Concurrency** | `channel<T>`, `spawn`, `par for`, `async/await`, `atomic<T>`, `mutex` |
+| **Error Handling** | `option<T>`, `result<T,E>`, `?` operator, pattern matching (`when`) |
+| **FFI** | C FFI (dlopen/dlsym), Python FFI (eval/exec/call), Rust cdylib FFI |
+| **Native Compilation** | LLVM IR → clang → native binary (Windows, Linux, macOS) |
+| **Package Manager** | `iris pkg init/add/remove/install/build/run` |
+| **Tooling** | LSP server, DAP debugger, REPL, VS Code extension |
+| **Standard Library** | 25 modules: math, string, fmt, fs, json, csv, http, crypto, ffi, os, testing, … |
 
 ---
 
@@ -51,46 +117,19 @@ def example() -> i64 {
 ### Control Flow
 
 ```iris
-// if/else (expression)
 val abs_x = if x < 0 { -x } else { x }
 
-// while loop
-while count < 10 {
-    count = count + 1
-}
+while count < 10 { count = count + 1 }
 
-// loop with break / continue
-loop {
-    if done { break }
-}
+for i in 0..n { output[i] = relu(input[i]) }
 
-// for range
-for i in 0..n {
-    output[i] = relu(input[i])
-}
-
-// parallel for
-par for i in 0..n {
-    output[i] = input[i] * 2.0
-}
-
-// early return
-def find(arr: [i64; 10], target: i64) -> i64 {
-    for i in 0..10 {
-        if arr[i] == target { return i }
-    }
-    -1
-}
+par for i in 0..n { output[i] = input[i] * 2.0 }
 ```
 
-### Records and Enums
+### Records, Enums, and Pattern Matching
 
 ```iris
 record Point { x: f64, y: f64 }
-
-def midpoint(a: Point, b: Point) -> Point {
-    Point { x: (a.x + b.x) / 2.0, y: (a.y + b.y) / 2.0 }
-}
 
 choice Shape { Circle, Square, Triangle }
 
@@ -103,11 +142,46 @@ def describe(s: Shape) -> i64 {
 }
 ```
 
-### Tensors and Einsum
+### Closures and Generics
 
 ```iris
-def matmul(a: tensor<f32, [M, K]>, b: tensor<f32, [K, N]>) -> tensor<f32, [M, N]> {
-    einsum("mk,kn->mn", a, b)
+def apply(f: fn(i64) -> i64, x: i64) -> i64 { f(x) }
+
+def double_it() -> i64 {
+    val double = |x: i64| x * 2
+    apply(double, 21)   // 42
+}
+
+def identity[T](x: T) -> T { x }
+```
+
+### Concurrency
+
+```iris
+def main() -> i64 {
+    val ch = channel()
+    spawn { send(ch, 42) }
+    recv(ch)
+}
+```
+
+### FFI (C, Python, Rust)
+
+```iris
+bring std.ffi
+
+def main() -> i64 {
+    // C FFI
+    val lib = ffi_open("libm.so")
+    val result = ffi_call_f64(lib, "sqrt", 144.0)
+
+    // Python FFI
+    val py_result = python_eval("2 ** 10")
+
+    // Rust cdylib FFI
+    val rlib = rust_lib_open("mylib.dll")
+    val n = rust_call_i64(rlib, "compute", 42)
+    0
 }
 ```
 
@@ -118,13 +192,6 @@ def safe_div(a: i64, b: i64) -> option<i64> {
     if b == 0 { none } else { some(a / b) }
 }
 
-def use_result(r: result<i64, str>) -> i64 {
-    when r {
-        ok(v) => v,
-        err(e) => 0,
-    }
-}
-
 // ? operator propagates errors
 def parse_and_add(s: str) -> result<i64, str> {
     val n = parse_i64(s)?
@@ -132,17 +199,14 @@ def parse_and_add(s: str) -> result<i64, str> {
 }
 ```
 
-### Generics and Traits
+### Autodiff and Sparse
 
 ```iris
-def identity[T](x: T) -> T { x }
+def f(x: grad<f64>) -> grad<f64> { x * x }
 
-trait Show {
-    def show(self: Self) -> str
-}
-
-impl Show for i64 {
-    def show(self: i64) -> str { to_str(self) }
+def sparse_example(arr: [f64; 4]) -> [f64; 4] {
+    val s = sparsify(arr)
+    densify(s)
 }
 ```
 
@@ -157,97 +221,6 @@ bring math
 def f() -> i64 { math.square(5) }
 ```
 
-### Closures
-
-```iris
-def apply(f: fn(i64) -> i64, x: i64) -> i64 {
-    f(x)
-}
-
-def double_it() -> i64 {
-    val double = |x: i64| x * 2
-    apply(double, 21)   // 42
-}
-```
-
-### Concurrency
-
-```iris
-// Channels and spawn
-def producer(ch: channel<i64>) -> i64 {
-    send(ch, 42)
-    0
-}
-
-def main() -> i64 {
-    val ch = channel()
-    spawn { producer(ch) }
-    recv(ch)
-}
-
-// Async/await
-async def fetch() -> i64 { 42 }
-
-def run() -> i64 {
-    await fetch()
-}
-```
-
-### Autodiff and Sparse
-
-```iris
-def f(x: grad<f64>) -> grad<f64> {
-    x * x
-}
-
-def sparse_example(arr: [f64; 4]) -> [f64; 4] {
-    val s = sparsify(arr)
-    densify(s)
-}
-```
-
-### Global Constants and Type Aliases
-
-```iris
-const MAX_SIZE: i64 = 1024
-
-type Matrix = tensor<f32, [N, M]>
-```
-
-### Collections
-
-```iris
-def list_example() -> i64 {
-    val xs = list()
-    push(xs, 1)
-    push(xs, 2)
-    list_len(xs)   // 2
-}
-
-def map_example() -> i64 {
-    val m = map()
-    map_set(m, "key", 99)
-    map_get(m, "key")
-}
-```
-
-### Builtins
-
-**Math:** `sin`, `cos`, `tan`, `exp`, `log`, `log2`, `sqrt`, `abs`, `floor`, `ceil`,
-`round`, `sign`, `pow`, `min`, `max`, `clamp(x, lo, hi)`
-
-**Bitwise:** `band`, `bor`, `bxor`, `shl`, `shr`, `bitnot`
-
-**String:** `len`, `concat`, `contains`, `starts_with`, `ends_with`, `to_upper`,
-`to_lower`, `trim`, `repeat`, `to_str`, `format("Hello {}", name)`,
-`str_index`, `slice`, `find`, `str_replace`
-
-**I/O:** `print(v)`, `read_line()`, `read_i64()`, `read_f64()`
-
-**Parse:** `parse_i64(s)` → `option<i64>`, `parse_f64(s)` → `option<f64>`
-
-**Control:** `panic(msg)`, `assert(cond)`
-
 ---
 
 ## Compiler Pipeline
@@ -256,34 +229,143 @@ def map_example() -> i64 {
 .iris source
     │
     ▼
-Lexer (src/parser/lexer.rs)
-    │  tokens
-    ▼
-Parser (src/parser/parse.rs)
-    │  AST
-    ▼
-Lowerer (src/lower/mod.rs)
-    │  IrModule (SSA IR)
-    ▼
-Pass Pipeline (src/pass/)
-    │  1. ValidatePass    — SSA invariants, rejects IrType::Infer
-    │  2. TypeInferPass   — type consistency
-    │  3. ConstFoldPass   — constant arithmetic + identity folding
-    │  4. OpExpandPass    — activation calls → TensorOp::Unary
-    │  5. DcePass         — dead code elimination
-    │  6. CsePass         — common subexpression elimination
-    │  7. ShapeCheckPass  — einsum notation validation
-    ▼
-Codegen / Interpreter
-    ├── --emit ir      IR text printer (deterministic)
-    ├── --emit llvm    LLVM IR text (with globals, declares, GEP for strings)
-    ├── --emit onnx    ONNX binary protobuf
-    └── --emit eval    Tree-walking IR interpreter
+  Lexer → Parser → AST → Lowerer → SSA IR → Pass Pipeline → Codegen
+                                                                │
+                                    ┌───────────────────────────┤
+                                    ▼               ▼           ▼
+                                 Interpreter    LLVM IR      ONNX binary
+                                                   │
+                                                 clang
+                                                   │
+                                              Native binary
 ```
 
-**IR design:** Block-parameter SSA (MLIR-style). No phi nodes — branch
-arguments carry values directly. Index-based arenas (`Vec<T>` indexed by
-newtype IDs `BlockId(u32)`, `ValueId(u32)`).
+**IR design:** Block-parameter SSA (MLIR-style). No phi nodes — branch arguments carry values directly.
+
+**Optimization passes:** Validate → TypeInfer → ConstFold → OpExpand → DCE → CSE → ShapeCheck
+
+---
+
+## Standard Library (25 modules)
+
+```iris
+bring std.math       // gcd, lcm, abs_i64, is_even, is_odd, ...
+bring std.string     // pad_left, pad_right, words, lines, ...
+bring std.fmt        // sprintf, pad_int, zero_pad_int, ...
+bring std.fs         // read_text, write_text, path_exists, ...
+bring std.json       // json_stringify, json_parse, ...
+bring std.csv        // csv_parse_row, csv_emit_row, ...
+bring std.http       // http_get, http_post, ...
+bring std.time       // now, sleep, elapsed, ...
+bring std.crypto     // sha256, uuid, hex_encode, hex_decode
+bring std.ffi        // ffi_open, ffi_call_*, python_*, rust_*
+bring std.os         // env_get, env_set, exec_cmd, pid, exit_code
+bring std.testing    // assert_eq, assert_ne, assert_true, ...
+bring std.log        // log_info, log_warn, log_error, ...
+bring std.iter       // map_list, filter_list, reduce_list, ...
+bring std.set        // set operations
+bring std.queue      // FIFO queue
+bring std.heap       // priority queue / min-heap
+bring std.deque      // double-ended queue
+bring std.kv         // key-value store (SQLite-backed)
+bring std.table      // tabular data operations
+bring std.dataset    // ML dataset abstraction
+bring std.dataframe  // DataFrame-like API
+bring std.path       // path manipulation
+bring std.async      // async runtime helpers
+bring std.bitset     // bit array operations
+```
+
+---
+
+## Built-in Functions
+
+**Math:** `sin`, `cos`, `tan`, `exp`, `log`, `log2`, `sqrt`, `abs`, `floor`, `ceil`, `round`, `sign`, `pow`, `min`, `max`, `clamp`, `math_pi`, `math_e`, `is_nan`, `is_inf`
+
+**String:** `len`, `concat`, `contains`, `starts_with`, `ends_with`, `to_upper`, `to_lower`, `trim`, `repeat`, `to_str`, `format`, `split`, `join`, `find`, `slice`, `str_index`, `str_replace`, `str_reverse`, `char_at`, `str_pad_left`, `str_pad_right`, `str_chars`, `str_bytes`, `str_count`
+
+**I/O:** `print`, `read_line`, `read_i64`, `read_f64`
+
+**Collections:** `list`, `push`, `pop`, `list_get`, `list_set`, `list_len`, `list_map`, `list_filter`, `list_reduce`, `list_any`, `list_all`, `list_zip`, `list_enumerate`, `list_flatten`, `list_unique`, `list_reverse`, `list_sorted`, `list_sum`, `list_min`, `list_max`
+
+**Map:** `map`, `map_get`, `map_set`, `map_contains`, `map_remove`, `map_keys`, `map_values`, `map_len`
+
+**Parsing:** `parse_i64`, `parse_f64`, `json_stringify`, `regex_match`, `regex_find_all`, `regex_replace`
+
+**System:** `cwd`, `list_dir`, `mkdir`, `remove_file`, `path_join`, `env_get`, `env_set`, `exec_cmd`, `pid`, `exit_code`, `type_of`
+
+**Random:** `random`, `random_range`, `uuid`
+
+**Crypto:** `sha256`, `hash`, `hex_encode`, `hex_decode`, `base64_encode`, `base64_decode`
+
+**FFI:** `ffi_open`, `ffi_call`, `ffi_close`, `ffi_call_i64`, `ffi_call_f64`, `ffi_call_str`, `ffi_call_void`, `python_eval`, `python_exec`, `python_call`, `python_version`, `rust_lib_open`, `rust_call_i64`, `rust_call_f64`, `rust_call_void`
+
+**Concurrency:** `channel`, `send`, `recv`, `spawn`, `chan_try_recv`, `chan_len`, `select`, `timeout`, `thread_count`, `atomic`, `atomic_load`, `atomic_store`, `atomic_add`
+
+**DateTime:** `datetime_now`, `datetime_timestamp`, `datetime_format`
+
+---
+
+## CLI Usage
+
+```sh
+iris <file.iris>                    # Emit IR (default)
+iris build <file.iris>              # Build native binary
+iris run <file.iris>                # Build and run
+iris repl                           # Interactive REPL
+iris lsp                            # Start LSP server (stdin/stdout)
+iris dap                            # Start DAP debugger (stdin/stdout)
+iris pkg <cmd>                      # Package manager
+
+# Flags
+iris --emit ir|llvm|eval|binary|onnx|cuda|simd <file.iris>
+iris build <file.iris> -o <output>
+iris --version | -V
+iris --help | -h
+```
+
+---
+
+## Tooling
+
+### VS Code Extension
+
+The official `iris-lang` extension provides:
+
+- **Syntax highlighting** — full TextMate grammar
+- **LSP integration** — hover, completions, diagnostics, go-to-definition, rename, references, formatting, inlay hints, code actions (quick fixes + best practice hints)
+- **DAP debugger** — breakpoints, step in/over/out, step back, variables, call stack, hover evaluation
+- **Code lenses** — inline ▷ Run / ⬡ Debug buttons on zero-arg functions
+- **REPL** — integrated terminal REPL
+- **Status bar** — shows IRIS version, git commit, build info; click for server actions
+
+Install: `code --install-extension iris-lang-0.2.0.vsix`
+
+### REPL Commands
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `:help` | `:h` | Show command reference |
+| `:env` | `:e` | List active definitions and bindings |
+| `:type <expr>` | `:t <expr>` | Show inferred type of expression |
+| `:bring <mod>` | `:b <mod>` | Load a stdlib module |
+| `:time` | | Show elapsed time of last evaluation |
+| `:history` | | Show numbered input history |
+| `:ir <expr>` | | Show compiled IR for an expression |
+| `:clear` | | Clear the terminal screen |
+| `:reset` | | Clear all session state |
+| `:quit` | `:q` | Exit the REPL |
+
+### Package Manager
+
+```sh
+iris pkg init myproject          # Create iris.toml + main.iris
+iris pkg add serde               # Add dependency
+iris pkg install                 # Fetch all dependencies
+iris pkg build                   # Build the project
+iris pkg run                     # Build and run
+iris pkg list                    # List dependencies
+```
 
 ---
 
@@ -291,113 +373,42 @@ newtype IDs `BlockId(u32)`, `ValueId(u32)`).
 
 ```text
 src/
-  main.rs          Binary entry point (CLI)
-  lib.rs           Library root; exports compile(), compile_multi()
-  cli.rs           Argument parsing, EmitKind dispatch
-  error.rs         All error types: ParseError, LowerError, PassError, CodegenError, InterpError
-  parser/
-    lexer.rs       Token stream
-    ast.rs         AST node types
-    parse.rs       Recursive-descent parser
-  ir/
-    mod.rs         Re-exports
-    types.rs       IrType enum (Scalar, Tensor, Str, Tuple, Array, Fn, ...)
-    instr.rs       IrInstr enum — central IR node (all passes touch this)
-    block.rs       IrBlock + block parameters
-    function.rs    IrFunction (flat Vec<IrBlock>)
-    module.rs      IrModule + IrFunctionBuilder (builder pattern)
-    value.rs       ValueId newtype + ValueDef
-  lower/
-    mod.rs         AST → IR lowering; all intrinsics; generics; traits; modules
-  pass/
-    mod.rs         Pass trait + PassManager
-    validate.rs    SSA structural validation
-    type_infer.rs  Type consistency checking
-    const_fold.rs  Constant folding
-    opt.rs         DCE + CSE
-    expand.rs      OpExpand
-    shape.rs       ShapeCheck
-  interp/
-    mod.rs         Tree-walking IR interpreter; IrValue enum
-  codegen/
-    printer.rs     Deterministic IR text emitter
-    llvm_stub.rs   LLVM IR emitter (global strings, GEP, runtime declares)
-    onnx.rs        ONNX binary protobuf emitter
-  proto/
-    encode.rs      Varint + protobuf field encoding
-tests/
-  ir_construction.rs   IR builder API tests
-  parse_lower.rs       Parser + lowerer integration
-  pass_pipeline.rs     Pass manager tests
-  graph_lower.rs       Graph lowering tests
-  model_parse.rs       Model DSL tests
-  phase4.rs .. phase48.rs   Phase integration tests (411 tests total)
+  main.rs          CLI entry point
+  lib.rs           Library root (compile, compile_multi)
+  cli.rs           Argument parsing
+  error.rs         Error types
+  lsp.rs           Language Server Protocol
+  dap.rs           Debug Adapter Protocol
+  repl.rs          Interactive REPL
+  pkg.rs           Package manager
+  compiler.rs      Native compilation pipeline
+  diagnostics.rs   Rich error rendering
+  parser/          Lexer, AST, recursive-descent parser
+  ir/              SSA IR types, blocks, functions, modules
+  lower/           AST → IR lowering
+  pass/            Optimization passes
+  interp/          Tree-walking interpreter
+  codegen/         LLVM IR, ONNX, IR printer
+  runtime/         C runtime (iris_runtime.c/.h)
+  stdlib/          25 standard library modules
+  proto/           Protobuf encoding (ONNX)
+stdlib/            External stdlib (file.iris, io.iris)
+examples/          29 example programs
+tests/             110+ integration test suites
+vscode-iris/       VS Code extension
+installer/         Windows installer (Inno Setup)
 ```
 
 ---
 
-## Building
+## Building from Source
 
-Requires Rust stable. No external dependencies other than `thiserror`.
-
-```sh
-cargo build
-cargo build --release
-```
-
-Run the test suite (411 tests, all passing):
+Requires Rust 1.75+ stable. For native binary compilation, clang 17+ must be in PATH.
 
 ```sh
-cargo test
-```
-
----
-
-## CLI Usage
-
-```sh
-# Emit SSA IR text
-cargo run -- --emit ir examples/hello.iris
-
-# Emit LLVM IR
-cargo run -- --emit llvm examples/hello.iris
-
-# Emit ONNX binary
-cargo run -- --emit onnx examples/neural_net.iris
-
-# Evaluate (interpret) — prints return value
-cargo run -- --emit eval examples/hello.iris
-
-# Build native binary (requires clang in PATH)
-cargo run -- build examples/hello.iris -o hello
-cargo run -- run examples/hello.iris   # build and run
-
-# Or explicitly
-cargo run -- --emit binary examples/hello.iris -o hello
-```
-
-**Entry point for binaries:** Define `def main() -> i64` (or a zero-argument function). The compiler emits a C-compatible `main(argc, argv)` that calls your entry and exits with its return value.
-
-**Standard library:** Minimal modules in `stdlib/` — `file` (read_all, write_all, exists, lines) and `io` (get_args, get_env). Use with multi-file compilation: pass `("file", file_src), ("main", main_src)` to `compile_multi` with your main module using `bring file` or `bring io`. Builtins `file_read_all`, `file_write_all`, `file_exists`, `file_lines`, `args()`, `env_var(key)` are always available.
-
-**ML-backend (ONNX, CUDA):** Export models with `--emit onnx` or `--emit onnx-binary`. Use `--emit cuda` for GPU kernel IR (NVPTX). Native `build` produces a CPU executable; tensor execution in binaries is not yet implemented — use the interpreter or ONNX for tensor workloads.
-
----
-
-## Programmatic API
-
-```rust
-use iris::{compile, compile_multi, EmitKind};
-
-// Single module
-let ir = compile(src, "my_module", EmitKind::Ir)?;
-let result = compile(src, "my_module", EmitKind::Eval)?;
-
-// Multi-module (imports resolved in order)
-let result = compile_multi(&[
-    ("math", math_src),
-    ("main", main_src),
-], EmitKind::Eval)?;
+cargo build                # Debug build
+cargo build --release      # Release build (optimized)
+cargo test                 # Run all 110+ test suites (~850 tests)
 ```
 
 ---
@@ -406,55 +417,30 @@ let result = compile_multi(&[
 
 | Phase | Feature | Status |
 | ----- | ------- | ------ |
-| 1–3 | Lexer, parser, lowerer core | Done |
-| 4 | Graph ops, ONNX emission | Done |
-| 5 | DCE, CSE, OpExpand, ShapeCheck | Done |
-| 6 | ConstFold, if-else, BatchNorm | Done |
-| 7 | Unary ops, LLVM stub, Conv2D | Done |
-| 8 | CmpNe/Gt/Ge, LLVM Load/Store, TypeInfer | Done |
-| 9 | `while` / `loop` / `break` / `continue` | Done |
-| 10 | Tensor indexing, modulo, casts | Done |
-| 11 | IR interpreter, `EmitKind::Eval` | Done |
-| 12 | Diagnostics, CLI, `render_error` | Done |
-| 13 | Record types, `MakeStruct`/`GetField` | Done |
-| 14 | ONNX binary protobuf encoding | Done |
-| 15 | Enum types (`choice`/`when`), `MakeVariant` | Done |
-| 16 | `var` keyword, mutable rebinding | Done |
-| 17 | Inter-function calls, cross-fn eval | Done |
-| 18 | `for i in start..end` range loops | Done |
-| 19 | Tuple types, element access | Done |
-| 20 | Logical `&&` / `\|\|`, early `return` | Done |
-| 21 | String type (`str`, `concat`, `len`, `print`) | Done |
-| 22 | Array types (`[T; N]`, literals, indexing) | Done |
-| 23 | Closures (`\|x\| expr`, lambda-lifting) | Done |
-| 24 | `option<T>`: `some`, `none`, `is_some`, `unwrap`, `when` | Done |
-| 25 | `result<T,E>`: `ok`, `err`, `is_ok`, `?` operator | Done |
-| 26 | Channels: `channel()`, `send`, `recv`, `spawn` | Done |
-| 27 | `par for` parallel range loops | Done |
-| 28 | `async`/`await` desugaring | Done |
-| 29 | `barrier()`, `parallel_reduce` | Done |
-| 30 | `grad<T>` forward-mode autodiff, dual numbers | Done |
-| 31 | `sparse<T>`: `sparsify`/`densify` | Done |
-| 32 | Math builtins: `sqrt`, `abs`, `floor`, `ceil`, `pow`, `min`, `max` | Done |
-| 33 | Extended string ops: `contains`, `starts_with`, `to_upper`, `trim`, … | Done |
-| 34 | Bitwise ops: `band`, `bor`, `bxor`, `shl`, `shr`, `bitnot` | Done |
-| 35 | Global constants: `const NAME: Type = expr` | Done |
-| 36 | Extended math: `sin`, `cos`, `exp`, `log`, `round`, `sign`, `clamp` | Done |
-| 37 | `panic` / `assert` | Done |
-| 38 | Type aliases: `type Name = Type` | Done |
-| 39 | `to_str`, `format("Hello {}", x)` | Done |
-| 40 | User input: `read_line`, `read_i64`, `read_f64` | Done |
-| 41 | `parse_i64` / `parse_f64` → `option<T>` | Done |
-| 42 | `str_index`, `slice`, `find`, `str_replace` | Done |
-| 43 | `list<T>`: `list()`, `push`, `list_len`, `list_get`, `list_set`, `list_pop` | Done |
-| 44 | `map<K,V>`: `map()`, `map_set`, `map_get`, `map_contains`, `map_remove`, `map_len` | Done |
-| 45 | Generic functions: `def f[T](...)`, monomorphization | Done |
-| 46 | Trait system: `trait`/`impl`, static dispatch | Done |
-| 47 | Module system: `bring mod`, `pub def`, `compile_multi` | Done |
-| 48 | LLVM IR: target triple/datalayout, global strings, GEP, runtime declares | Done |
+| 1–10 | Core: lexer, parser, lowerer, types, control flow, tensors | ✅ |
+| 11–20 | Interpreter, diagnostics, records, enums, vars, functions, tuples | ✅ |
+| 21–30 | Strings, arrays, closures, options, results, channels, par, async, autodiff | ✅ |
+| 31–48 | Sparse, builtins, constants, collections, generics, traits, modules, LLVM codegen | ✅ |
+| 100 | Complete LLVM IR codegen + native binaries via clang | ✅ |
+| 101 | Rich error diagnostics, LSP, DAP, REPL | ✅ |
+| 102 | VS Code extension, Windows installer | ✅ |
+| 103 | Compiler pipeline rewrite (clang-only), C runtime | ✅ |
+| 104 | HTTP, JSON, Regex, DateTime, OS, Random, Hash, Base64 builtins | ✅ |
+| 105 | 60+ builtins, 9 stdlib modules, package manager | ✅ |
+| 106 | C/Python/Rust FFI, LSP code actions, verbose --version, git info | ✅ |
 
 ---
 
 ## License
 
-GNU General Public License v2.0 or later. See [LICENSE](LICENSE).
+This program is free software; you can redistribute it and/or modify it under the terms of the **GNU General Public License v2.0** (or later) as published by the Free Software Foundation.
+
+See [LICENSE](LICENSE) for the full text.
+
+Copyright (C) 2024-2026 Moon
+
+---
+
+<p align="center">
+  <a href="https://github.com/moon9t/iris">github.com/moon9t/iris</a>
+</p>

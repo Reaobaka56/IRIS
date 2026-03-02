@@ -1791,6 +1791,19 @@ fn emit_instr_ir(
             writeln!(out, "  call void @iris_sleep_ms(i64 {})", val(*ms))?;
             writeln!(out, "  %v{} = add i64 0, 0", result.0)?;
         }
+        // Phase 104: BuiltinCall — unified dispatch for new builtins
+        IrInstr::BuiltinCall { result, name, args, result_ty } => {
+            let fn_name = format!("iris_{}", name);
+            let arg_strs: Vec<String> = args.iter().map(|a| format!("ptr {}", val(*a))).collect();
+            // Determine LLVM return type from result_ty
+            let ret_llvm = match result_ty {
+                IrType::Scalar(DType::I64) => "i64",
+                IrType::Scalar(DType::F64) => "double",
+                IrType::Scalar(DType::Bool) => "i1",
+                _ => "ptr", // str, list, map, infer → ptr
+            };
+            writeln!(out, "  %v{} = call {} @{}({})", result.0, ret_llvm, fn_name, arg_strs.join(", "))?;
+        }
     }
     Ok(())
 }
@@ -1869,6 +1882,7 @@ fn instr_result_id(instr: &IrInstr) -> Option<ValueId> {
         IrInstr::TensorOp { result, .. } => Some(*result),
         IrInstr::MakeVariant { result, .. } => Some(*result),
         IrInstr::ExtractVariantField { result, .. } => Some(*result),
+        IrInstr::BuiltinCall { result, .. } => Some(*result),
         _ => None,
     }
 }
@@ -2150,6 +2164,108 @@ fn emit_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         // Time/OS (Phase 97)
         "declare i64 @iris_now_ms()",
         "declare void @iris_sleep_ms(i64)",
+        // Phase 104: New builtins
+        // HTTP
+        "declare ptr @iris_http_get(ptr)",
+        "declare ptr @iris_http_post(ptr, ptr)",
+        // JSON
+        "declare ptr @iris_json_parse(ptr)",
+        "declare ptr @iris_json_stringify(ptr)",
+        // Set
+        "declare ptr @iris_set_new()",
+        "declare ptr @iris_set_add(ptr, ptr)",
+        "declare i1 @iris_set_contains(ptr, ptr)",
+        "declare ptr @iris_set_remove(ptr, ptr)",
+        "declare i64 @iris_set_len(ptr)",
+        "declare ptr @iris_set_to_list(ptr)",
+        // Regex
+        "declare i1 @iris_regex_match(ptr, ptr)",
+        "declare ptr @iris_regex_find_all(ptr, ptr)",
+        "declare ptr @iris_regex_replace(ptr, ptr, ptr)",
+        // DateTime
+        "declare ptr @iris_datetime_now()",
+        "declare double @iris_datetime_timestamp()",
+        "declare ptr @iris_datetime_format(ptr)",
+        // OS / Path
+        "declare ptr @iris_cwd()",
+        "declare ptr @iris_listdir(ptr)",
+        "declare ptr @iris_path_join(ptr, ptr)",
+        "declare i1 @iris_path_exists(ptr)",
+        "declare i1 @iris_mkdir(ptr)",
+        "declare i1 @iris_remove_file(ptr)",
+        // Type introspection
+        "declare ptr @iris_type_of(ptr)",
+        // Random
+        "declare double @iris_random()",
+        "declare i64 @iris_random_range(i64, i64)",
+        // Hash / Encoding
+        "declare i64 @iris_hash(ptr)",
+        "declare ptr @iris_base64_encode(ptr)",
+        "declare ptr @iris_base64_decode(ptr)",
+        // String extras
+        "declare ptr @iris_char_at(ptr, i64)",
+        "declare ptr @iris_str_reverse(ptr)",
+        // Phase 105: Extended builtins
+        // String extras
+        "declare ptr @iris_str_pad_left(ptr, i64, ptr)",
+        "declare ptr @iris_str_pad_right(ptr, i64, ptr)",
+        "declare ptr @iris_str_chars(ptr)",
+        "declare ptr @iris_str_bytes(ptr)",
+        "declare i64 @iris_str_count(ptr, ptr)",
+        // Math constants/predicates
+        "declare double @iris_math_pi()",
+        "declare double @iris_math_e()",
+        "declare double @iris_math_inf()",
+        "declare i1 @iris_is_nan(double)",
+        "declare i1 @iris_is_inf(double)",
+        // OS / System
+        "declare ptr @iris_env_get(ptr)",
+        "declare void @iris_env_set(ptr, ptr)",
+        "declare void @iris_exit_code(i64)",
+        "declare ptr @iris_exec_cmd(ptr)",
+        "declare i64 @iris_pid()",
+        // Crypto / UUID
+        "declare ptr @iris_uuid()",
+        "declare ptr @iris_sha256(ptr)",
+        "declare ptr @iris_hex_encode(ptr)",
+        "declare ptr @iris_hex_decode(ptr)",
+        // Deque
+        "declare ptr @iris_deque_new()",
+        "declare void @iris_deque_push_front(ptr, ptr)",
+        "declare void @iris_deque_push_back(ptr, ptr)",
+        "declare ptr @iris_deque_pop_front(ptr)",
+        "declare ptr @iris_deque_pop_back(ptr)",
+        "declare i64 @iris_deque_len(ptr)",
+        // FFI
+        "declare ptr @iris_ffi_open(ptr)",
+        "declare i64 @iris_ffi_call(ptr, ptr)",
+        "declare i1 @iris_ffi_close(ptr)",
+        // Expanded C FFI
+        "declare i64 @iris_ffi_call_i64(ptr, ptr, ptr, i32)",
+        "declare double @iris_ffi_call_f64(ptr, ptr, ptr, i32)",
+        "declare ptr @iris_ffi_call_str(ptr, ptr, ptr, i32)",
+        "declare void @iris_ffi_call_void(ptr, ptr, ptr, i32)",
+        // Python FFI
+        "declare ptr @iris_python_eval(ptr)",
+        "declare i64 @iris_python_exec(ptr)",
+        "declare ptr @iris_python_call(ptr, ptr, ptr)",
+        "declare ptr @iris_python_version()",
+        // Rust FFI (cdylib)
+        "declare ptr @iris_rust_lib_open(ptr)",
+        "declare i64 @iris_rust_call_i64(ptr, ptr, ptr, i32)",
+        "declare double @iris_rust_call_f64(ptr, ptr, ptr, i32)",
+        "declare void @iris_rust_call_void(ptr, ptr, ptr, i32)",
+        // Functional list ops
+        "declare i64 @iris_list_sum(ptr)",
+        "declare i64 @iris_list_min(ptr)",
+        "declare i64 @iris_list_max(ptr)",
+        "declare i64 @iris_list_index_of(ptr, i64)",
+        "declare i64 @iris_list_count(ptr, i64)",
+        "declare ptr @iris_list_reverse(ptr)",
+        "declare ptr @iris_list_take(ptr, i64)",
+        "declare ptr @iris_list_drop(ptr, i64)",
+        // Concurrency extras
+        "declare i64 @iris_thread_count()",
     ];
     for decl in declares {
         writeln!(out, "{}", decl)?;

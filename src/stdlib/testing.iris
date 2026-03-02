@@ -1,0 +1,50 @@
+// src/stdlib/testing.iris -- IRIS standard testing library
+
+pub def assert_eq(actual: i64, expected: i64, msg: str) -> bool {
+    if actual != expected {
+        print("FAIL: ")
+        print(msg)
+        print(" — expected ")
+        print(expected)
+        print(", got ")
+        println(actual)
+        false
+    } else {
+        true
+    }
+}
+
+pub def assert_true(cond: bool, msg: str) -> bool {
+    if !cond {
+        print("FAIL: ")
+        println(msg)
+        false
+    } else {
+        true
+    }
+}
+
+pub def assert_false(cond: bool, msg: str) -> bool {
+    if cond {
+        print("FAIL: ")
+        println(msg)
+        false
+    } else {
+        true
+    }
+}
+
+pub def assert_str_eq(actual: str, expected: str, msg: str) -> bool {
+    if actual != expected {
+        print("FAIL: ")
+        print(msg)
+        print(" — expected '")
+        print(expected)
+        print("', got '")
+        print(actual)
+        println("'")
+        false
+    } else {
+        true
+    }
+}

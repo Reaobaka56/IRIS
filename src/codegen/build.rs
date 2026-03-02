@@ -167,6 +167,9 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
         "-o", output_path.to_str().unwrap(),
         "-lm", "-lpthread",
     ]);
+    // Windows: link WinSock2 for TCP/HTTP builtins
+    #[cfg(target_os = "windows")]
+    link_cmd.arg("-lws2_32");
     if let Some(ref lib) = msys2_lib {
         link_cmd.arg(format!("-L{}", lib));
     }

@@ -86,6 +86,7 @@ fn is_side_effecting(instr: &IrInstr) -> bool {
             | IrInstr::TcpWrite { .. }
             | IrInstr::TcpClose { .. }
             | IrInstr::SleepMs { .. }
+            | IrInstr::BuiltinCall { .. }
     )
 }
 
@@ -487,6 +488,7 @@ pub(crate) fn apply_replacements(instr: &mut IrInstr, reps: &HashMap<ValueId, Va
         IrInstr::StrJoin { list_val, delim, .. } => { replace(list_val); replace(delim); }
         IrInstr::NowMs { .. } => {}
         IrInstr::SleepMs { ms, .. } => { replace(ms); }
+        IrInstr::BuiltinCall { args, .. } => { for a in args { replace(a); } }
     }
 }
 

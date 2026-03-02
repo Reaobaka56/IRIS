@@ -29,6 +29,7 @@ pub mod lower;
 pub mod lsp;
 pub mod parser;
 pub mod pass;
+pub mod pkg;
 pub mod proto;
 pub mod repl;
 pub mod stdlib;

@@ -44,7 +44,7 @@ fn test_debug_session_start() {
 fn test_breakpoint_at_line_3() {
     let mut session = DebugSession::new();
     session.set_source(SRC_TWO_STMTS);
-    session.set_breakpoint(3);
+    session.set_breakpoint(3, None);
     session.start().unwrap();
     let frame = session.continue_to_breakpoint()
         .expect("should hit breakpoint at line 3");
@@ -82,8 +82,8 @@ fn test_step_advances_cursor() {
 fn test_two_breakpoints_in_order() {
     let mut session = DebugSession::new();
     session.set_source(SRC_THREE_STMTS);
-    session.set_breakpoint(2);
-    session.set_breakpoint(3);
+    session.set_breakpoint(2, None);
+    session.set_breakpoint(3, None);
     session.start().unwrap();
 
     // Initial frame should be at line 2 (first trace entry = first let stmt).

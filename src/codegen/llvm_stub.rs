@@ -1052,6 +1052,17 @@ fn emit_llvm_instr(
             writeln!(out, "  call void @iris_sleep_ms(i64 {})", val(*ms))?;
             writeln!(out, "  %v{} = add i64 0, 0", result.0)?;
         }
+        IrInstr::BuiltinCall { result, name, args, result_ty } => {
+            let fn_name = format!("iris_{}", name);
+            let arg_strs: Vec<String> = args.iter().map(|a| format!("ptr {}", val(*a))).collect();
+            let ret_llvm = match result_ty {
+                crate::ir::types::IrType::Scalar(crate::ir::types::DType::I64) => "i64",
+                crate::ir::types::IrType::Scalar(crate::ir::types::DType::F64) => "double",
+                crate::ir::types::IrType::Scalar(crate::ir::types::DType::Bool) => "i1",
+                _ => "ptr",
+            };
+            writeln!(out, "  %v{} = call {} @{}({})", result.0, ret_llvm, fn_name, arg_strs.join(", "))?;
+        }
     }
     Ok(())
 }

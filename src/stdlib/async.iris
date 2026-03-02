@@ -1,0 +1,33 @@
+// src/stdlib/async.iris -- IRIS standard async/concurrency library
+
+// Try to receive from a channel without blocking.
+// Returns Some(value) if available, None otherwise.
+pub def try_recv(ch: chan<i64>) -> i64 {
+    chan_try_recv(ch)
+}
+
+// Get the number of pending messages in a channel.
+pub def channel_len(ch: chan<i64>) -> i64 {
+    chan_len(ch)
+}
+
+// Sleep for a given number of milliseconds.
+pub def sleep(ms: i64) -> bool {
+    timeout(ms)
+}
+
+// Get the number of available hardware threads.
+pub def num_threads() -> i64 {
+    thread_count()
+}
+
+// Get current time in milliseconds (for basic timing).
+pub def now() -> i64 {
+    now_ms()
+}
+
+// Sleep for ms milliseconds.
+pub def delay(ms: i64) -> bool {
+    sleep_ms(ms)
+    true
+}

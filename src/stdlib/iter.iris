@@ -1,0 +1,153 @@
+// src/stdlib/iter.iris -- IRIS standard iteration / functional list utilities
+
+// Sum all elements of a list.
+pub def sum(xs: list<i64>) -> i64 {
+    var acc = 0
+    var i = 0
+    val n = list_len(xs)
+    while i < n {
+        acc = acc + list_get(xs, i)
+        i = i + 1
+    }
+    acc
+}
+
+// Product of all elements.
+pub def product(xs: list<i64>) -> i64 {
+    var acc = 1
+    var i = 0
+    val n = list_len(xs)
+    while i < n {
+        acc = acc * list_get(xs, i)
+        i = i + 1
+    }
+    acc
+}
+
+// Minimum element.
+pub def min(xs: list<i64>) -> i64 {
+    var m = list_get(xs, 0)
+    var i = 1
+    val n = list_len(xs)
+    while i < n {
+        val v = list_get(xs, i)
+        m = if v < m { v } else { m }
+        i = i + 1
+    }
+    m
+}
+
+// Maximum element.
+pub def max(xs: list<i64>) -> i64 {
+    var m = list_get(xs, 0)
+    var i = 1
+    val n = list_len(xs)
+    while i < n {
+        val v = list_get(xs, i)
+        m = if v > m { v } else { m }
+        i = i + 1
+    }
+    m
+}
+
+// Reverse a list (returns new list).
+pub def reverse(xs: list<i64>) -> list<i64> {
+    var result = list()
+    var i = list_len(xs) - 1
+    while i >= 0 {
+        list_push(result, list_get(xs, i))
+        i = i - 1
+    }
+    result
+}
+
+// Take first n elements.
+pub def take(xs: list<i64>, n: i64) -> list<i64> {
+    var result = list()
+    var i = 0
+    val len = list_len(xs)
+    val limit = if n < len { n } else { len }
+    while i < limit {
+        list_push(result, list_get(xs, i))
+        i = i + 1
+    }
+    result
+}
+
+// Drop first n elements.
+pub def drop(xs: list<i64>, n: i64) -> list<i64> {
+    var result = list()
+    val len = list_len(xs)
+    var i = if n < 0 { 0 } else { n }
+    while i < len {
+        list_push(result, list_get(xs, i))
+        i = i + 1
+    }
+    result
+}
+
+// Range: generate list from lo to hi-1.
+pub def range(lo: i64, hi: i64) -> list<i64> {
+    var result = list()
+    var i = lo
+    while i < hi {
+        list_push(result, i)
+        i = i + 1
+    }
+    result
+}
+
+// Check if any element equals target.
+pub def contains(xs: list<i64>, target: i64) -> bool {
+    var found = false
+    var i = 0
+    val n = list_len(xs)
+    while i < n {
+        found = if list_get(xs, i) == target { true } else { found }
+        i = i + 1
+    }
+    found
+}
+
+// Count occurrences of target.
+pub def count(xs: list<i64>, target: i64) -> i64 {
+    var c = 0
+    var i = 0
+    val n = list_len(xs)
+    while i < n {
+        c = if list_get(xs, i) == target { c + 1 } else { c }
+        i = i + 1
+    }
+    c
+}
+
+// Index of first occurrence of target, or -1.
+pub def index_of(xs: list<i64>, target: i64) -> i64 {
+    var i = 0
+    val n = list_len(xs)
+    while i < n {
+        if list_get(xs, i) == target {
+            return i
+        }
+        i = i + 1
+    }
+    0 - 1
+}
+
+// Flatten a list of lists into a single list.
+pub def flatten_i64(xss: list<list<i64>>) -> list<i64> {
+    var result = list()
+    var i = 0
+    val n = list_len(xss)
+    while i < n {
+        val inner = list_get(xss, i)
+        var j = 0
+        val m = list_len(inner)
+        while j < m {
+            list_push(result, list_get(inner, j))
+            j = j + 1
+        }
+        i = i + 1
+    }
+    result
+}

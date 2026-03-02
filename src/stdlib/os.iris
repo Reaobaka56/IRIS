@@ -1,0 +1,52 @@
+// src/stdlib/os.iris -- IRIS standard OS/system library
+
+// Get an environment variable value (empty string if not set).
+pub def getenv(key: str) -> str {
+    env_get(key)
+}
+
+// Set an environment variable.
+pub def setenv(key: str, val: str) -> bool {
+    env_set(key, val)
+}
+
+// Get the current process ID.
+pub def get_pid() -> i64 {
+    pid()
+}
+
+// Execute a shell command and return its stdout.
+pub def shell(cmd: str) -> str {
+    exec_cmd(cmd)
+}
+
+// Exit the process with a given code.
+pub def exit(code: i64) -> i64 {
+    exit_code(code)
+    0
+}
+
+// Get the current working directory.
+pub def getcwd() -> str {
+    cwd()
+}
+
+// List files in a directory.
+pub def readdir(path: str) -> list<str> {
+    listdir(path)
+}
+
+// Check if a path exists.
+pub def exists(path: str) -> bool {
+    path_exists(path)
+}
+
+// Create a directory.
+pub def make_dir(path: str) -> bool {
+    mkdir(path)
+}
+
+// Get the number of available CPU threads.
+pub def cpu_count() -> i64 {
+    thread_count()
+}

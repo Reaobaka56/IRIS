@@ -1,0 +1,26 @@
+// src/stdlib/bitset.iris -- IRIS standard bit set library
+
+// Create a new empty bitset.
+pub def bitset_create() -> list<i64> {
+    bitset_new()
+}
+
+// Set a bit at position pos.
+pub def set_bit(bs: list<i64>, pos: i64) -> list<i64> {
+    bitset_set(bs, pos)
+}
+
+// Get a bit at position pos.
+pub def get_bit(bs: list<i64>, pos: i64) -> bool {
+    bitset_get(bs, pos)
+}
+
+// Clear a bit at position pos.
+pub def clear_bit(bs: list<i64>, pos: i64) -> list<i64> {
+    bitset_clear(bs, pos)
+}
+
+// Count the number of set bits.
+pub def popcount(bs: list<i64>) -> i64 {
+    bitset_count(bs)
+}

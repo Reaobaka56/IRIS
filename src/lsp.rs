@@ -79,6 +79,33 @@ static STATIC_COMPLETIONS: &[&str] = &[
     "grad", "grad_of", "zeros", "ones", "fill", "linspace",
     "split", "join", "contains", "starts_with", "ends_with",
     "to_upper", "to_lower", "trim", "repeat",
+    // Phase 104 builtins
+    "http_get", "http_post", "json_stringify",
+    "regex_match", "regex_find_all", "regex_replace",
+    "datetime_now", "datetime_timestamp", "datetime_format",
+    "cwd", "list_dir", "path_join", "mkdir", "remove_file",
+    "type_of", "random", "random_range",
+    "hash", "base64_encode", "base64_decode",
+    "char_at", "str_reverse",
+    // Phase 105 builtins
+    "chan_try_recv", "chan_len", "select", "timeout", "thread_count",
+    "deque_new", "deque_push_front", "deque_push_back", "deque_pop_front",
+    "deque_pop_back", "deque_len", "deque_front", "deque_back",
+    "sorted_keys",
+    "bitset_new", "bitset_set", "bitset_get", "bitset_count", "bitset_clear",
+    "ffi_open", "ffi_call", "ffi_close",
+    // Phase 106: expanded FFI — C, Python, Rust
+    "ffi_call_i64", "ffi_call_f64", "ffi_call_str", "ffi_call_void", "ffi_call_args",
+    "python_eval", "python_exec", "python_call", "python_version",
+    "rust_lib_open", "rust_call_i64", "rust_call_f64", "rust_call_void",
+    "env_get", "env_set", "exit_code", "exec_cmd", "pid",
+    "uuid", "sha256", "hex_encode", "hex_decode",
+    "str_pad_left", "str_pad_right", "str_chars", "str_bytes", "str_count",
+    "math_pi", "math_e", "math_inf", "is_nan", "is_inf",
+    "list_map", "list_filter", "list_reduce", "list_any", "list_all",
+    "list_zip", "list_enumerate", "list_flatten", "list_unique",
+    "list_reverse", "list_sorted", "list_sum", "list_min", "list_max",
+    "list_index_of", "list_count", "list_take", "list_drop",
 ];
 
 // ---------------------------------------------------------------------------
@@ -330,7 +357,6 @@ impl LspState {
     // ------------------------------------------------------------------
 
     /// Returns code actions (quick fixes) for the given range.
-    /// Each action is (title, range_start_line, range_start_col, range_end_line, range_end_col, newText).
     pub fn code_actions(&self, uri: &str, range_start_line: u32, range_start_col: u32,
                         _range_end_line: u32, _range_end_col: u32)
         -> Vec<CodeAction>
@@ -344,9 +370,7 @@ impl LspState {
         for diag in &diags {
             // Quick fix: suggest adding missing `bring` for undefined variable that looks like a stdlib function
             if diag.message.contains("cannot find") || diag.message.contains("undefined") {
-                // Extract the name from the error message
                 if let Some(name) = extract_quoted_name(&diag.message) {
-                    // Check if it matches a known stdlib module function
                     if let Some(bring_stmt) = suggest_bring_for_name(&name) {
                         actions.push(CodeAction {
                             title: format!("Add 'bring {}' to imports", bring_stmt.trim_start_matches("bring ")),
@@ -386,6 +410,102 @@ impl LspState {
                     diagnostic_message: Some(diag.message.clone()),
                 });
             }
+
+            // Quick fix: missing semicolon
+            if diag.message.contains("expected ';'") || diag.message.contains("expected semicolon") {
+                actions.push(CodeAction {
+                    title: "Add missing semicolon".to_owned(),
+                    kind: "quickfix".to_owned(),
+                    edit_uri: uri.to_owned(),
+                    edit_range: (diag.end_line, diag.end_character, diag.end_line, diag.end_character),
+                    new_text: ";".to_owned(),
+                    diagnostic_message: Some(diag.message.clone()),
+                });
+            }
+
+            // Quick fix: type mismatch — suggest explicit cast
+            if diag.message.contains("type mismatch") || diag.message.contains("expected") && diag.message.contains("found") {
+                // Extract expected/found types
+                if let (Some(expected), Some(found)) = (
+                    extract_type_from_mismatch(&diag.message, "expected"),
+                    extract_type_from_mismatch(&diag.message, "found"),
+                ) {
+                    if is_numeric_type(&expected) && is_numeric_type(&found) {
+                        actions.push(CodeAction {
+                            title: format!("Cast to {}", expected),
+                            kind: "quickfix".to_owned(),
+                            edit_uri: uri.to_owned(),
+                            edit_range: (diag.line, diag.character, diag.end_line, diag.end_character),
+                            new_text: format!("/* cast to {} */", expected),
+                            diagnostic_message: Some(diag.message.clone()),
+                        });
+                    }
+                }
+            }
+
+            // Quick fix: BP005 empty function body -> insert panic("todo")
+            if diag.code.as_deref() == Some("BP005") {
+                if let Some(name) = extract_quoted_name(&diag.message) {
+                    // Find the opening brace of this function and insert after it
+                    let func_line = diag.line;
+                    if let Some(line_text) = source.lines().nth(func_line as usize) {
+                        if let Some(brace_pos) = line_text.rfind('{') {
+                            actions.push(CodeAction {
+                                title: format!("Add placeholder body to '{}'", name),
+                                kind: "quickfix".to_owned(),
+                                edit_uri: uri.to_owned(),
+                                edit_range: (func_line + 1, 0, func_line + 1, 0),
+                                new_text: "    panic(\"todo: implement\")\n".to_owned(),
+                                diagnostic_message: Some(diag.message.clone()),
+                            });
+                            let _ = brace_pos;
+                        }
+                    }
+                }
+            }
+
+            // Quick fix: BP002 missing doc comment -> add template
+            if diag.code.as_deref() == Some("BP002") {
+                if let Some(name) = extract_quoted_name(&diag.message) {
+                    actions.push(CodeAction {
+                        title: format!("Add doc comment for '{}'", name),
+                        kind: "quickfix".to_owned(),
+                        edit_uri: uri.to_owned(),
+                        edit_range: (diag.line, 0, diag.line, 0),
+                        new_text: format!("// {} — TODO: describe this function.\n", name),
+                        diagnostic_message: Some(diag.message.clone()),
+                    });
+                }
+            }
+
+            // Quick fix: BP004 non-snake_case -> suggest rename
+            if diag.code.as_deref() == Some("BP004") {
+                if let Some(name) = extract_quoted_name(&diag.message) {
+                    let snake = to_snake_case(&name);
+                    if snake != name {
+                        actions.push(CodeAction {
+                            title: format!("Rename '{}' to '{}'", name, snake),
+                            kind: "quickfix".to_owned(),
+                            edit_uri: uri.to_owned(),
+                            edit_range: (diag.line, diag.character, diag.end_line, diag.end_character),
+                            new_text: snake,
+                            diagnostic_message: Some(diag.message.clone()),
+                        });
+                    }
+                }
+            }
+
+            // Quick fix: BP006 redundant double semicolon -> remove one
+            if diag.code.as_deref() == Some("BP006") {
+                actions.push(CodeAction {
+                    title: "Remove redundant semicolon".to_owned(),
+                    kind: "quickfix".to_owned(),
+                    edit_uri: uri.to_owned(),
+                    edit_range: (diag.line, diag.character, diag.end_line, diag.end_character),
+                    new_text: String::new(),
+                    diagnostic_message: Some(diag.message.clone()),
+                });
+            }
         }
 
         // Source action: extract variable at cursor position
@@ -402,6 +522,16 @@ impl LspState {
                 });
             }
         }
+
+        // Source action: wrap selection in if block
+        actions.push(CodeAction {
+            title: "Wrap in if condition".to_owned(),
+            kind: "refactor.extract".to_owned(),
+            edit_uri: uri.to_owned(),
+            edit_range: (range_start_line, 0, range_start_line, 0),
+            new_text: "if true {\n".to_owned(),
+            diagnostic_message: None,
+        });
 
         actions
     }
@@ -560,6 +690,133 @@ impl LspState {
                     severity: 2,
                     code: Some("W0001".to_owned()),
                 });
+            }
+
+            // ── Best-practice diagnostics ──
+
+            // BP001: Long function body (> 50 lines) — information hint
+            for func in &ast.functions {
+                let func_start = byte_to_line_col(source, func.span.start.0).0;
+                let func_end = byte_to_line_col(source, func.span.end.0).0;
+                let func_lines = func_end.saturating_sub(func_start);
+                if func_lines > 50 {
+                    let (line, character) = byte_to_lsp_pos(source, func.name.span.start.0);
+                    diags.push(LspDiagnostic {
+                        line,
+                        character,
+                        end_line: line,
+                        end_character: character + func.name.name.len() as u32,
+                        message: format!(
+                            "Function '{}' is {} lines long. Consider splitting into smaller functions.",
+                            func.name.name, func_lines
+                        ),
+                        severity: 4, // Hint
+                        code: Some("BP001".to_owned()),
+                    });
+                }
+            }
+
+            // BP002: Missing doc comment on pub functions — hint
+            let source_lines: Vec<&str> = source.lines().collect();
+            for func in &ast.functions {
+                if func.is_pub {
+                    let (func_line, _) = byte_to_lsp_pos(source, func.span.start.0);
+                    let has_doc = if func_line > 0 {
+                        let prev_line = source_lines.get((func_line - 1) as usize).unwrap_or(&"");
+                        prev_line.trim().starts_with("//")
+                    } else {
+                        false
+                    };
+                    if !has_doc {
+                        diags.push(LspDiagnostic {
+                            line: func_line,
+                            character: 0,
+                            end_line: func_line,
+                            end_character: 3,
+                            message: format!(
+                                "Public function '{}' is missing a doc comment. Add a // comment above.",
+                                func.name.name
+                            ),
+                            severity: 4, // Hint
+                            code: Some("BP002".to_owned()),
+                        });
+                    }
+                }
+            }
+
+            // BP003: Function with many parameters (> 5) — hint
+            for func in &ast.functions {
+                if func.params.len() > 5 {
+                    let (line, character) = byte_to_lsp_pos(source, func.name.span.start.0);
+                    diags.push(LspDiagnostic {
+                        line,
+                        character,
+                        end_line: line,
+                        end_character: character + func.name.name.len() as u32,
+                        message: format!(
+                            "Function '{}' has {} parameters. Consider using a record type.",
+                            func.name.name, func.params.len()
+                        ),
+                        severity: 4,
+                        code: Some("BP003".to_owned()),
+                    });
+                }
+            }
+
+            // BP004: Non-snake_case function/variable naming convention — hint
+            for func in &ast.functions {
+                if !is_snake_case(&func.name.name) && func.name.name != "main" {
+                    let (line, character) = byte_to_lsp_pos(source, func.name.span.start.0);
+                    diags.push(LspDiagnostic {
+                        line,
+                        character,
+                        end_line: line,
+                        end_character: character + func.name.name.len() as u32,
+                        message: format!(
+                            "Function '{}' should use snake_case naming convention.",
+                            func.name.name
+                        ),
+                        severity: 4,
+                        code: Some("BP004".to_owned()),
+                    });
+                }
+            }
+
+            // BP005: Empty function body — warning
+            for func in &ast.functions {
+                if func.body.stmts.is_empty() && func.body.tail.is_none() {
+                    let (line, character) = byte_to_lsp_pos(source, func.name.span.start.0);
+                    diags.push(LspDiagnostic {
+                        line,
+                        character,
+                        end_line: line,
+                        end_character: character + func.name.name.len() as u32,
+                        message: format!(
+                            "Function '{}' has an empty body. Add implementation or use `panic(\"todo\")`.",
+                            func.name.name
+                        ),
+                        severity: 2,
+                        code: Some("BP005".to_owned()),
+                    });
+                }
+            }
+
+            // BP006: Redundant trailing semicolons on last statement in block — hint
+            // Detect lines ending with `;;`
+            for (i, line_str) in source_lines.iter().enumerate() {
+                let trimmed = line_str.trim();
+                if trimmed.ends_with(";;") {
+                    let col = line_str.len().saturating_sub(1) as u32;
+                    diags.push(LspDiagnostic {
+                        line: i as u32,
+                        character: col,
+                        end_line: i as u32,
+                        end_character: col + 1,
+                        message: "Redundant double semicolon.".to_owned(),
+                        severity: 4,
+                        code: Some("BP006".to_owned()),
+                    });
+                }
             }
         }
 
@@ -871,6 +1128,105 @@ fn builtin_hover(name: &str) -> Option<String> {
         "ones"     => "def ones(shape: [i64]) -> tensor<f32, S>\nCreate one-filled tensor",
         "fill"     => "def fill(shape: [i64], v: f32) -> tensor<f32, S>\nCreate tensor filled with v",
         "linspace" => "def linspace(start: f64, end: f64, n: i64) -> tensor<f64, [N]>\nEvenly-spaced values",
+        // Phase 104 builtins
+        "http_get"           => "def http_get(url: str) -> str\nHTTP GET request, returns response body",
+        "http_post"          => "def http_post(url: str, body: str) -> str\nHTTP POST request, returns response body",
+        "json_stringify"     => "def json_stringify(value: any) -> str\nSerialize value to JSON string",
+        "regex_match"        => "def regex_match(pattern: str, text: str) -> bool\nTest if text matches regex pattern (. * + ? ^ $)",
+        "regex_find_all"     => "def regex_find_all(pattern: str, text: str) -> list<str>\nFind all matches of pattern in text",
+        "regex_replace"      => "def regex_replace(pattern: str, text: str, replacement: str) -> str\nReplace pattern matches with replacement",
+        "datetime_now"       => "def datetime_now() -> str\nCurrent UTC date-time in ISO 8601 format",
+        "datetime_timestamp" => "def datetime_timestamp() -> f64\nCurrent Unix timestamp in seconds",
+        "datetime_format"    => "def datetime_format(fmt: str) -> str\nFormat current time (%Y %m %d %H %M %S)",
+        "cwd"                => "def cwd() -> str\nGet current working directory",
+        "list_dir"           => "def list_dir(path: str) -> list<str>\nList directory entries",
+        "path_join"          => "def path_join(a: str, b: str) -> str\nJoin two path components",
+        "mkdir"              => "def mkdir(path: str) -> bool\nCreate directory (recursive), returns success",
+        "remove_file"        => "def remove_file(path: str) -> bool\nDelete a file, returns success",
+        "type_of"            => "def type_of(value: any) -> str\nReturn the runtime type name",
+        "random"             => "def random() -> f64\nRandom float in [0, 1)",
+        "random_range"       => "def random_range(lo: i64, hi: i64) -> i64\nRandom integer in [lo, hi)",
+        "hash"               => "def hash(s: str) -> i64\nDJB2 hash of string",
+        "base64_encode"      => "def base64_encode(s: str) -> str\nBase64 encode a string",
+        "base64_decode"      => "def base64_decode(s: str) -> str\nBase64 decode a string",
+        "char_at"            => "def char_at(s: str, i: i64) -> str\nGet character at index",
+        "str_reverse"        => "def str_reverse(s: str) -> str\nReverse a string",
+        // Phase 105 hover docs
+        "chan_try_recv"      => "def chan_try_recv(ch: chan<T>) -> Option<T>\nNon-blocking receive from channel",
+        "chan_len"           => "def chan_len(ch: chan<T>) -> i64\nNumber of pending messages in channel",
+        "select"             => "def select(ch1, ch2, ...) -> i64\nReturn index of first ready channel, or -1",
+        "timeout"            => "def timeout(ms: i64) -> bool\nSleep for ms milliseconds, returns true",
+        "thread_count"       => "def thread_count() -> i64\nNumber of available CPU threads",
+        "deque_new"          => "def deque_new() -> deque<T>\nCreate an empty double-ended queue",
+        "deque_push_front"   => "def deque_push_front(dq, val) -> deque<T>\nPush value to front of deque",
+        "deque_push_back"    => "def deque_push_back(dq, val) -> deque<T>\nPush value to back of deque",
+        "deque_pop_front"    => "def deque_pop_front(dq) -> T\nRemove and return front element",
+        "deque_pop_back"     => "def deque_pop_back(dq) -> T\nRemove and return back element",
+        "deque_len"          => "def deque_len(dq) -> i64\nNumber of elements in deque",
+        "deque_front"        => "def deque_front(dq) -> T\nPeek at front element without removing",
+        "deque_back"         => "def deque_back(dq) -> T\nPeek at back element without removing",
+        "sorted_keys"        => "def sorted_keys(m: map<str,T>) -> list<str>\nReturn map keys in sorted order",
+        "bitset_new"         => "def bitset_new() -> bitset\nCreate an empty bit set",
+        "bitset_set"         => "def bitset_set(bs, pos: i64) -> bitset\nSet bit at position",
+        "bitset_get"         => "def bitset_get(bs, pos: i64) -> bool\nGet bit at position",
+        "bitset_count"       => "def bitset_count(bs) -> i64\nCount number of set bits",
+        "bitset_clear"       => "def bitset_clear(bs, pos: i64) -> bitset\nClear bit at position",
+        "ffi_open"           => "def ffi_open(path: str) -> i64\nOpen dynamic library, returns handle (-1 on error)",
+        "ffi_call"           => "def ffi_call(handle: i64, name: str) -> i64\nCall zero-arg function in loaded library",
+        "ffi_close"          => "def ffi_close(handle: i64) -> bool\nClose dynamic library handle",
+        // Expanded C FFI
+        "ffi_call_i64"       => "def ffi_call_i64(handle: i64, name: str, args...: i64) -> i64\nCall C function with i64 args, returns i64",
+        "ffi_call_f64"       => "def ffi_call_f64(handle: i64, name: str, args...: i64) -> f64\nCall C function, returns f64",
+        "ffi_call_str"       => "def ffi_call_str(handle: i64, name: str) -> str\nCall C function returning a C string",
+        "ffi_call_void"      => "def ffi_call_void(handle: i64, name: str, args...: i64)\nCall C function returning void",
+        "ffi_call_args"      => "def ffi_call_args(handle: i64, name: str, args...) -> i64\nCall C function with variadic arguments",
+        // Python FFI
+        "python_eval"        => "def python_eval(code: str) -> str\nEvaluate a Python expression, returns result as string",
+        "python_exec"        => "def python_exec(code_or_path: str) -> i64\nExecute Python script/code, returns exit code",
+        "python_call"        => "def python_call(module: str, func: str, args...) -> str\nCall a Python function from a module",
+        "python_version"     => "def python_version() -> str\nGet installed Python version string",
+        // Rust FFI (cdylib)
+        "rust_lib_open"      => "def rust_lib_open(path: str) -> i64\nOpen a Rust cdylib (.dll/.so/.dylib)",
+        "rust_call_i64"      => "def rust_call_i64(handle: i64, name: str, args...: i64) -> i64\nCall Rust extern \"C\" fn returning i64",
+        "rust_call_f64"      => "def rust_call_f64(handle: i64, name: str, args...: i64) -> f64\nCall Rust extern \"C\" fn returning f64",
+        "rust_call_void"     => "def rust_call_void(handle: i64, name: str, args...: i64)\nCall Rust extern \"C\" fn returning void",
+        "env_get"            => "def env_get(key: str) -> str\nGet environment variable value",
+        "env_set"            => "def env_set(key: str, val: str) -> bool\nSet environment variable",
+        "exit_code"          => "def exit_code(code: i64)\nExit process with given code",
+        "exec_cmd"           => "def exec_cmd(cmd: str) -> str\nExecute shell command, return stdout",
+        "pid"                => "def pid() -> i64\nGet current process ID",
+        "uuid"               => "def uuid() -> str\nGenerate a UUID v4 string",
+        "sha256"             => "def sha256(s: str) -> str\nCompute SHA-256 hash (hex string)",
+        "hex_encode"         => "def hex_encode(s: str) -> str\nEncode string to hexadecimal",
+        "hex_decode"         => "def hex_decode(s: str) -> str\nDecode hexadecimal string",
+        "str_pad_left"       => "def str_pad_left(s: str, width: i64, pad: str) -> str\nPad string on the left to given width",
+        "str_pad_right"      => "def str_pad_right(s: str, width: i64, pad: str) -> str\nPad string on the right to given width",
+        "str_chars"          => "def str_chars(s: str) -> list<str>\nSplit string into list of characters",
+        "str_bytes"          => "def str_bytes(s: str) -> list<i64>\nGet list of byte values",
+        "str_count"          => "def str_count(s: str, sub: str) -> i64\nCount occurrences of substring",
+        "math_pi"            => "def math_pi() -> f64\nReturn pi (3.14159...)",
+        "math_e"             => "def math_e() -> f64\nReturn Euler's number e (2.71828...)",
+        "math_inf"           => "def math_inf() -> f64\nReturn positive infinity",
+        "is_nan"             => "def is_nan(x: f64) -> bool\nCheck if value is NaN",
+        "is_inf"             => "def is_inf(x: f64) -> bool\nCheck if value is infinite",
+        "list_map"           => "def list_map(xs: list<T>, f: fn(T)->U) -> list<U>\nApply function to each element",
+        "list_filter"        => "def list_filter(xs: list<T>, f: fn(T)->bool) -> list<T>\nKeep elements where f returns true",
+        "list_reduce"        => "def list_reduce(xs: list<T>, init: U, f: fn(U,T)->U) -> U\nFold list from left",
+        "list_any"           => "def list_any(xs: list<T>) -> bool\nTrue if any element is truthy",
+        "list_all"           => "def list_all(xs: list<T>) -> bool\nTrue if all elements are truthy",
+        "list_zip"           => "def list_zip(a: list<T>, b: list<U>) -> list<(T,U)>\nZip two lists into list of tuples",
+        "list_enumerate"     => "def list_enumerate(xs: list<T>) -> list<(i64,T)>\nPair each element with its index",
+        "list_flatten"       => "def list_flatten(xs: list<list<T>>) -> list<T>\nFlatten nested list one level",
+        "list_unique"        => "def list_unique(xs: list<T>) -> list<T>\nRemove duplicate elements",
+        "list_reverse"       => "def list_reverse(xs: list<T>) -> list<T>\nReturn reversed copy of list",
+        "list_sorted"        => "def list_sorted(xs: list<T>) -> list<T>\nReturn sorted copy of list",
+        "list_sum"           => "def list_sum(xs: list<num>) -> f64\nSum all numeric elements",
+        "list_min"           => "def list_min(xs: list<T>) -> T\nReturn minimum element",
+        "list_max"           => "def list_max(xs: list<T>) -> T\nReturn maximum element",
+        "list_index_of"      => "def list_index_of(xs: list<T>, val: T) -> i64\nIndex of first occurrence, or -1",
+        "list_count"         => "def list_count(xs: list<T>, val: T) -> i64\nCount occurrences of value",
+        "list_take"          => "def list_take(xs: list<T>, n: i64) -> list<T>\nTake first n elements",
+        "list_drop"          => "def list_drop(xs: list<T>, n: i64) -> list<T>\nDrop first n elements",
         _ => return None,
     };
     Some(format!("```iris\n{}\n```", sig.split_once('\n').map(|(s, _)| s).unwrap_or(sig)).to_owned()
@@ -1579,6 +1935,25 @@ fn suggest_bring_for_name(name: &str) -> Option<String> {
         ("set_new", "std.set"), ("set_add", "std.set"), ("set_contains", "std.set"),
         // std.path
         ("path_join", "std.path"), ("path_parent", "std.path"), ("path_ext", "std.path"),
+        // std.ffi
+        ("ffi_open", "std.ffi"), ("ffi_call", "std.ffi"), ("ffi_close", "std.ffi"),
+        ("ffi_call_i64", "std.ffi"), ("ffi_call_f64", "std.ffi"), ("ffi_call_str", "std.ffi"),
+        ("python_eval", "std.ffi"), ("python_exec", "std.ffi"), ("python_call", "std.ffi"),
+        ("python_version", "std.ffi"), ("rust_lib_open", "std.ffi"),
+        ("rust_call_i64", "std.ffi"), ("rust_call_f64", "std.ffi"),
+        // std.crypto
+        ("uuid", "std.crypto"), ("sha256", "std.crypto"), ("hex_encode", "std.crypto"),
+        ("hex_decode", "std.crypto"), ("hash_code", "std.crypto"),
+        ("to_base64", "std.crypto"), ("from_base64", "std.crypto"),
+        // std.os
+        ("getenv", "std.os"), ("setenv", "std.os"), ("get_pid", "std.os"),
+        ("shell", "std.os"), ("getcwd", "std.os"), ("readdir", "std.os"),
+        ("exists", "std.os"), ("make_dir", "std.os"), ("cpu_count", "std.os"),
+        // std.testing
+        ("assert_eq", "std.testing"), ("assert_true", "std.testing"),
+        ("assert_false", "std.testing"), ("assert_str_eq", "std.testing"),
+        // std.log
+        ("info", "std.log"), ("warn", "std.log"), ("error", "std.log"), ("debug", "std.log"),
     ];
 
     for (func, module) in stdlib_map {
@@ -1603,4 +1978,40 @@ fn is_keyword(word: &str) -> bool {
         | "async" | "await" | "spawn" | "par"
         | "i64" | "i32" | "f64" | "f32" | "bool" | "str" | "u8" | "i8" | "u32" | "u64" | "usize"
     )
+}
+
+/// Checks if a name follows snake_case convention.
+fn is_snake_case(name: &str) -> bool {
+    if name.is_empty() || name.starts_with('_') { return true; }
+    name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+}
+
+/// Converts a camelCase or PascalCase name to snake_case.
+fn to_snake_case(name: &str) -> String {
+    let mut result = String::new();
+    for (i, ch) in name.chars().enumerate() {
+        if ch.is_ascii_uppercase() {
+            if i > 0 { result.push('_'); }
+            result.push(ch.to_ascii_lowercase());
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// Extracts a type name from a type mismatch error ("expected i64, found f64").
+fn extract_type_from_mismatch(msg: &str, keyword: &str) -> Option<String> {
+    let lower = msg.to_lowercase();
+    let idx = lower.find(keyword)?;
+    let rest = &msg[idx + keyword.len()..];
+    let rest = rest.trim_start_matches(|c: char| c == ' ' || c == ':' || c == '`' || c == '\'');
+    let end = rest.find(|c: char| !c.is_alphanumeric() && c != '_' && c != '<' && c != '>').unwrap_or(rest.len());
+    let ty = rest[..end].trim();
+    if ty.is_empty() { None } else { Some(ty.to_owned()) }
+}
+
+/// Checks if a type name is a numeric type (i32, i64, f32, f64).
+fn is_numeric_type(ty: &str) -> bool {
+    matches!(ty, "i32" | "i64" | "f32" | "f64" | "u8" | "u32" | "u64" | "usize")
 }

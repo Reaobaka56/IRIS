@@ -4,7 +4,7 @@ version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
 description = "IRIS: Intermediate Representation for Intelligent Systems — an ML compiler DSL"
-license = "MIT"
+license = "GPL-2.0-or-later"
 
 [[bin]]
 name = "iris"

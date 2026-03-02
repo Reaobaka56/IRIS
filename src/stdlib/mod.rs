@@ -22,6 +22,16 @@ pub fn stdlib_source(name: &str) -> Option<&'static str> {
         "table"     => Some(include_str!("table.iris")),
         "dataset"   => Some(include_str!("dataset.iris")),
         "dataframe" => Some(include_str!("dataframe.iris")),
+        // Phase 105: New stdlib modules
+        "iter"    => Some(include_str!("iter.iris")),
+        "deque"   => Some(include_str!("deque.iris")),
+        "bitset"  => Some(include_str!("bitset.iris")),
+        "crypto"  => Some(include_str!("crypto.iris")),
+        "os"      => Some(include_str!("os.iris")),
+        "ffi"     => Some(include_str!("ffi.iris")),
+        "async"   => Some(include_str!("async.iris")),
+        "testing" => Some(include_str!("testing.iris")),
+        "log"     => Some(include_str!("log.iris")),
         _ => None,
     }
 }

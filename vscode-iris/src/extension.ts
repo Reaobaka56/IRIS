@@ -41,6 +41,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         vscode.commands.registerCommand('iris.stopLsp',    () => stopLsp()),
         vscode.commands.registerCommand('iris.showIR',     () => showEmit('ir')),
         vscode.commands.registerCommand('iris.showLLVM',   () => showEmit('llvm')),
+        vscode.commands.registerCommand('iris.showVersion', () => showFullVersion()),
         vscode.commands.registerCommand('iris.runFunction', (uri: string, fnName: string) =>
             runNamedFunction(uri, fnName)),
         vscode.commands.registerCommand('iris.serverMenu', () => showServerMenu(context)),
@@ -108,22 +109,65 @@ function updateStatusBar(state: 'starting' | 'running' | 'stopped' | 'error'): v
         stopped:  new vscode.ThemeColor('statusBarItem.warningBackground') as any,
         error:    new vscode.ThemeColor('statusBarItem.errorBackground') as any,
     };
-    const version = getIrisVersion();
-    const label = version ? `IRIS v${version}` : 'IRIS';
+    const info = getIrisVersionInfo();
+    const label = info.version ? `IRIS v${info.version}` : 'IRIS';
     statusBar.text = `${icons[state]} ${label}`;
     statusBar.backgroundColor = colors[state] as any;
-    statusBar.tooltip = `IRIS Language Server: ${state}\nClick for server options`;
+
+    // Build a rich tooltip with all available info
+    const parts: string[] = [`IRIS Language Server: ${state}`];
+    if (info.version) { parts.push(`Version: ${info.version}`); }
+    if (info.gitCommit) { parts.push(`Commit: ${info.gitCommit}`); }
+    if (info.gitBranch) { parts.push(`Branch: ${info.gitBranch}`); }
+    if (info.buildDate) { parts.push(`Built: ${info.buildDate}`); }
+    if (info.target) { parts.push(`Target: ${info.target}`); }
+    if (info.rustc) { parts.push(`Rustc: ${info.rustc}`); }
+    parts.push('Click for server options');
+    statusBar.tooltip = parts.join('\n');
+}
+
+interface IrisVersionInfo {
+    version: string | null;
+    gitCommit: string | null;
+    gitBranch: string | null;
+    buildDate: string | null;
+    target: string | null;
+    rustc: string | null;
+    fullOutput: string | null;
+}
+
+let cachedVersionInfo: IrisVersionInfo | null = null;
+
+function getIrisVersionInfo(): IrisVersionInfo {
+    if (cachedVersionInfo) { return cachedVersionInfo; }
+    try {
+        const exe = findIrisExe();
+        const out = child_process.execSync(`"${exe}" --version`, { timeout: 5000, encoding: 'utf8' });
+
+        const versionMatch = out.match(/iris\s+(\d+\.\d+\.\d+)/);
+        const commitMatch = out.match(/Git commit:\s*([0-9a-f]{7,40})/);
+        const branchMatch = out.match(/Git branch:\s*(\S+)/);
+        const dateMatch = out.match(/Build date:\s*(\S+)/);
+        const targetMatch = out.match(/Target:\s*(\S+)/);
+        const rustcMatch = out.match(/Built with:\s*(.+)/);
+
+        cachedVersionInfo = {
+            version: versionMatch ? versionMatch[1] : null,
+            gitCommit: commitMatch ? commitMatch[1].substring(0, 9) : null,
+            gitBranch: branchMatch ? branchMatch[1] : null,
+            buildDate: dateMatch ? dateMatch[1] : null,
+            target: targetMatch ? targetMatch[1] : null,
+            rustc: rustcMatch ? rustcMatch[1].trim() : null,
+            fullOutput: out,
+        };
+        return cachedVersionInfo;
+    } catch {
+        return { version: null, gitCommit: null, gitBranch: null, buildDate: null, target: null, rustc: null, fullOutput: null };
+    }
 }
 
 function getIrisVersion(): string | null {
-    try {
-        const exe = findIrisExe();
-        const out = child_process.execSync(`"${exe}" --version`, { timeout: 2000, encoding: 'utf8' });
-        const m = out.match(/\d+\.\d+\.\d+/);
-        return m ? m[0] : null;
-    } catch {
-        return null;
-    }
+    return getIrisVersionInfo().version;
 }
 
 // ---------------------------------------------------------------------------
@@ -138,6 +182,7 @@ async function showServerMenu(context: vscode.ExtensionContext): Promise<void> {
           description: isRunning ? 'Stop the IRIS LSP server' : 'Start the IRIS LSP server' },
         { label: '$(output) Show Server Output', description: 'Open the language server output channel' },
         { label: '$(terminal) Open REPL', description: 'Open an interactive IRIS session' },
+        { label: '$(info) Show Version Info', description: 'Display full IRIS compiler version information' },
         { label: '$(gear) Open Settings', description: 'Configure IRIS extension settings' },
     ];
 
@@ -154,8 +199,31 @@ async function showServerMenu(context: vscode.ExtensionContext): Promise<void> {
         serverOutputChannel.show();
     } else if (pick.label.includes('REPL')) {
         openRepl(context);
+    } else if (pick.label.includes('Version')) {
+        showFullVersion();
     } else if (pick.label.includes('Settings')) {
         vscode.commands.executeCommand('workbench.action.openSettings', 'iris');
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Version info display
+// ---------------------------------------------------------------------------
+
+function showFullVersion(): void {
+    // Invalidate cache to get fresh info
+    cachedVersionInfo = null;
+    const info = getIrisVersionInfo();
+    if (info.fullOutput) {
+        outputChannel.clear();
+        outputChannel.appendLine('=== IRIS Compiler Version Info ===');
+        outputChannel.appendLine('');
+        outputChannel.appendLine(info.fullOutput);
+        outputChannel.show(true);
+    } else {
+        vscode.window.showWarningMessage(
+            'Could not retrieve IRIS version info. Is the iris executable in your PATH?'
+        );
     }
 }
 
@@ -240,6 +308,7 @@ async function startLspClient(context: vscode.ExtensionContext): Promise<void> {
 }
 
 async function restartLsp(context: vscode.ExtensionContext): Promise<void> {
+    cachedVersionInfo = null; // Invalidate version cache on restart
     if (client) {
         updateStatusBar('starting');
         try {

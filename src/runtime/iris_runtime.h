@@ -336,6 +336,158 @@ IrisVal* iris_make_closure(void* fn, int ncaptures, ...);
 IrisVal* iris_call_closure(IrisVal* closure, ...);
 void     iris_call_closure_void(IrisVal* closure, ...);
 
+// ---------------------------------------------------------------------------
+// TCP Networking
+// ---------------------------------------------------------------------------
+int64_t iris_tcp_connect(const char* host, int64_t port);
+int64_t iris_tcp_listen(int64_t port);
+int64_t iris_tcp_accept(int64_t listener);
+char*   iris_tcp_read(int64_t conn);
+void    iris_tcp_write(int64_t conn, const char* data);
+void    iris_tcp_close(int64_t conn);
+
+// ---------------------------------------------------------------------------
+// HTTP
+// ---------------------------------------------------------------------------
+char*   iris_http_get(const char* url);
+char*   iris_http_post(const char* url, const char* body, const char* content_type);
+
+// ---------------------------------------------------------------------------
+// JSON
+// ---------------------------------------------------------------------------
+IrisVal* iris_json_parse(const char* str);
+char*    iris_json_stringify(IrisVal* val);
+
+// ---------------------------------------------------------------------------
+// Set collection (backed by a sorted list)
+// ---------------------------------------------------------------------------
+IrisList* iris_set_new(void);
+void      iris_set_add(IrisList* set, IrisVal* val);
+int       iris_set_contains(IrisList* set, IrisVal* val);
+void      iris_set_remove(IrisList* set, IrisVal* val);
+int64_t   iris_set_len(IrisList* set);
+IrisList* iris_set_to_list(IrisList* set);
+
+// ---------------------------------------------------------------------------
+// Regex (POSIX-compatible)
+// ---------------------------------------------------------------------------
+int       iris_regex_match(const char* pattern, const char* str);
+IrisList* iris_regex_find_all(const char* pattern, const char* str);
+char*     iris_regex_replace(const char* pattern, const char* str, const char* replacement);
+
+// ---------------------------------------------------------------------------
+// DateTime
+// ---------------------------------------------------------------------------
+char*     iris_datetime_now(void);
+int64_t   iris_datetime_timestamp(void);
+char*     iris_datetime_format(int64_t timestamp, const char* fmt);
+
+// ---------------------------------------------------------------------------
+// OS / Path
+// ---------------------------------------------------------------------------
+char*     iris_cwd(void);
+IrisList* iris_listdir(const char* path);
+char*     iris_path_join(const char* a, const char* b);
+int       iris_path_exists(const char* path);
+int       iris_mkdir(const char* path);
+int       iris_remove_file(const char* path);
+
+// ---------------------------------------------------------------------------
+// Type introspection
+// ---------------------------------------------------------------------------
+char*     iris_type_of(IrisVal* val);
+
+// ---------------------------------------------------------------------------
+// Random
+// ---------------------------------------------------------------------------
+double    iris_random(void);
+int64_t   iris_random_range(int64_t lo, int64_t hi);
+
+// ---------------------------------------------------------------------------
+// Hashing / Encoding
+// ---------------------------------------------------------------------------
+int64_t   iris_hash(const char* str);
+char*     iris_base64_encode(const char* str);
+char*     iris_base64_decode(const char* str);
+
+// ---------------------------------------------------------------------------
+// String extras
+// ---------------------------------------------------------------------------
+char*     iris_char_at(const char* str, int64_t idx);
+char*     iris_str_reverse(const char* str);
+
+// ---------------------------------------------------------------------------
+// Phase 105: Extended builtins
+// ---------------------------------------------------------------------------
+
+// -- String extras --
+char*     iris_str_pad_left(const char* str, int64_t width, const char* pad);
+char*     iris_str_pad_right(const char* str, int64_t width, const char* pad);
+IrisList* iris_str_chars(const char* str);
+IrisList* iris_str_bytes(const char* str);
+int64_t   iris_str_count(const char* str, const char* sub);
+
+// -- Math constants / predicates --
+double    iris_math_pi(void);
+double    iris_math_e(void);
+double    iris_math_inf(void);
+int       iris_is_nan(double x);
+int       iris_is_inf(double x);
+
+// -- OS / System --
+char*     iris_env_get(const char* key);
+void      iris_env_set(const char* key, const char* val);
+void      iris_exit_code(int64_t code);
+char*     iris_exec_cmd(const char* cmd);
+int64_t   iris_pid(void);
+
+// -- Crypto / UUID --
+char*     iris_uuid(void);
+char*     iris_sha256(const char* input);
+char*     iris_hex_encode(const char* input);
+char*     iris_hex_decode(const char* input);
+
+// -- Deque --
+IrisList* iris_deque_new(void);
+void      iris_deque_push_front(IrisList* dq, IrisVal* val);
+void      iris_deque_push_back(IrisList* dq, IrisVal* val);
+IrisVal*  iris_deque_pop_front(IrisList* dq);
+IrisVal*  iris_deque_pop_back(IrisList* dq);
+int64_t   iris_deque_len(IrisList* dq);
+
+// -- FFI --
+void*     iris_ffi_open(const char* path);
+int64_t   iris_ffi_call(void* handle, const char* func_name);
+int       iris_ffi_close(void* handle);
+// Expanded C FFI with typed arguments (up to 6 i64 args)
+int64_t   iris_ffi_call_i64(void* handle, const char* func_name, int64_t* args, int nargs);
+double    iris_ffi_call_f64(void* handle, const char* func_name, int64_t* args, int nargs);
+const char* iris_ffi_call_str(void* handle, const char* func_name, int64_t* args, int nargs);
+void      iris_ffi_call_void(void* handle, const char* func_name, int64_t* args, int nargs);
+// Python FFI
+const char* iris_python_eval(const char* code);
+int64_t   iris_python_exec(const char* code_or_path);
+const char* iris_python_call(const char* module, const char* func, const char* args_json);
+const char* iris_python_version(void);
+// Rust FFI (aliases for C FFI — Rust cdylibs export extern "C" symbols)
+void*     iris_rust_lib_open(const char* path);
+int64_t   iris_rust_call_i64(void* handle, const char* func_name, int64_t* args, int nargs);
+double    iris_rust_call_f64(void* handle, const char* func_name, int64_t* args, int nargs);
+void      iris_rust_call_void(void* handle, const char* func_name, int64_t* args, int nargs);
+
+// -- Functional list ops --
+int64_t   iris_list_sum(IrisList* list);
+int64_t   iris_list_min(IrisList* list);
+int64_t   iris_list_max(IrisList* list);
+int64_t   iris_list_index_of(IrisList* list, int64_t val);
+int64_t   iris_list_count(IrisList* list, int64_t val);
+IrisList* iris_list_reverse(IrisList* list);
+IrisList* iris_list_take(IrisList* list, int64_t n);
+IrisList* iris_list_drop(IrisList* list, int64_t n);
+
+// -- Concurrency extras --
+int64_t   iris_thread_count(void);
+
 #ifdef __cplusplus
 }
 #endif

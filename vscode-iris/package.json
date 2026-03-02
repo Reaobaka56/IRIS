@@ -14,10 +14,10 @@
     "Formatters"
   ],
   "icon": "icon.png",
-  "license": "MIT",
+  "license": "GPL-2.0-or-later",
   "repository": {
     "type": "git",
-    "url": "https://github.com/iris-lang/iris"
+    "url": "https://github.com/moon9t/iris"
   },
   "activationEvents": [],
   "main": "./out/extension.js",
@@ -121,6 +121,11 @@
         "command": "iris.showLLVM",
         "title": "IRIS: Show LLVM IR Output",
         "icon": "$(symbol-class)"
+      },
+      {
+        "command": "iris.showVersion",
+        "title": "IRIS: Show Version Info",
+        "icon": "$(info)"
       }
     ],
     "menus": {
@@ -156,6 +161,9 @@
         {
           "command": "iris.showLLVM",
           "when": "resourceExtname == .iris"
+        },
+        {
+          "command": "iris.showVersion"
         }
       ]
     },

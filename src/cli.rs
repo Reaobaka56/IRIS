@@ -36,6 +36,8 @@ pub enum ParseArgsResult {
     Lsp,
     /// `dap` subcommand: start the DAP debug adapter over stdin/stdout.
     Dap,
+    /// `pkg` subcommand: run the package manager.
+    Pkg,
 }
 
 /// Parses command-line arguments (the full `std::env::args()` slice including `argv[0]`).
@@ -63,6 +65,7 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
             "repl" => return Ok(ParseArgsResult::Repl),
             "lsp"  => return Ok(ParseArgsResult::Lsp),
             "dap"  => return Ok(ParseArgsResult::Dap),
+            "pkg"  => return Ok(ParseArgsResult::Pkg),
             _ => {}
         }
     }
@@ -142,9 +145,67 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
     Ok(ParseArgsResult::Args(CliArgs { path, emit, output, run_after_build, dump_ir_after, max_steps, max_depth }))
 }
 
-/// Returns the version string for the CLI.
-pub fn version_text() -> &'static str {
-    concat!("iris ", env!("CARGO_PKG_VERSION"), "\n")
+/// Returns the version string for the CLI (GCC-style verbose output).
+pub fn version_text() -> String {
+    let version = env!("CARGO_PKG_VERSION");
+    let build_date = option_env!("IRIS_BUILD_DATE").unwrap_or("unknown");
+    let target = option_env!("IRIS_TARGET").unwrap_or("unknown");
+    let host = option_env!("IRIS_HOST").unwrap_or("unknown");
+    let profile = option_env!("IRIS_PROFILE").unwrap_or("unknown");
+    let opt_level = option_env!("IRIS_OPT_LEVEL").unwrap_or("unknown");
+    let git_hash = option_env!("IRIS_GIT_HASH").unwrap_or("unknown");
+    let git_hash_short = option_env!("IRIS_GIT_HASH_SHORT").unwrap_or("unknown");
+    let git_branch = option_env!("IRIS_GIT_BRANCH").unwrap_or("unknown");
+    let git_dirty = option_env!("IRIS_GIT_DIRTY").unwrap_or("false");
+    let rustc_ver = option_env!("IRIS_RUSTC_VERSION").unwrap_or("unknown");
+
+    // Detect thread model.
+    let thread_model = if cfg!(target_family = "windows") {
+        "win32"
+    } else {
+        "posix"
+    };
+
+    let dirty_flag = if git_dirty == "true" { " (modified)" } else { "" };
+
+    format!(
+        "iris {version} ({git_hash_short} {build_date}){dirty}\n\
+         IRIS — Intermediate Representation for Intelligent Systems\n\
+         Copyright (C) 2024-2026 Moon & IRIS Project Contributors\n\
+         License: GPL-2.0-or-later <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>\n\
+         This is free software; you can redistribute it and/or modify it under\n\
+         the terms of the GNU General Public License v2 (or later).\n\
+         There is NO WARRANTY, to the extent permitted by law.\n\
+         \n\
+         Compiler:\n\
+           Version:       {version}\n\
+           Git commit:    {git_hash}\n\
+           Git branch:    {git_branch}\n\
+           Build date:    {build_date}\n\
+         \n\
+         Platform:\n\
+           Target:        {target}\n\
+           Host:          {host}\n\
+           Thread model:  {thread_model}\n\
+         \n\
+         Build:\n\
+           Profile:       {profile}\n\
+           Opt level:     {opt_level}\n\
+           Rust edition:  2021\n\
+           Built with:    {rustc_ver}\n",
+        version = version,
+        git_hash_short = git_hash_short,
+        git_hash = git_hash,
+        git_branch = git_branch,
+        build_date = build_date,
+        dirty = dirty_flag,
+        target = target,
+        host = host,
+        profile = profile,
+        opt_level = opt_level,
+        thread_model = thread_model,
+        rustc_ver = rustc_ver,
+    )
 }
 
 /// Returns the usage/help text for the CLI.
@@ -158,6 +219,7 @@ pub fn help_text() -> &'static str {
        repl                  Start an interactive REPL session\n\
        lsp                   Start the LSP server (JSON-RPC on stdin/stdout)\n\
        dap                   Start the DAP debug adapter (JSON-RPC on stdin/stdout)\n\
+       pkg <cmd>             Package manager (init, add, remove, install, list, build, run)\n\
      \n\
      Options:\n\
        --emit <kind>         Output kind: ir (default), llvm, llvm-complete, cuda, simd,\n\

@@ -1,0 +1,5 @@
+# Add this entry to lib/linguist/grammars.yml
+# Points to the TextMate grammar in the IRIS repository submodule
+
+vendor/grammars/iris:
+  - source.iris

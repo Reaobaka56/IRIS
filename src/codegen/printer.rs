@@ -724,6 +724,10 @@ fn emit_instr(out: &mut String, instr: &IrInstr) -> Result<(), CodegenError> {
         IrInstr::SleepMs { result, ms } => {
             write!(out, "{} = sleep_ms {}", result, ms)?;
         }
+        IrInstr::BuiltinCall { result, name, args, result_ty } => {
+            let arg_str: Vec<String> = args.iter().map(|a| format!("{}", a)).collect();
+            write!(out, "{} = builtin_call @{}({}) -> {:?}", result, name, arg_str.join(", "), result_ty)?;
+        }
     }
     Ok(())
 }

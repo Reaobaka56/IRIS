@@ -1,0 +1,46 @@
+def apply(f : (i64) -> i64, x : i64) -> i64 {
+    f(x)
+}
+def compose(f : (i64) -> i64, g : (i64) -> i64) -> (i64) -> i64 {
+    |x : i64 | {
+        f(g(x))
+    }
+    
+}
+def make_adder(n : i64) -> (i64) -> i64 {
+    |x : i64 | {
+        x + n
+    }
+    
+}
+def main() -> i64 {
+    val double = |x : i64 | {
+        x * 2
+    }
+    ;
+    val square = |x : i64 | {
+        x * x
+    }
+    ;
+    print(f"double(5) = {apply(double, 5)}");
+    print(f"square(5) = {apply(square, 5)}");
+    val double_then_square = compose(square, double);
+    print(f"(5*2)^2 = {double_then_square(5)}");
+    val add10 = make_adder(10);
+    print(f"add10(32) = {add10(32)}");
+    val nums = [1, 2, 3, 4, 5];
+    val doubled = list_map(nums, |x : i64 | {
+        x * 2
+    }
+   );
+    val evens = list_filter(nums, |x : i64 | {
+        x % 2 == 0
+    }
+   );
+    val total = list_reduce(nums, 0, |acc : i64, x : i64 | {
+        acc + x
+    }
+   );
+    print(f"Sum: {total}");
+    0
+}
