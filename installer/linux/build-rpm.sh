@@ -93,7 +93,6 @@ Name:           iris
 Version:        ${VERSION}
 Release:        ${RELEASE}
 Summary:        IRIS programming language compiler and toolchain
-BuildArch:      ${RPM_ARCH}
 
 License:        GPL-2.0-or-later
 URL:            https://github.com/moon9t/iris
@@ -166,10 +165,10 @@ fi
 # for cross-arch builds, e.g. building aarch64 on x86_64 Ubuntu CI).
 rpmbuild \
     --define "_topdir $RPM_TOPDIR" \
-    --define "_arch ${RPM_ARCH}" \
     --define "_rpmdir $RPM_TOPDIR/RPMS" \
     --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
     --buildroot "$BUILDROOT" \
+    --target "${RPM_ARCH}-linux" \
     -bb "$RPM_TOPDIR/SPECS/iris.spec"
 
 # Copy the built RPM to dist
