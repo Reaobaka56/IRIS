@@ -72,6 +72,18 @@ cp -r "$ROOT/examples/"* "$BUILDROOT/usr/share/iris/examples/" 2>/dev/null || tr
 cp "$ROOT/LICENSE" "$BUILDROOT/usr/share/doc/iris/"
 cp "$ROOT/README.md" "$BUILDROOT/usr/share/doc/iris/"
 
+# Also create a staging area the spec %install can reference (rpmbuild
+# cleans $BUILDROOT before running %install, so we need a second copy).
+STAGED_BIN="$DIST_DIR/staged-bin"
+STAGED_DATA="$DIST_DIR/staged-data"
+mkdir -p "$STAGED_BIN" "$STAGED_DATA/stdlib" "$STAGED_DATA/examples"
+cp "$IRIS_BIN" "$STAGED_BIN/iris"
+chmod 755 "$STAGED_BIN/iris"
+cp -r "$ROOT/stdlib/"* "$STAGED_DATA/stdlib/" 2>/dev/null || true
+cp -r "$ROOT/examples/"* "$STAGED_DATA/examples/" 2>/dev/null || true
+cp "$ROOT/LICENSE" "$STAGED_DATA/"
+cp "$ROOT/README.md" "$STAGED_DATA/"
+
 # ── Create spec file (binary-only — no %prep/%build) ─────────────────────
 echo "[3/4] Creating RPM spec file..."
 CHANGELOG_DATE="$(date '+%a %b %d %Y')"
@@ -108,8 +120,17 @@ and DAP server.
 # nothing
 
 %install
-# Files already placed in BUILDROOT by the outer build script.
-# Nothing to do here.
+# rpmbuild cleans BUILDROOT before %install, so re-stage files here.
+mkdir -p %{buildroot}/usr/bin
+mkdir -p %{buildroot}/usr/share/iris/stdlib
+mkdir -p %{buildroot}/usr/share/iris/examples
+mkdir -p %{buildroot}/usr/share/doc/iris
+cp %{_topdir}/../staged-bin/iris %{buildroot}/usr/bin/iris
+chmod 755 %{buildroot}/usr/bin/iris
+cp -r %{_topdir}/../staged-data/stdlib/* %{buildroot}/usr/share/iris/stdlib/ 2>/dev/null || true
+cp -r %{_topdir}/../staged-data/examples/* %{buildroot}/usr/share/iris/examples/ 2>/dev/null || true
+cp %{_topdir}/../staged-data/LICENSE %{buildroot}/usr/share/doc/iris/
+cp %{_topdir}/../staged-data/README.md %{buildroot}/usr/share/doc/iris/
 
 %files
 %license /usr/share/doc/iris/LICENSE
@@ -153,7 +174,7 @@ rpmbuild \
 find "$RPM_TOPDIR/RPMS" -name '*.rpm' -exec cp {} "$DIST_DIR/" \;
 
 # Cleanup staging
-rm -rf "$RPM_TOPDIR"
+rm -rf "$RPM_TOPDIR" "$STAGED_BIN" "$STAGED_DATA"
 
 # Find the output file
 RPM_OUT="$(find "$DIST_DIR" -name 'iris-*.rpm' -type f 2>/dev/null | head -1)"
