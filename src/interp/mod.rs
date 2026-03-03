@@ -3787,7 +3787,9 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                     if result_raw == 0 {
                         Ok(IrValue::Str(String::new()))
                     } else {
-                        let cstr = unsafe { std::ffi::CStr::from_ptr(result_raw as *const i8) };
+                        let cstr = unsafe {
+                            std::ffi::CStr::from_ptr(result_raw as *const std::os::raw::c_char)
+                        };
                         Ok(IrValue::Str(cstr.to_string_lossy().to_string()))
                     }
                 }
@@ -4580,8 +4582,8 @@ use self::LoadLibraryA as winapi_LoadLibraryA;
 
 #[cfg(unix)]
 extern "C" {
-    fn dlopen(filename: *const i8, flags: i32) -> *mut u8;
-    fn dlsym(handle: *mut u8, symbol: *const i8) -> *mut u8;
+    fn dlopen(filename: *const std::os::raw::c_char, flags: i32) -> *mut u8;
+    fn dlsym(handle: *mut u8, symbol: *const std::os::raw::c_char) -> *mut u8;
     fn dlclose(handle: *mut u8) -> i32;
 }
 #[cfg(unix)]

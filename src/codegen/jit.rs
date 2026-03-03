@@ -117,8 +117,8 @@ impl JitCompiler {
             return Ok(cached.clone());
         }
 
-        // Try native tier first.
-        let result = if is_clang_available() {
+        // Try native tier first (requires clang + full toolchain).
+        let result = if is_native_jit_available() {
             self.compile_native(module, &func.name)?
         } else {
             self.compile_interpreter(module)?
@@ -188,8 +188,12 @@ impl JitCompiler {
             ));
         }
 
-        // Per-process + per-hash directory so parallel tests don't collide.
-        let unique = format!("iris_jit_{}_{}", std::process::id(), hash_module(module));
+        // Per-process + per-thread + per-hash directory so parallel tests don't collide.
+        let tid: String = format!("{:?}", std::thread::current().id())
+            .chars()
+            .filter(|c| c.is_ascii_digit())
+            .collect();
+        let unique = format!("iris_jit_{}_{}_{}", std::process::id(), hash_module(module), tid);
         let tmp_dir = std::env::temp_dir().join(&unique);
         let _ = std::fs::create_dir_all(&tmp_dir);
 
@@ -383,7 +387,7 @@ pub fn emit_jit(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out, "; Module: {}", module.name)?;
     writeln!(out, "; IR hash: {:016x}", hash_module(module))?;
     writeln!(out, "; Execution tier: {}", result.tier)?;
-    writeln!(out, "; clang available: {}", is_clang_available())?;
+    writeln!(out, "; clang available: {}", is_native_jit_available())?;
     writeln!(out, ";")?;
     writeln!(out, "; Functions available for JIT:")?;
     for func in module.functions() {
@@ -427,7 +431,7 @@ pub fn emit_jit_plan(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out, "; IR hash: {:016x}", hash_module(module))?;
     writeln!(out)?;
 
-    let tier_str = if is_clang_available() {
+    let tier_str = if is_native_jit_available() {
         "native (clang subprocess)"
     } else {
         "interpreter (fallback)"
@@ -476,12 +480,30 @@ pub fn emit_jit_plan(module: &IrModule) -> Result<String, CodegenError> {
 // ---------------------------------------------------------------------------
 
 /// Returns true if `clang` is available in PATH.
-fn is_clang_available() -> bool {
-    std::process::Command::new("clang")
+fn is_native_jit_available() -> bool {
+    // clang must be present.
+    let clang_ok = std::process::Command::new(find_clang())
         .arg("--version")
         .output()
         .map(|o| o.status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if !clang_ok {
+        return false;
+    }
+    // On Windows the JIT targets x86_64-w64-windows-gnu and therefore needs
+    // the MSYS2/MinGW ucrt64 toolchain (headers + libraries + GCC CRT).  If
+    // any of those paths are missing the native tier cannot link a runnable
+    // binary, so we fall back to the interpreter tier up-front.
+    #[cfg(target_os = "windows")]
+    {
+        if msys2_ucrt64_include().is_none()
+            || msys2_ucrt64_lib().is_none()
+            || msys2_gcc_lib().is_none()
+        {
+            return false;
+        }
+    }
+    true
 }
 
 /// Compute a stable hash of the module's IR text for cache invalidation.
