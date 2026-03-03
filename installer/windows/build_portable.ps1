@@ -62,6 +62,14 @@ if (Test-Path $ExamplesSrc) {
     Write-Host "  examples/" -ForegroundColor Green
 }
 
+# Bundled LLVM toolchain + MinGW sysroot
+$ToolchainSrc = Join-Path $Root "toolchain"
+if (Test-Path $ToolchainSrc) {
+    Copy-Item $ToolchainSrc (Join-Path $StageDir "toolchain") -Recurse -Force
+    $tcSize = [math]::Round(((Get-ChildItem (Join-Path $StageDir "toolchain") -Recurse -File | Measure-Object -Property Length -Sum).Sum) / 1048576, 1)
+    Write-Host "  toolchain/ ($tcSize MB)" -ForegroundColor Green
+}
+
 # License + README
 Copy-Item (Join-Path $Root "LICENSE") $StageDir -Force
 Copy-Item (Join-Path $Root "README.md") $StageDir -Force

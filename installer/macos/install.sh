@@ -159,6 +159,27 @@ install_examples() {
     fi
 }
 
+# ── Install toolchain (bundled LLVM for native compilation) ──────────────
+install_toolchain() {
+    local script_dir
+    script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local tc_src=""
+
+    if [[ -d "$script_dir/toolchain" ]]; then
+        tc_src="$script_dir/toolchain"
+    elif [[ -d "$script_dir/../../toolchain" ]]; then
+        tc_src="$script_dir/../../toolchain"
+    fi
+
+    if [[ -n "$tc_src" ]]; then
+        mkdir -p "$INSTALL_DIR/toolchain"
+        cp -R "$tc_src"/* "$INSTALL_DIR/toolchain/" 2>/dev/null || true
+        ok "Installed toolchain to $INSTALL_DIR/toolchain"
+    else
+        info "No bundled toolchain found — iris build will use system clang."
+    fi
+}
+
 # ── VSCode extension ─────────────────────────────────────────────────────
 install_vscode_extension() {
     local script_dir
@@ -221,10 +242,11 @@ chmod +x "$BIN_DIR/iris"
 xattr -d com.apple.quarantine "$BIN_DIR/iris" 2>/dev/null || true
 ok "Binary installed."
 
-# Step 4: Install stdlib + examples
-step "Installing standard library and examples..."
+# Step 4: Install stdlib + examples + toolchain
+step "Installing standard library, examples, and toolchain..."
 install_stdlib
 install_examples
+install_toolchain
 
 # Step 5: Add to PATH
 step "Configuring PATH..."

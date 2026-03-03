@@ -258,22 +258,26 @@ pub(crate) fn find_clang() -> String {
 
     #[cfg(target_os = "macos")]
     {
-        // macOS: Homebrew LLVM, Xcode CLT, common install paths
+        // macOS: package-installed toolchain, Homebrew LLVM, Xcode CLT
+        candidates.push("/usr/local/share/iris/toolchain/llvm/bin/clang".into());
         candidates.push("/opt/homebrew/opt/llvm/bin/clang".into());
         candidates.push("/usr/local/opt/llvm/bin/clang".into());
         candidates.push("/usr/bin/clang".into());
         if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{}/.iris/toolchain/llvm/bin/clang", home));
             candidates.push(format!("{}/.iris/llvm/bin/clang", home));
         }
     }
 
     #[cfg(target_os = "linux")]
     {
-        // Linux: common distribution paths
+        // Linux: package-installed toolchain, then common distribution paths
+        candidates.push("/usr/share/iris/toolchain/llvm/bin/clang".into());
         candidates.push("/usr/bin/clang".into());
         candidates.push("/usr/lib/llvm-18/bin/clang".into());
         candidates.push("/usr/lib/llvm-17/bin/clang".into());
         if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{}/.iris/toolchain/llvm/bin/clang", home));
             candidates.push(format!("{}/.iris/llvm/bin/clang", home));
         }
     }
@@ -310,6 +314,7 @@ pub(crate) fn msys2_ucrt64_include() -> Option<String> {
         }
         candidates.push(r"C:\msys64\ucrt64\include".into());
         if let Ok(home) = std::env::var("USERPROFILE") {
+            candidates.push(format!(r"{}\.iris\toolchain\ucrt64\include", home));
             candidates.push(format!(r"{}\.iris\ucrt64\include", home));
         }
         candidates.push("/c/msys64/ucrt64/include".into());
@@ -344,6 +349,7 @@ pub(crate) fn msys2_ucrt64_lib() -> Option<String> {
         }
         candidates.push(r"C:\msys64\ucrt64\lib".into());
         if let Ok(home) = std::env::var("USERPROFILE") {
+            candidates.push(format!(r"{}\.iris\toolchain\ucrt64\lib", home));
             candidates.push(format!(r"{}\.iris\ucrt64\lib", home));
         }
         candidates.push("/c/msys64/ucrt64/lib".into());
@@ -386,6 +392,7 @@ pub(crate) fn msys2_gcc_lib() -> Option<String> {
         base_dirs.push(r"C:\msys64\ucrt64\lib\gcc".into());
         // Legacy user-local
         if let Ok(home) = std::env::var("USERPROFILE") {
+            base_dirs.push(format!(r"{}\.iris\toolchain\ucrt64\lib\gcc", home));
             base_dirs.push(format!(r"{}\.iris\ucrt64\lib\gcc", home));
         }
         base_dirs.push("/c/msys64/ucrt64/lib/gcc".into());

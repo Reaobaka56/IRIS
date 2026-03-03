@@ -46,6 +46,7 @@ rm -rf "$STAGE_DIR" "$SCRIPTS_DIR" "$RESOURCES_DIR" "$COMP_PKG"
 mkdir -p "$STAGE_DIR/usr/local/bin"
 mkdir -p "$STAGE_DIR/usr/local/share/iris/stdlib"
 mkdir -p "$STAGE_DIR/usr/local/share/iris/examples"
+mkdir -p "$STAGE_DIR/usr/local/share/iris/toolchain"
 mkdir -p "$STAGE_DIR/usr/local/share/doc/iris"
 mkdir -p "$SCRIPTS_DIR"
 mkdir -p "$RESOURCES_DIR"
@@ -75,6 +76,13 @@ cp -R "$ROOT/stdlib/"* "$STAGE_DIR/usr/local/share/iris/stdlib/" 2>/dev/null || 
 
 # Examples
 cp -R "$ROOT/examples/"* "$STAGE_DIR/usr/local/share/iris/examples/" 2>/dev/null || true
+
+# Bundled LLVM toolchain
+TOOLCHAIN_SRC="$ROOT/toolchain"
+if [[ -d "$TOOLCHAIN_SRC" ]]; then
+    cp -R "$TOOLCHAIN_SRC"/* "$STAGE_DIR/usr/local/share/iris/toolchain/" 2>/dev/null || true
+    echo "  Bundled LLVM toolchain"
+fi
 
 # Docs
 cp "$ROOT/LICENSE" "$STAGE_DIR/usr/local/share/doc/iris/"

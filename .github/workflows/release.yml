@@ -160,10 +160,44 @@ jobs:
 
           # Copy LLVM headers/libs needed for linking (MinGW sysroot on Windows)
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
-            # Copy MinGW sysroot needed for Windows native compilation
+            # Clang internal headers
             if [[ -d "toolchain-dl/llvm/lib/clang/${LLVM_VER}/include" ]]; then
               mkdir -p toolchain/llvm/lib/clang/${LLVM_VER}
               cp -r toolchain-dl/llvm/lib/clang/${LLVM_VER}/include toolchain/llvm/lib/clang/${LLVM_VER}/
+            fi
+
+            # Bundle MinGW ucrt64 sysroot from runner's MSYS2 installation.
+            # Without this, clang cannot find standard C headers (stdint.h, etc).
+            MSYS2_UCRT="/c/msys64/ucrt64"
+            if [[ -d "$MSYS2_UCRT" ]]; then
+              echo "  Bundling MinGW ucrt64 sysroot..."
+
+              # Headers — copy everything (includes sys/, sec_api/, sdks/, etc.)
+              mkdir -p toolchain/ucrt64/include
+              cp -r "$MSYS2_UCRT/include/"* toolchain/ucrt64/include/
+
+              # Essential link libraries
+              mkdir -p toolchain/ucrt64/lib
+              for f in libmingw32.a libmingwex.a libmsvcrt.a libucrt.a \
+                       libpthread.a libm.a libkernel32.a libuser32.a \
+                       libadvapi32.a libshell32.a libws2_32.a libole32.a \
+                       liboleaut32.a libuuid.a libmoldname.a \
+                       crt2.o crtbegin.o crtend.o gcrt2.o dllcrt2.o \
+                       libntdll.a libshlwapi.a libversion.a \
+                       libgdi32.a libbcrypt.a libuserenv.a libiphlpapi.a; do
+                cp "$MSYS2_UCRT/lib/$f" toolchain/ucrt64/lib/ 2>/dev/null || true
+              done
+
+              # GCC CRT support files (crtbegin.o, libgcc.a, etc.)
+              GCC_LIB_DIR=$(find "$MSYS2_UCRT/lib/gcc/x86_64-w64-mingw32" -maxdepth 1 -type d 2>/dev/null | sort -rV | head -1)
+              if [[ -n "$GCC_LIB_DIR" ]]; then
+                GCC_VER=$(basename "$GCC_LIB_DIR")
+                mkdir -p "toolchain/ucrt64/lib/gcc/x86_64-w64-mingw32/$GCC_VER"
+                cp "$GCC_LIB_DIR"/*.o "$GCC_LIB_DIR"/*.a \
+                  "toolchain/ucrt64/lib/gcc/x86_64-w64-mingw32/$GCC_VER/" 2>/dev/null || true
+              fi
+
+              echo "  ucrt64 sysroot: $(du -sh toolchain/ucrt64 | awk '{print $1}')"
             fi
           fi
 
@@ -319,6 +353,12 @@ jobs:
           mkdir -p target/release
           cp "$BIN" "target/release/"
           chmod +x "target/release/iris" 2>/dev/null || true
+
+          # Extract the bundled LLVM toolchain so installer scripts can package it.
+          if [[ -d "extracted/toolchain" ]]; then
+            cp -r extracted/toolchain toolchain
+            echo "  Toolchain extracted ($(du -sh toolchain | awk '{print $1}'))"
+          fi
 
       # ── Linux .deb ──
       - name: Build .deb package

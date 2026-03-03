@@ -152,13 +152,12 @@ Get-ChildItem "$Msys2Ucrt\include" -File -Filter '*.h' | ForEach-Object {
     Copy-Item $_.FullName $TcInc.FullName -Force
     $incTotal += $_.Length
 }
-@('sys', 'sec_api') | ForEach-Object {
-    $subSrc = Join-Path "$Msys2Ucrt\include" $_
-    if (Test-Path $subSrc) {
-        $subDst = Join-Path $TcInc.FullName $_
-        Copy-Item $subSrc $subDst -Recurse -Force
-        Get-ChildItem $subSrc -Recurse -File | ForEach-Object { $incTotal += $_.Length }
-    }
+# Copy ALL subdirectories (sys, sec_api, sdks, c++, directx, etc.)
+Get-ChildItem "$Msys2Ucrt\include" -Directory | ForEach-Object {
+    $subSrc = $_.FullName
+    $subDst = Join-Path $TcInc.FullName $_.Name
+    Copy-Item $subSrc $subDst -Recurse -Force
+    Get-ChildItem $subSrc -Recurse -File | ForEach-Object { $incTotal += $_.Length }
 }
 $incMB = [math]::Round($incTotal / 1048576, 1)
 Write-Host "  ucrt64\include: $incMB MB" -ForegroundColor Green

@@ -63,12 +63,16 @@ BUILDROOT="$RPM_TOPDIR/BUILDROOT/iris-${VERSION}-${RELEASE}.${RPM_ARCH}"
 mkdir -p "$BUILDROOT/usr/bin"
 mkdir -p "$BUILDROOT/usr/share/iris/stdlib"
 mkdir -p "$BUILDROOT/usr/share/iris/examples"
+mkdir -p "$BUILDROOT/usr/share/iris/toolchain"
 mkdir -p "$BUILDROOT/usr/share/doc/iris"
 
 cp "$IRIS_BIN" "$BUILDROOT/usr/bin/iris"
 chmod 755 "$BUILDROOT/usr/bin/iris"
 cp -r "$ROOT/stdlib/"* "$BUILDROOT/usr/share/iris/stdlib/" 2>/dev/null || true
 cp -r "$ROOT/examples/"* "$BUILDROOT/usr/share/iris/examples/" 2>/dev/null || true
+if [[ -d "$ROOT/toolchain" ]]; then
+    cp -r "$ROOT/toolchain/"* "$BUILDROOT/usr/share/iris/toolchain/" 2>/dev/null || true
+fi
 cp "$ROOT/LICENSE" "$BUILDROOT/usr/share/doc/iris/"
 cp "$ROOT/README.md" "$BUILDROOT/usr/share/doc/iris/"
 
@@ -76,11 +80,14 @@ cp "$ROOT/README.md" "$BUILDROOT/usr/share/doc/iris/"
 # cleans $BUILDROOT before running %install, so we need a second copy).
 STAGED_BIN="$DIST_DIR/staged-bin"
 STAGED_DATA="$DIST_DIR/staged-data"
-mkdir -p "$STAGED_BIN" "$STAGED_DATA/stdlib" "$STAGED_DATA/examples"
+mkdir -p "$STAGED_BIN" "$STAGED_DATA/stdlib" "$STAGED_DATA/examples" "$STAGED_DATA/toolchain"
 cp "$IRIS_BIN" "$STAGED_BIN/iris"
 chmod 755 "$STAGED_BIN/iris"
 cp -r "$ROOT/stdlib/"* "$STAGED_DATA/stdlib/" 2>/dev/null || true
 cp -r "$ROOT/examples/"* "$STAGED_DATA/examples/" 2>/dev/null || true
+if [[ -d "$ROOT/toolchain" ]]; then
+    cp -r "$ROOT/toolchain/"* "$STAGED_DATA/toolchain/" 2>/dev/null || true
+fi
 cp "$ROOT/LICENSE" "$STAGED_DATA/"
 cp "$ROOT/README.md" "$STAGED_DATA/"
 
@@ -103,9 +110,6 @@ URL:            https://github.com/moon9t/iris
 %define __strip /bin/true
 AutoReqProv:    no
 
-Requires:       clang
-Requires:       lld
-
 %description
 IRIS (Intermediate Representation for Intelligent Systems) is a
 programming language designed for machine learning and systems
@@ -125,11 +129,13 @@ and DAP server.
 mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/share/iris/stdlib
 mkdir -p %{buildroot}/usr/share/iris/examples
+mkdir -p %{buildroot}/usr/share/iris/toolchain
 mkdir -p %{buildroot}/usr/share/doc/iris
 cp %{_topdir}/../staged-bin/iris %{buildroot}/usr/bin/iris
 chmod 755 %{buildroot}/usr/bin/iris
 cp -r %{_topdir}/../staged-data/stdlib/* %{buildroot}/usr/share/iris/stdlib/ 2>/dev/null || true
 cp -r %{_topdir}/../staged-data/examples/* %{buildroot}/usr/share/iris/examples/ 2>/dev/null || true
+cp -r %{_topdir}/../staged-data/toolchain/* %{buildroot}/usr/share/iris/toolchain/ 2>/dev/null || true
 cp %{_topdir}/../staged-data/LICENSE %{buildroot}/usr/share/doc/iris/
 cp %{_topdir}/../staged-data/README.md %{buildroot}/usr/share/doc/iris/
 

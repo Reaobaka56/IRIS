@@ -44,6 +44,7 @@ mkdir -p "$PKG_DIR/DEBIAN"
 mkdir -p "$PKG_DIR/usr/bin"
 mkdir -p "$PKG_DIR/usr/share/iris/stdlib"
 mkdir -p "$PKG_DIR/usr/share/iris/examples"
+mkdir -p "$PKG_DIR/usr/share/iris/toolchain"
 mkdir -p "$PKG_DIR/usr/share/doc/iris"
 mkdir -p "$PKG_DIR/usr/share/man/man1"
 mkdir -p "$DIST_DIR"
@@ -73,6 +74,13 @@ cp -r "$ROOT/stdlib/"* "$PKG_DIR/usr/share/iris/stdlib/" 2>/dev/null || true
 
 # Examples
 cp -r "$ROOT/examples/"* "$PKG_DIR/usr/share/iris/examples/" 2>/dev/null || true
+
+# Bundled LLVM toolchain (enables `iris build` without system clang)
+TOOLCHAIN_SRC="$ROOT/toolchain"
+if [[ -d "$TOOLCHAIN_SRC" ]]; then
+    cp -r "$TOOLCHAIN_SRC"/* "$PKG_DIR/usr/share/iris/toolchain/" 2>/dev/null || true
+    echo "  Bundled LLVM toolchain"
+fi
 
 # Documentation
 cp "$ROOT/LICENSE" "$PKG_DIR/usr/share/doc/iris/copyright"
@@ -159,7 +167,7 @@ Description: IRIS programming language compiler and toolchain
  programming language designed for machine learning and systems
  programming. Includes compiler, interpreter, REPL, LSP server,
  and DAP server.
-Depends: clang, lld
+Depends: libc6
 EOF
 
 # Post-install script

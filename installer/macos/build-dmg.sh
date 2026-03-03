@@ -63,6 +63,13 @@ chmod 755 "$DMG_DIR/install.sh"
 # Stdlib and examples
 cp -R "$ROOT/stdlib" "$DMG_DIR/stdlib" 2>/dev/null || true
 cp -R "$ROOT/examples" "$DMG_DIR/examples" 2>/dev/null || true
+
+# Bundled LLVM toolchain
+if [[ -d "$ROOT/toolchain" ]]; then
+    cp -R "$ROOT/toolchain" "$DMG_DIR/toolchain" 2>/dev/null || true
+    echo "  Bundled LLVM toolchain"
+fi
+
 cp "$ROOT/LICENSE" "$DMG_DIR/"
 cp "$ROOT/README.md" "$DMG_DIR/"
 
