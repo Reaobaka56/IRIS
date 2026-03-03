@@ -213,37 +213,70 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
 }
 
 /// Find clang — required for compiling LLVM IR, C code, and linking.
-/// Search order: next to iris.exe, Inno Setup install dir, system LLVM, PATH.
+/// Search order: next to iris binary (bundled), Inno Setup install dir,
+/// system LLVM, PATH.
 pub(crate) fn find_clang() -> String {
     let mut candidates: Vec<String> = Vec::new();
 
-    // 1. Relative to the running executable  (…/IRIS/toolchain/llvm/bin/clang.exe)
+    // 1. Relative to the running executable  (…/toolchain/llvm/bin/clang[.exe])
+    //    Works for both bundled release archives and local dev installs.
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            candidates.push(format!(r"{}\toolchain\llvm\bin\clang.exe", dir.display()));
+            #[cfg(target_os = "windows")]
+            {
+                candidates.push(format!(r"{}\toolchain\llvm\bin\clang.exe", dir.display()));
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                candidates.push(format!("{}/toolchain/llvm/bin/clang", dir.display()));
+            }
         }
     }
 
-    // 2. Inno Setup default install dir  ({LOCALAPPDATA}\Programs\IRIS)
-    if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-        candidates.push(format!(
-            r"{}\Programs\IRIS\toolchain\llvm\bin\clang.exe",
-            lad
-        ));
+    #[cfg(target_os = "windows")]
+    {
+        // 2. Inno Setup default install dir  ({LOCALAPPDATA}\Programs\IRIS)
+        if let Ok(lad) = std::env::var("LOCALAPPDATA") {
+            candidates.push(format!(
+                r"{}\Programs\IRIS\toolchain\llvm\bin\clang.exe",
+                lad
+            ));
+        }
+
+        // 3. System-wide LLVM installs
+        candidates.push(r"C:\Program Files\LLVM\bin\clang.exe".into());
+        candidates.push(r"C:\Program Files (x86)\LLVM\bin\clang.exe".into());
+
+        // 4. Legacy user-local fallback
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            candidates.push(format!(r"{}\.iris\llvm\bin\clang.exe", home));
+        }
+
+        // 5. MSYS2-style paths (from MSYS2/MINGW shells)
+        candidates.push("/c/Program Files/LLVM/bin/clang.exe".into());
     }
 
-    // 3. System-wide LLVM installs
-    candidates.push(r"C:\Program Files\LLVM\bin\clang.exe".into());
-    candidates.push(r"C:\Program Files (x86)\LLVM\bin\clang.exe".into());
-
-    // 4. Legacy user-local fallback
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        candidates.push(format!(r"{}\.iris\llvm\bin\clang.exe", home));
+    #[cfg(target_os = "macos")]
+    {
+        // macOS: Homebrew LLVM, Xcode CLT, common install paths
+        candidates.push("/opt/homebrew/opt/llvm/bin/clang".into());
+        candidates.push("/usr/local/opt/llvm/bin/clang".into());
+        candidates.push("/usr/bin/clang".into());
+        if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{}/.iris/llvm/bin/clang", home));
+        }
     }
 
-    // 5. MSYS2-style paths (from MSYS2/MINGW shells)
-    candidates.push("/c/Program Files/LLVM/bin/clang.exe".into());
-    candidates.push("/usr/bin/clang".into());
+    #[cfg(target_os = "linux")]
+    {
+        // Linux: common distribution paths
+        candidates.push("/usr/bin/clang".into());
+        candidates.push("/usr/lib/llvm-18/bin/clang".into());
+        candidates.push("/usr/lib/llvm-17/bin/clang".into());
+        if let Ok(home) = std::env::var("HOME") {
+            candidates.push(format!("{}/.iris/llvm/bin/clang", home));
+        }
+    }
 
     for p in &candidates {
         if std::path::Path::new(p).exists() {
@@ -255,93 +288,124 @@ pub(crate) fn find_clang() -> String {
 }
 
 /// Return the MinGW ucrt64 include path if it exists.
-/// Search order: next to iris.exe, Inno Setup dir, system MSYS2, legacy.
+/// Windows-only: needed for cross-compiling to the windows-gnu target.
+/// On Linux/macOS, system headers are used via clang's built-in paths.
 pub(crate) fn msys2_ucrt64_include() -> Option<String> {
-    let mut candidates: Vec<String> = Vec::new();
+    #[cfg(not(target_os = "windows"))]
+    {
+        return None;
+    }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(format!(r"{}\toolchain\ucrt64\include", dir.display()));
-        }
-    }
-    if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-        candidates.push(format!(r"{}\Programs\IRIS\toolchain\ucrt64\include", lad));
-    }
-    candidates.push(r"C:\msys64\ucrt64\include".into());
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        candidates.push(format!(r"{}\.iris\ucrt64\include", home));
-    }
-    candidates.push("/c/msys64/ucrt64/include".into());
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates: Vec<String> = Vec::new();
 
-    for p in &candidates {
-        if std::path::Path::new(p.as_str()).exists() {
-            return Some(p.clone());
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                candidates.push(format!(r"{}\toolchain\ucrt64\include", dir.display()));
+            }
         }
+        if let Ok(lad) = std::env::var("LOCALAPPDATA") {
+            candidates.push(format!(
+                r"{}\Programs\IRIS\toolchain\ucrt64\include",
+                lad
+            ));
+        }
+        candidates.push(r"C:\msys64\ucrt64\include".into());
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            candidates.push(format!(r"{}\.iris\ucrt64\include", home));
+        }
+        candidates.push("/c/msys64/ucrt64/include".into());
+
+        for p in &candidates {
+            if std::path::Path::new(p.as_str()).exists() {
+                return Some(p.clone());
+            }
+        }
+        None
     }
-    None
 }
 
-/// Return the MinGW ucrt64 lib path if it exists.
+/// Return the MinGW ucrt64 lib path if it exists (Windows-only).
 pub(crate) fn msys2_ucrt64_lib() -> Option<String> {
-    let mut candidates: Vec<String> = Vec::new();
+    #[cfg(not(target_os = "windows"))]
+    {
+        return None;
+    }
 
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            candidates.push(format!(r"{}\toolchain\ucrt64\lib", dir.display()));
-        }
-    }
-    if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-        candidates.push(format!(r"{}\Programs\IRIS\toolchain\ucrt64\lib", lad));
-    }
-    candidates.push(r"C:\msys64\ucrt64\lib".into());
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        candidates.push(format!(r"{}\.iris\ucrt64\lib", home));
-    }
-    candidates.push("/c/msys64/ucrt64/lib".into());
+    #[cfg(target_os = "windows")]
+    {
+        let mut candidates: Vec<String> = Vec::new();
 
-    for p in &candidates {
-        if std::path::Path::new(p.as_str()).exists() {
-            return Some(p.clone());
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                candidates.push(format!(r"{}\toolchain\ucrt64\lib", dir.display()));
+            }
         }
+        if let Ok(lad) = std::env::var("LOCALAPPDATA") {
+            candidates.push(format!(r"{}\Programs\IRIS\toolchain\ucrt64\lib", lad));
+        }
+        candidates.push(r"C:\msys64\ucrt64\lib".into());
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            candidates.push(format!(r"{}\.iris\ucrt64\lib", home));
+        }
+        candidates.push("/c/msys64/ucrt64/lib".into());
+
+        for p in &candidates {
+            if std::path::Path::new(p.as_str()).exists() {
+                return Some(p.clone());
+            }
+        }
+        None
     }
-    None
 }
 
 /// Return the GCC internal lib path (contains CRT start files like crtbegin.o,
-/// libgcc.a) inside the MinGW ucrt64 tree.
+/// libgcc.a) inside the MinGW ucrt64 tree (Windows-only).
 pub(crate) fn msys2_gcc_lib() -> Option<String> {
-    let triple = "x86_64-w64-mingw32";
-    let versions = ["14.2.0", "14.1.0", "13.2.0", "13.1.0", "12.2.0"];
-
-    let mut base_dirs: Vec<String> = Vec::new();
-
-    // Next to the running executable
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            base_dirs.push(format!(r"{}\toolchain\ucrt64\lib\gcc", dir.display()));
-        }
+    #[cfg(not(target_os = "windows"))]
+    {
+        return None;
     }
-    // Inno Setup default install location
-    if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-        base_dirs.push(format!(r"{}\Programs\IRIS\toolchain\ucrt64\lib\gcc", lad));
-    }
-    // System MSYS2
-    base_dirs.push(r"C:\msys64\ucrt64\lib\gcc".into());
-    // Legacy user-local
-    if let Ok(home) = std::env::var("USERPROFILE") {
-        base_dirs.push(format!(r"{}\.iris\ucrt64\lib\gcc", home));
-    }
-    base_dirs.push("/c/msys64/ucrt64/lib/gcc".into());
 
-    for base in &base_dirs {
-        for ver in &versions {
-            let p = format!("{}\\{}\\{}", base, triple, ver);
-            if std::path::Path::new(&p).exists() {
-                return Some(p);
+    #[cfg(target_os = "windows")]
+    {
+        let triple = "x86_64-w64-mingw32";
+        let versions = ["14.2.0", "14.1.0", "13.2.0", "13.1.0", "12.2.0"];
+
+        let mut base_dirs: Vec<String> = Vec::new();
+
+        // Next to the running executable
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(dir) = exe.parent() {
+                base_dirs.push(format!(r"{}\toolchain\ucrt64\lib\gcc", dir.display()));
             }
         }
+        // Inno Setup default install location
+        if let Ok(lad) = std::env::var("LOCALAPPDATA") {
+            base_dirs.push(format!(
+                r"{}\Programs\IRIS\toolchain\ucrt64\lib\gcc",
+                lad
+            ));
+        }
+        // System MSYS2
+        base_dirs.push(r"C:\msys64\ucrt64\lib\gcc".into());
+        // Legacy user-local
+        if let Ok(home) = std::env::var("USERPROFILE") {
+            base_dirs.push(format!(r"{}\.iris\ucrt64\lib\gcc", home));
+        }
+        base_dirs.push("/c/msys64/ucrt64/lib/gcc".into());
+
+        for base in &base_dirs {
+            for ver in &versions {
+                let p = format!("{}\\{}\\{}", base, triple, ver);
+                if std::path::Path::new(&p).exists() {
+                    return Some(p);
+                }
+            }
+        }
+        None
     }
-    None
 }
 
 /// Emit LLVM IR text suitable for native binary compilation.

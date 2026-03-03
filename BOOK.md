@@ -81,12 +81,78 @@ IRIS is a statically-typed compiled language. Its pipeline looks like this:
 
 The same source can also be run directly by the built-in tree-walking interpreter (for quick development), or compiled all the way to a native binary for production.
 
-### 1.2 Installation (Windows)
+### 1.2 Installation
 
-IRIS ships as a single executable. After downloading the installer or the standalone `iris.exe`:
+IRIS ships as a self-contained release archive that includes the `iris` binary, the standard library, and a bundled LLVM toolchain (clang + lld). Download the latest release for your platform from the [GitHub Releases page](https://github.com/paigeadelethompson/IRIS/releases).
 
-1. Copy `iris.exe` to a folder on your `PATH` (for example, `C:\tools\iris\`).
-2. Open a new terminal and verify the installation:
+#### Linux
+
+**Option A — `.deb` package (Debian / Ubuntu)**
+
+```bash
+sudo dpkg -i iris_0.2.0_amd64.deb   # or arm64
+```
+
+**Option B — `.rpm` package (Fedora / RHEL / openSUSE)**
+
+```bash
+sudo rpm -i iris-0.2.0-1.x86_64.rpm   # or aarch64
+```
+
+**Option C — AppImage (any distro)**
+
+```bash
+chmod +x iris-0.2.0-x86_64.AppImage
+./iris-0.2.0-x86_64.AppImage --version
+```
+
+**Option D — Shell installer**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/paigeadelethompson/IRIS/master/installer/linux/install.sh | bash
+```
+
+This installs `iris` to `~/.iris/bin` and adds it to your `PATH`.
+
+#### macOS
+
+**Option A — `.pkg` installer**
+
+Download and double-click `iris-0.2.0-arm64.pkg` (Apple Silicon) or `iris-0.2.0-x64.pkg` (Intel). The installer places IRIS in `/usr/local/bin`.
+
+**Option B — Shell installer**
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/paigeadelethompson/IRIS/master/installer/macos/install.sh | bash
+```
+
+**Option C — Homebrew (coming soon)**
+
+```bash
+brew install iris-lang   # planned for a future release
+```
+
+> **Note:** On macOS, you may need to allow the binary in *System Settings → Privacy & Security* the first time you run it.
+
+#### Windows
+
+**Option A — Installer (.exe)**
+
+Download and run `iris-0.2.0-setup.exe`. The Inno Setup installer bundles the LLVM toolchain, MinGW sysroot, and the IRIS VS Code extension. It adds `iris` to your `PATH` automatically.
+
+**Option B — Portable .zip**
+
+Download `iris-0.2.0-windows-x64.zip`, extract it to a folder (for example, `C:\tools\iris\`), and add that folder to your `PATH`.
+
+**Option C — PowerShell installer**
+
+```powershell
+irm https://raw.githubusercontent.com/paigeadelethompson/IRIS/master/installer/install.ps1 | iex
+```
+
+#### Verify the installation
+
+Open a new terminal and run:
 
 ```
 iris --version
@@ -120,7 +186,20 @@ Build:
 
 The version output shows the full compiler provenance: version, git commit hash, branch, build date, platform triple, thread model, optimization profile, and the Rust toolchain used to build it.
 
-For native binary compilation, IRIS requires LLVM/clang 17+ (which includes the `lld` linker) and MinGW sysroot headers/libraries. The bundled installer handles this automatically. If installing manually, install LLVM from <https://releases.llvm.org/> (to `C:\Program Files\LLVM`) and ensure MinGW ucrt64 headers and libraries are present at `C:\msys64\ucrt64`. No GCC installation is needed — IRIS uses clang for all compilation and lld for linking.
+#### Native compilation dependencies
+
+For native binary compilation (`iris build`), IRIS requires LLVM/clang 17+ and the `lld` linker. The official release archives **bundle these tools automatically** — no additional installation is needed.
+
+If you installed IRIS from source or want to use your own LLVM, ensure that `clang` and `lld` are on your `PATH`:
+
+| Platform | How to install LLVM |
+|----------|---------------------|
+| Linux (Debian/Ubuntu) | `sudo apt install clang lld` |
+| Linux (Fedora/RHEL) | `sudo dnf install clang lld` |
+| macOS | `brew install llvm` (Apple's Xcode clang also works) |
+| Windows | Download from <https://releases.llvm.org/> to `C:\Program Files\LLVM` |
+
+On Windows, the linker also needs MinGW sysroot headers/libraries. Install MSYS2 and ensure the ucrt64 files are present at `C:\msys64\ucrt64`. No GCC installation is needed — IRIS uses clang for all compilation and lld for linking.
 
 ### 1.3 Hello, World
 

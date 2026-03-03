@@ -6,7 +6,11 @@
 #   ./installer/linux/build-rpm.sh [--version 0.2.0] [--arch x86_64]
 #
 # Produces: installer/dist/iris-<version>-1.<arch>.rpm
-# Requires: rpmbuild (from rpm-build package)
+# Requires: rpmbuild (from rpm or rpm-build package)
+#
+# This script uses a direct BUILDROOT approach (no source tarball / %setup)
+# so it works for cross-architecture builds on any host (e.g. building an
+# aarch64 RPM on an x86_64 Ubuntu CI runner).
 # ──────────────────────────────────────────────────────────────────────────
 set -euo pipefail
 
@@ -36,15 +40,15 @@ echo "Building IRIS .rpm package v${VERSION} (${RPM_ARCH})"
 
 # ── Paths ─────────────────────────────────────────────────────────────────
 DIST_DIR="$ROOT/installer/dist"
-RPM_BUILD_ROOT="$ROOT/installer/dist/rpm-staging"
+RPM_TOPDIR="$ROOT/installer/dist/rpm-staging"
 RPM_FILE="iris-${VERSION}-${RELEASE}.${RPM_ARCH}.rpm"
 
 # ── Clean previous build ─────────────────────────────────────────────────
-rm -rf "$RPM_BUILD_ROOT"
-mkdir -p "$RPM_BUILD_ROOT"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
+rm -rf "$RPM_TOPDIR"
+mkdir -p "$RPM_TOPDIR"/{BUILD,RPMS,SOURCES,SPECS,SRPMS,BUILDROOT}
 mkdir -p "$DIST_DIR"
 
-# ── Build release binary (if not already built) ──────────────────────────
+# ── Locate release binary ────────────────────────────────────────────────
 IRIS_BIN="$ROOT/target/release/iris"
 if [[ ! -f "$IRIS_BIN" ]]; then
     echo "[1/4] Building release binary..."
@@ -53,39 +57,41 @@ else
     echo "[1/4] Using existing release binary."
 fi
 
-# ── Create source tarball ────────────────────────────────────────────────
-echo "[2/4] Creating source tarball..."
-SRC_DIR="$RPM_BUILD_ROOT/SOURCES/iris-${VERSION}"
-mkdir -p "$SRC_DIR/bin"
-mkdir -p "$SRC_DIR/stdlib"
-mkdir -p "$SRC_DIR/examples"
-mkdir -p "$SRC_DIR/doc"
+# ── Pre-populate BUILDROOT directly ──────────────────────────────────────
+echo "[2/4] Staging files into BUILDROOT..."
+BUILDROOT="$RPM_TOPDIR/BUILDROOT/iris-${VERSION}-${RELEASE}.${RPM_ARCH}"
+mkdir -p "$BUILDROOT/usr/bin"
+mkdir -p "$BUILDROOT/usr/share/iris/stdlib"
+mkdir -p "$BUILDROOT/usr/share/iris/examples"
+mkdir -p "$BUILDROOT/usr/share/doc/iris"
 
-cp "$IRIS_BIN" "$SRC_DIR/bin/iris"
-cp -r "$ROOT/stdlib/"* "$SRC_DIR/stdlib/" 2>/dev/null || true
-cp -r "$ROOT/examples/"* "$SRC_DIR/examples/" 2>/dev/null || true
-cp "$ROOT/LICENSE" "$SRC_DIR/doc/"
-cp "$ROOT/README.md" "$SRC_DIR/doc/"
+cp "$IRIS_BIN" "$BUILDROOT/usr/bin/iris"
+chmod 755 "$BUILDROOT/usr/bin/iris"
+cp -r "$ROOT/stdlib/"* "$BUILDROOT/usr/share/iris/stdlib/" 2>/dev/null || true
+cp -r "$ROOT/examples/"* "$BUILDROOT/usr/share/iris/examples/" 2>/dev/null || true
+cp "$ROOT/LICENSE" "$BUILDROOT/usr/share/doc/iris/"
+cp "$ROOT/README.md" "$BUILDROOT/usr/share/doc/iris/"
 
-(cd "$RPM_BUILD_ROOT/SOURCES" && tar czf "iris-${VERSION}.tar.gz" "iris-${VERSION}")
-rm -rf "$SRC_DIR"
-
-# ── Create spec file ─────────────────────────────────────────────────────
+# ── Create spec file (binary-only — no %prep/%build) ─────────────────────
 echo "[3/4] Creating RPM spec file..."
-cat > "$RPM_BUILD_ROOT/SPECS/iris.spec" << SPECEOF
+CHANGELOG_DATE="$(date '+%a %b %d %Y')"
+
+cat > "$RPM_TOPDIR/SPECS/iris.spec" << SPECEOF
 Name:           iris
 Version:        ${VERSION}
-Release:        ${RELEASE}%{?dist}
+Release:        ${RELEASE}
 Summary:        IRIS programming language compiler and toolchain
+BuildArch:      ${RPM_ARCH}
 
 License:        GPL-2.0-or-later
 URL:            https://github.com/moon9t/iris
-Source0:        iris-%{version}.tar.gz
 
-# Pre-built binary — skip debug package and build steps
+# Pre-built binary — skip debug package extraction and auto deps
 %global debug_package %{nil}
 AutoReqProv:    no
-Recommends:     clang lld
+
+Requires:       clang
+Requires:       lld
 
 %description
 IRIS (Intermediate Representation for Intelligent Systems) is a
@@ -93,20 +99,17 @@ programming language designed for machine learning and systems
 programming. Includes compiler, interpreter, REPL, LSP server,
 and DAP server.
 
+# Binary package — files are staged directly into BUILDROOT by the build
+# script. No source extraction, configuration, or compilation needed.
 %prep
-%setup -q -n iris-%{version}
+# nothing
+
+%build
+# nothing
 
 %install
-mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/usr/share/iris/stdlib
-mkdir -p %{buildroot}/usr/share/iris/examples
-mkdir -p %{buildroot}/usr/share/doc/iris
-
-install -m 755 bin/iris %{buildroot}/usr/bin/iris
-cp -r stdlib/* %{buildroot}/usr/share/iris/stdlib/ 2>/dev/null || true
-cp -r examples/* %{buildroot}/usr/share/iris/examples/ 2>/dev/null || true
-cp doc/LICENSE %{buildroot}/usr/share/doc/iris/
-cp doc/README.md %{buildroot}/usr/share/doc/iris/
+# Files already placed in BUILDROOT by the outer build script.
+# Nothing to do here.
 
 %files
 %license /usr/share/doc/iris/LICENSE
@@ -121,7 +124,7 @@ echo "  Run 'iris --version' to verify."
 echo ""
 
 %changelog
-* $(date '+%a %b %d %Y') IRIS Language Project <iris@moon9t.dev> - ${VERSION}-${RELEASE}
+* ${CHANGELOG_DATE} IRIS Language Project <iris@moon9t.dev> - ${VERSION}-${RELEASE}
 - Release v${VERSION}
 SPECEOF
 
@@ -136,19 +139,24 @@ if ! command -v rpmbuild &>/dev/null; then
     exit 1
 fi
 
+# Use --define to set architecture explicitly (avoids needing platform macros
+# for cross-arch builds, e.g. building aarch64 on x86_64 Ubuntu CI).
 rpmbuild \
-    --define "_topdir $RPM_BUILD_ROOT" \
-    --target "$RPM_ARCH" \
-    -bb "$RPM_BUILD_ROOT/SPECS/iris.spec"
+    --define "_topdir $RPM_TOPDIR" \
+    --define "_arch ${RPM_ARCH}" \
+    --define "_rpmdir $RPM_TOPDIR/RPMS" \
+    --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
+    --buildroot "$BUILDROOT" \
+    -bb "$RPM_TOPDIR/SPECS/iris.spec"
 
 # Copy the built RPM to dist
-find "$RPM_BUILD_ROOT/RPMS" -name '*.rpm' -exec cp {} "$DIST_DIR/" \;
+find "$RPM_TOPDIR/RPMS" -name '*.rpm' -exec cp {} "$DIST_DIR/" \;
 
 # Cleanup staging
-rm -rf "$RPM_BUILD_ROOT"
+rm -rf "$RPM_TOPDIR"
 
 # Find the output file
-RPM_OUT="$(find "$DIST_DIR" -name 'iris-*.rpm' -newer "$DIST_DIR" 2>/dev/null | head -1)"
+RPM_OUT="$(find "$DIST_DIR" -name 'iris-*.rpm' -type f 2>/dev/null | head -1)"
 if [[ -z "$RPM_OUT" ]]; then
     RPM_OUT="$DIST_DIR/$RPM_FILE"
 fi

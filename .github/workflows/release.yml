@@ -82,6 +82,98 @@ jobs:
           matrix.target != 'aarch64-pc-windows-msvc'
         run: cargo test --release --target ${{ matrix.target }}
 
+      - name: Download LLVM toolchain
+        shell: bash
+        run: |
+          # Download a minimal LLVM distribution (clang + lld) for the target.
+          # We extract only the binaries needed for `iris build` (native compilation).
+          LLVM_VER="18.1.8"
+          LLVM_BASE="https://github.com/llvm/llvm-project/releases/download/llvmorg-${LLVM_VER}"
+
+          mkdir -p toolchain-dl
+
+          case "${{ matrix.target }}" in
+            x86_64-pc-windows-msvc)
+              # Windows: LLVM provides a prebuilt zip/exe.  Use the win64 release.
+              curl -fSL "${LLVM_BASE}/LLVM-${LLVM_VER}-win64.exe" -o toolchain-dl/llvm.exe
+              # Extract with 7z (NSIS self-extractor)
+              7z x toolchain-dl/llvm.exe -otoolchain-dl/llvm -y > /dev/null 2>&1 || true
+              ;;
+            aarch64-pc-windows-msvc)
+              # Windows ARM64: use the woa64 build
+              curl -fSL "${LLVM_BASE}/LLVM-${LLVM_VER}-woa64.exe" -o toolchain-dl/llvm.exe
+              7z x toolchain-dl/llvm.exe -otoolchain-dl/llvm -y > /dev/null 2>&1 || true
+              ;;
+            x86_64-unknown-linux-gnu)
+              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-x86_64-linux-gnu-ubuntu-18.04.tar.xz" \
+                -o toolchain-dl/llvm.tar.xz
+              tar xf toolchain-dl/llvm.tar.xz -C toolchain-dl
+              mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
+              ;;
+            aarch64-unknown-linux-gnu)
+              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-aarch64-linux-gnu.tar.xz" \
+                -o toolchain-dl/llvm.tar.xz
+              tar xf toolchain-dl/llvm.tar.xz -C toolchain-dl
+              mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
+              ;;
+            x86_64-apple-darwin)
+              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-x86_64-apple-darwin17.0.tar.xz" \
+                -o toolchain-dl/llvm.tar.xz
+              tar xf toolchain-dl/llvm.tar.xz -C toolchain-dl
+              mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
+              ;;
+            aarch64-apple-darwin)
+              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-arm64-apple-darwin22.0.tar.xz" \
+                -o toolchain-dl/llvm.tar.xz
+              tar xf toolchain-dl/llvm.tar.xz -C toolchain-dl
+              mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
+              ;;
+          esac
+
+          # Extract only the binaries we need: clang, lld (and their symlinks)
+          mkdir -p toolchain/llvm/bin
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            cp toolchain-dl/llvm/bin/clang.exe    toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/clang++.exe   toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/clang-18.exe  toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/lld.exe       toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/ld.lld.exe    toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/lld-link.exe  toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/llvm-ar.exe   toolchain/llvm/bin/ 2>/dev/null || true
+            # Copy required DLLs if present
+            cp toolchain-dl/llvm/bin/*.dll          toolchain/llvm/bin/ 2>/dev/null || true
+          else
+            cp toolchain-dl/llvm/bin/clang      toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/clang++    toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/clang-18   toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/lld        toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/ld.lld     toolchain/llvm/bin/ 2>/dev/null || true
+            cp toolchain-dl/llvm/bin/llvm-ar    toolchain/llvm/bin/ 2>/dev/null || true
+            # Copy required shared libs
+            mkdir -p toolchain/llvm/lib
+            cp toolchain-dl/llvm/lib/libLLVM*.so*  toolchain/llvm/lib/ 2>/dev/null || true
+            cp toolchain-dl/llvm/lib/libclang*.so* toolchain/llvm/lib/ 2>/dev/null || true
+            cp toolchain-dl/llvm/lib/liblld*.so*   toolchain/llvm/lib/ 2>/dev/null || true
+            cp toolchain-dl/llvm/lib/libLLVM*.dylib  toolchain/llvm/lib/ 2>/dev/null || true
+            cp toolchain-dl/llvm/lib/libclang*.dylib toolchain/llvm/lib/ 2>/dev/null || true
+          fi
+
+          # Copy LLVM headers/libs needed for linking (MinGW sysroot on Windows)
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            # Copy MinGW sysroot needed for Windows native compilation
+            if [[ -d "toolchain-dl/llvm/lib/clang/${LLVM_VER}/include" ]]; then
+              mkdir -p toolchain/llvm/lib/clang/${LLVM_VER}
+              cp -r toolchain-dl/llvm/lib/clang/${LLVM_VER}/include toolchain/llvm/lib/clang/${LLVM_VER}/
+            fi
+          fi
+
+          # Cleanup the large download
+          rm -rf toolchain-dl
+
+          echo "--- Toolchain contents ---"
+          find toolchain -type f | head -30
+          du -sh toolchain/
+
       - name: Prepare artifact
         shell: bash
         run: |
@@ -96,6 +188,12 @@ jobs:
           cp -r stdlib staging/ 2>/dev/null || true
           cp -r examples staging/ 2>/dev/null || true
           cp LICENSE staging/
+
+          # Bundle the LLVM toolchain so releases are self-contained
+          if [[ -d "toolchain" ]]; then
+            cp -r toolchain staging/
+            echo "  Bundled LLVM toolchain"
+          fi
 
           if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
             7z a "${ARCHIVE}.zip" ./staging/*

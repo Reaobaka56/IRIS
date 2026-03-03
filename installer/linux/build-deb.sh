@@ -159,7 +159,7 @@ Description: IRIS programming language compiler and toolchain
  programming language designed for machine learning and systems
  programming. Includes compiler, interpreter, REPL, LSP server,
  and DAP server.
-Recommends: clang, lld
+Depends: clang, lld
 EOF
 
 # Post-install script
