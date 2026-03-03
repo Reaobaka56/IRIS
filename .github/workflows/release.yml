@@ -75,12 +75,8 @@ jobs:
       - name: Build release binary
         run: cargo build --release --target ${{ matrix.target }}
 
-      - name: Run tests
-        if: >-
-          matrix.target != 'aarch64-apple-darwin' &&
-          matrix.target != 'aarch64-unknown-linux-gnu' &&
-          matrix.target != 'aarch64-pc-windows-msvc'
-        run: cargo test --release --target ${{ matrix.target }}
+      # Tests are run by the CI workflow; skip in release to avoid long
+      # compilation time in --release mode.
 
       - name: Download LLVM toolchain
         shell: bash
