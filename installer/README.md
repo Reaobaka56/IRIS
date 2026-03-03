@@ -1,116 +1,293 @@
-# IRIS Language — Windows Installer
+# IRIS Language — Installer & Packaging
 
-## Prerequisites
+Cross-platform installers, package builders, and one-line install scripts for the
+IRIS programming language.
 
-- Windows 10 or later (x64)
-- **No internet connection required** — all toolchains are bundled
-- **No manual dependency installation required** — everything is included
+## Quick Install
 
-## Installation
-
-1. **Download** `IRIS-0.2.0-windows-x64-setup.exe`
-2. **Run the installer** — no administrator privileges required (installs per-user by default)
-3. Choose **Full** (recommended) to install everything, or **Compact** for the compiler only
-4. **Restart your terminal** (or VSCode) to pick up the updated PATH
-5. **Verify:**
-
-   ```bash
-   iris --version
-   iris repl
-   ```
-
-## What gets installed
-
-| Component | Install Location | Description |
-| --- | --- | --- |
-| `iris.exe` | `%LOCALAPPDATA%\Programs\IRIS` | Compiler, REPL, LSP server, DAP server |
-| LLVM (clang + lld) | `...\IRIS\toolchain\llvm\bin` | For native binary compilation |
-| MinGW sysroot | `...\IRIS\toolchain\ucrt64` | C headers + static libs for linking |
-| VSCode extension | VSCode extensions dir | Syntax highlighting, diagnostics, debugging |
-| User PATH | `%LOCALAPPDATA%\Programs\IRIS` | Added automatically (optional) |
-
-## Installer Options
-
-The setup wizard offers three installation types:
-
-- **Full** — Compiler + LLVM/clang + MinGW sysroot + VSCode extension (~50 MB compressed, ~300 MB on disk)
-- **Compact** — Compiler only (requires clang + MinGW already installed on the system)
-- **Custom** — Choose individual components
-
-Optional tasks (all enabled by default):
-
-- Add IRIS to user PATH
-- Add LLVM to user PATH
-- Install VSCode extension (if VSCode is detected)
-
-## VSCode Integration
-
-After installation, open any `.iris` file in VSCode. The extension provides:
-
-- Syntax highlighting
-- Error diagnostics as you type
-- Hover for type info, completions, goto-definition
-- Inline **Run** / **Debug** buttons above zero-argument functions
-- `Ctrl+F5` to run the current file
-- `IRIS: Open REPL` command in the Command Palette
-- `IRIS: Show IR Output` — inspect compiled IR
-- Format on save
-
-## Uninstallation
-
-Use **Add or Remove Programs** in Windows Settings, or run the uninstaller from the Start Menu group.
-
-The uninstaller removes PATH entries and registry keys automatically.
-
-## Quick Start
+### Linux
 
 ```bash
-# Interpreter mode (fast, no C compiler needed)
-iris run hello.iris
-
-# Native binary (requires clang + lld, bundled in Full install)
-iris build hello.iris -o hello.exe
-./hello.exe
-
-# Interactive REPL
-iris repl
-
-# Inspect compiler output
-iris --emit ir hello.iris
-iris --emit llvm hello.iris
+curl -fsSL https://raw.githubusercontent.com/moon9t/iris/master/installer/linux/install.sh | bash
 ```
 
-## Example: hello.iris
+### macOS
 
-```iris
-def main() -> i64 {
-    print("Hello from IRIS!");
-    0
-}
+```bash
+curl -fsSL https://raw.githubusercontent.com/moon9t/iris/master/installer/macos/install.sh | bash
 ```
 
-## Building the Installer
+### Windows
 
-Requires [Inno Setup 6](https://jrsoftware.org/isdl.php) and MSYS2/ucrt64.
+Download `IRIS-0.2.0-windows-x64-setup.exe` from the
+[latest release](https://github.com/moon9t/iris/releases/latest), or use
+PowerShell:
 
 ```powershell
-# From the project root:
-powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
-
-# Skip the cargo build step:
-powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1 -SkipBuild
+powershell -ExecutionPolicy Bypass -File installer\install.ps1
 ```
 
-Output: `installer\dist\IRIS-0.2.0-windows-x64-setup.exe`
+---
+
+## Directory Layout
+
+```
+installer/
+├── build-all.sh              # Cross-platform build orchestrator
+├── install.ps1               # Windows PowerShell installer
+├── uninstall.ps1             # Windows PowerShell uninstaller
+├── build_installer.ps1       # Windows Inno Setup .exe builder
+├── iris.iss                  # Inno Setup 6 script
+├── README.md                 # This file
+├── linux/
+│   ├── install.sh            # One-line Linux installer
+│   ├── uninstall.sh          # Linux uninstaller
+│   ├── build-deb.sh          # Debian .deb package builder
+│   ├── build-rpm.sh          # RPM package builder
+│   └── build-appimage.sh     # AppImage builder
+├── macos/
+│   ├── install.sh            # One-line macOS installer
+│   ├── uninstall.sh          # macOS uninstaller
+│   ├── build-pkg.sh          # macOS .pkg installer builder
+│   └── build-dmg.sh          # macOS .dmg disk image builder
+└── windows/
+    ├── build_portable.ps1    # Portable .zip builder
+    └── build_msi.ps1         # WiX .msi builder
+```
+
+---
+
+## Platform Details
+
+### Linux
+
+**One-line install** — downloads the latest release, installs to `~/.iris/bin`,
+configures PATH in `.bashrc`/`.zshrc`/`.profile`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/moon9t/iris/master/installer/linux/install.sh | bash
+```
+
+**Debian/Ubuntu (.deb):**
+
+```bash
+sudo dpkg -i iris_0.2.0_x86_64.deb
+# or
+sudo apt install ./iris_0.2.0_x86_64.deb
+```
+
+**Fedora/RHEL (.rpm):**
+
+```bash
+sudo rpm -i iris-0.2.0-1.x86_64.rpm
+# or
+sudo dnf install ./iris-0.2.0-1.x86_64.rpm
+```
+
+**AppImage (portable, no root):**
+
+```bash
+chmod +x IRIS-0.2.0-x86_64.AppImage
+./IRIS-0.2.0-x86_64.AppImage --version
+```
+
+**Uninstall:**
+
+```bash
+# Shell install:
+bash installer/linux/uninstall.sh
+
+# System package:
+sudo dpkg -r iris          # Debian
+sudo rpm -e iris            # RPM
+```
+
+### macOS
+
+**One-line install** — downloads the latest release, installs to `~/.iris/bin`,
+configures PATH in `.zshrc`/`.bash_profile`:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/moon9t/iris/master/installer/macos/install.sh | bash
+```
+
+**macOS Installer Package (.pkg):**
+
+Double-click the `.pkg` file, or from the terminal:
+
+```bash
+sudo installer -pkg IRIS-0.2.0-macos-aarch64.pkg -target /
+```
+
+Installs to `/usr/local/bin/iris` with stdlib at `/usr/local/share/iris/`.
+
+**Disk Image (.dmg):**
+
+Mount the DMG image and run the included `Install` script.
+
+**Uninstall:**
+
+```bash
+# Shell install:
+bash installer/macos/uninstall.sh
+
+# .pkg install:
+sudo rm -rf /usr/local/bin/iris /usr/local/share/iris
+sudo pkgutil --forget dev.moon9t.iris
+```
+
+### Windows
+
+**Inno Setup installer (.exe)** — the recommended method:
+
+1. Download `IRIS-0.2.0-windows-x64-setup.exe` from the latest release
+2. Run the installer (no admin required — per-user install)
+3. Choose **Full** for compiler + LLVM + MinGW, or **Compact** for compiler only
+
+**PowerShell installer:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\install.ps1
+```
+
+**Portable .zip** — extract and add to PATH:
+
+```powershell
+Expand-Archive IRIS-0.2.0-windows-x86_64-portable.zip -DestinationPath C:\iris
+$env:PATH += ";C:\iris"
+```
+
+**Uninstall:**
+
+- Via **Add or Remove Programs** (Inno Setup install)
+- Or: `powershell -ExecutionPolicy Bypass -File installer\uninstall.ps1`
+
+---
+
+## What Gets Installed
+
+| Component | Linux / macOS | Windows |
+|-----------|--------------|---------|
+| `iris` binary | `~/.iris/bin/iris` | `%LOCALAPPDATA%\Programs\IRIS\iris.exe` |
+| Standard library | `~/.iris/stdlib/` | `...\IRIS\stdlib\` |
+| Examples | `~/.iris/examples/` | `...\IRIS\examples\` |
+| PATH config | `.bashrc` / `.zshrc` | User PATH environment variable |
+| VSCode extension | Auto-installed if `code` detected | Auto-installed if VSCode detected |
+
+System packages (.deb / .rpm / .pkg) install to `/usr/bin/iris` and
+`/usr/share/iris/` instead.
+
+---
+
+## Building Installers
+
+### Build all formats for the current platform
+
+```bash
+bash installer/build-all.sh
+```
+
+Options:
+- `--version 0.2.0` — set the version (default: 0.2.0)
+- `--skip-build` — use an existing `target/release/iris` binary
+- `--format deb` — build only a specific format (deb, rpm, appimage, pkg, dmg, portable)
+
+### Build specific formats
+
+**Linux .deb:**
+```bash
+bash installer/linux/build-deb.sh --version 0.2.0 --arch x86_64
+```
+
+**Linux .rpm:**
+```bash
+bash installer/linux/build-rpm.sh --version 0.2.0 --arch x86_64
+```
+
+**Linux AppImage:**
+```bash
+bash installer/linux/build-appimage.sh --version 0.2.0
+```
+
+**macOS .pkg:**
+```bash
+bash installer/macos/build-pkg.sh --version 0.2.0
+```
+
+**macOS .dmg:**
+```bash
+bash installer/macos/build-dmg.sh --version 0.2.0
+```
+
+**Windows Inno Setup .exe:**
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\build_installer.ps1
+```
+
+**Windows portable .zip:**
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\windows\build_portable.ps1
+```
+
+**Windows .msi (requires WiX Toolset):**
+```powershell
+powershell -ExecutionPolicy Bypass -File installer\windows\build_msi.ps1
+```
+
+All outputs go to `installer/dist/`.
+
+---
+
+## CI/CD
+
+The [release workflow](../.github/workflows/release.yml) automatically builds
+all installer formats when a version tag (`v*`) is pushed:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The GitHub Release will include:
+- Binary archives (`.tar.gz` / `.zip`) for all 6 targets
+- `.deb` packages (x64 + ARM64)
+- `.rpm` packages (x64 + ARM64)
+- `.pkg` installers (x64 + ARM64)
+- `.dmg` disk images (x64 + ARM64)
+- Portable `.zip` for Windows (x64 + ARM64)
+- VS Code extension (`.vsix`)
+- `SHA256SUMS.txt` for integrity verification
+
+---
 
 ## Troubleshooting
 
-**`iris: command not found`** — restart your terminal after install, or run:
+**`iris: command not found`** — restart your terminal after install, or source
+your profile:
 
-```powershell
-$env:PATH += ";$env:LOCALAPPDATA\Programs\IRIS"
+```bash
+source ~/.bashrc   # Linux
+source ~/.zshrc    # macOS
 ```
 
-**`'clang' not found`** — make sure you chose "Full" installation. If you picked "Compact", install LLVM manually from <https://releases.llvm.org/>
+On Windows: restart your terminal or run
+`$env:PATH += ";$env:LOCALAPPDATA\Programs\IRIS"`
 
-**LSP not connecting in VSCode** — set `iris.executablePath` in VSCode settings to the full path of `iris.exe`
+**`clang not found`** — the interpreter mode (`iris run`) doesn't need clang.
+For native compilation (`iris build`), install clang:
+
+```bash
+sudo apt install clang lld         # Debian/Ubuntu
+sudo dnf install clang lld         # Fedora
+brew install llvm                  # macOS
+# Windows: use the Full installer which bundles LLVM
+```
+
+**macOS Gatekeeper blocks the binary** — remove the quarantine attribute:
+
+```bash
+xattr -d com.apple.quarantine ~/.iris/bin/iris
+```
+
+**LSP not connecting in VSCode** — set `iris.executablePath` in VSCode settings
+to the full path of the `iris` binary.

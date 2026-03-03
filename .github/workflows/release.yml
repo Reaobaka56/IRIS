@@ -1,5 +1,6 @@
 # Release — triggered when a version tag (v*) is pushed.
-# Builds release binaries for all platforms, packages the VS Code extension,
+# Builds release binaries for all platforms, creates platform installers
+# (.deb, .rpm, .pkg, .dmg, portable archives), packages the VS Code extension,
 # generates SHA-256 checksums, signs artifacts, and creates a GitHub Release.
 
 name: Release
@@ -109,6 +110,177 @@ jobs:
           name: ${{ matrix.target }}
           path: ${{ env.ASSET }}
 
+  # ─────────────────────── platform installers ────────────────────────────
+  installers:
+    name: Installers (${{ matrix.installer }})
+    needs: [build]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64 .deb
+          - installer: linux-x64-deb
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            format: deb
+            arch: x86_64
+          # Linux ARM64 .deb
+          - installer: linux-arm64-deb
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            format: deb
+            arch: aarch64
+          # Linux x64 .rpm
+          - installer: linux-x64-rpm
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            format: rpm
+            arch: x86_64
+          # Linux ARM64 .rpm
+          - installer: linux-arm64-rpm
+            os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            format: rpm
+            arch: aarch64
+          # macOS x64 .pkg
+          - installer: macos-x64-pkg
+            os: macos-latest
+            target: x86_64-apple-darwin
+            format: pkg
+            arch: x86_64
+          # macOS ARM64 .pkg
+          - installer: macos-arm64-pkg
+            os: macos-latest
+            target: aarch64-apple-darwin
+            format: pkg
+            arch: aarch64
+          # macOS x64 .dmg
+          - installer: macos-x64-dmg
+            os: macos-latest
+            target: x86_64-apple-darwin
+            format: dmg
+            arch: x86_64
+          # macOS ARM64 .dmg
+          - installer: macos-arm64-dmg
+            os: macos-latest
+            target: aarch64-apple-darwin
+            format: dmg
+            arch: aarch64
+          # Windows x64 portable .zip
+          - installer: windows-x64-portable
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+            format: portable
+            arch: x86_64
+          # Windows ARM64 portable .zip
+          - installer: windows-arm64-portable
+            os: windows-latest
+            target: aarch64-pc-windows-msvc
+            format: portable
+            arch: aarch64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: build-artifact
+
+      - name: Extract binary from artifact
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+
+          mkdir -p extracted
+          ARTIFACT=$(ls build-artifact/)
+          if [[ "$ARTIFACT" == *.tar.gz ]]; then
+            tar xzf "build-artifact/$ARTIFACT" -C extracted
+          elif [[ "$ARTIFACT" == *.zip ]]; then
+            cd build-artifact && 7z x "$ARTIFACT" -o../extracted && cd ..
+          fi
+
+          # Find the iris binary
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            BIN=$(find extracted -name 'iris.exe' -type f | head -1)
+          else
+            BIN=$(find extracted -name 'iris' -type f ! -name '*.iris' | head -1)
+          fi
+
+          if [ -z "$BIN" ]; then
+            echo "ERROR: Could not find iris binary in artifact"
+            ls -laR extracted/
+            exit 1
+          fi
+
+          mkdir -p target/release
+          cp "$BIN" "target/release/"
+          chmod +x "target/release/iris" 2>/dev/null || true
+
+      # ── Linux .deb ──
+      - name: Build .deb package
+        if: matrix.format == 'deb'
+        run: |
+          chmod +x installer/linux/build-deb.sh
+          bash installer/linux/build-deb.sh \
+            --version "$VERSION" --arch "${{ matrix.arch }}"
+
+      # ── Linux .rpm ──
+      - name: Install rpmbuild
+        if: matrix.format == 'rpm'
+        run: sudo apt-get update && sudo apt-get install -y rpm
+
+      - name: Build .rpm package
+        if: matrix.format == 'rpm'
+        run: |
+          chmod +x installer/linux/build-rpm.sh
+          bash installer/linux/build-rpm.sh \
+            --version "$VERSION" --arch "${{ matrix.arch }}"
+
+      # ── macOS .pkg ──
+      - name: Build .pkg installer
+        if: matrix.format == 'pkg'
+        run: |
+          chmod +x installer/macos/build-pkg.sh
+          bash installer/macos/build-pkg.sh --version "$VERSION"
+
+      # ── macOS .dmg ──
+      - name: Build .dmg image
+        if: matrix.format == 'dmg'
+        run: |
+          chmod +x installer/macos/build-dmg.sh
+          bash installer/macos/build-dmg.sh --version "$VERSION"
+
+      # ── Windows portable .zip ──
+      - name: Build portable .zip
+        if: matrix.format == 'portable'
+        shell: pwsh
+        run: |
+          & installer\windows\build_portable.ps1 `
+            -Version $env:VERSION -SkipBuild
+
+      - name: Collect installer output
+        shell: bash
+        run: |
+          mkdir -p installer-output
+          find installer/dist -type f \
+            \( -name '*.deb' -o -name '*.rpm' -o -name '*.pkg' \
+               -o -name '*.dmg' -o -name '*portable*.zip' \) \
+            -exec cp {} installer-output/ \;
+
+          echo "--- Installer artifacts ---"
+          ls -lh installer-output/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.installer }}
+          path: installer-output/*
+
   # ─────────────────────────── VS Code extension ──────────────────────────
   extension:
     name: Package VS Code Extension
@@ -137,7 +309,7 @@ jobs:
   # ──────────────────────────── GitHub Release ────────────────────────────
   release:
     name: Create GitHub Release
-    needs: [build, extension]
+    needs: [build, installers, extension]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -151,9 +323,10 @@ jobs:
         shell: bash
         run: |
           cd artifacts
-          # Collect all release archives into one directory
+          # Collect all release files into one directory
           mkdir -p ../release-files
-          find . -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.vsix' \) \
+          find . -type f \( -name '*.zip' -o -name '*.tar.gz' -o -name '*.vsix' \
+            -o -name '*.deb' -o -name '*.rpm' -o -name '*.pkg' -o -name '*.dmg' \) \
             -exec cp {} ../release-files/ \;
           cd ../release-files
           sha256sum * > SHA256SUMS.txt
@@ -165,10 +338,11 @@ jobs:
         shell: bash
         run: |
           TAG="${GITHUB_REF#refs/tags/}"
+          VERSION="${TAG#v}"
           {
             echo "## IRIS ${TAG}"
             echo ""
-            echo "### Downloads"
+            echo "### Binary Archives"
             echo "| Platform | Archive |"
             echo "|----------|---------|"
             echo "| Windows x64   | \`iris-${TAG}-x86_64-pc-windows-msvc.zip\` |"
@@ -177,16 +351,40 @@ jobs:
             echo "| Linux ARM64   | \`iris-${TAG}-aarch64-unknown-linux-gnu.tar.gz\` |"
             echo "| macOS x64     | \`iris-${TAG}-x86_64-apple-darwin.tar.gz\` |"
             echo "| macOS ARM64   | \`iris-${TAG}-aarch64-apple-darwin.tar.gz\` |"
-            echo "| VS Code       | \`iris-lang-*.vsix\` (install via \`code --install-extension\`) |"
+            echo ""
+            echo "### Platform Installers"
+            echo "| Platform | Installer | Install command |"
+            echo "|----------|-----------|-----------------|"
+            echo "| Linux x64   | \`iris_${VERSION}_x86_64.deb\` | \`sudo dpkg -i iris_${VERSION}_x86_64.deb\` |"
+            echo "| Linux ARM64 | \`iris_${VERSION}_aarch64.deb\` | \`sudo dpkg -i iris_${VERSION}_aarch64.deb\` |"
+            echo "| Linux x64   | \`iris-${VERSION}-1.x86_64.rpm\` | \`sudo rpm -i iris-${VERSION}-1.x86_64.rpm\` |"
+            echo "| Linux ARM64 | \`iris-${VERSION}-1.aarch64.rpm\` | \`sudo rpm -i iris-${VERSION}-1.aarch64.rpm\` |"
+            echo "| macOS x64   | \`IRIS-${VERSION}-macos-x86_64.pkg\` | Double-click or \`sudo installer -pkg ... -target /\` |"
+            echo "| macOS ARM64 | \`IRIS-${VERSION}-macos-aarch64.pkg\` | Double-click or \`sudo installer -pkg ... -target /\` |"
+            echo "| macOS x64   | \`IRIS-${VERSION}-macos-x86_64.dmg\` | Mount and run Install script |"
+            echo "| macOS ARM64 | \`IRIS-${VERSION}-macos-aarch64.dmg\` | Mount and run Install script |"
+            echo "| Windows x64 | \`IRIS-${VERSION}-windows-x86_64-portable.zip\` | Extract and add to PATH |"
+            echo "| Windows ARM64 | \`IRIS-${VERSION}-windows-aarch64-portable.zip\` | Extract and add to PATH |"
+            echo ""
+            echo "### VS Code Extension"
+            echo "\`\`\`bash"
+            echo "code --install-extension iris-lang-*.vsix"
+            echo "\`\`\`"
+            echo ""
+            echo "### One-line install (downloads latest)"
+            echo "**Linux:**"
+            echo "\`\`\`bash"
+            echo "curl -fsSL https://raw.githubusercontent.com/moon9t/iris/${TAG}/installer/linux/install.sh | bash"
+            echo "\`\`\`"
+            echo "**macOS:**"
+            echo "\`\`\`bash"
+            echo "curl -fsSL https://raw.githubusercontent.com/moon9t/iris/${TAG}/installer/macos/install.sh | bash"
+            echo "\`\`\`"
             echo ""
             echo "### Verify integrity"
             echo "Download \`SHA256SUMS.txt\` and verify:"
             echo "\`\`\`bash"
             echo "sha256sum -c SHA256SUMS.txt"
-            echo "\`\`\`"
-            echo "Or check a single file:"
-            echo "\`\`\`bash"
-            echo "sha256sum iris-${TAG}-x86_64-unknown-linux-gnu.tar.gz"
             echo "\`\`\`"
             echo ""
             echo "### Quick start"
@@ -210,6 +408,10 @@ jobs:
             release-files/*.zip
             release-files/*.tar.gz
             release-files/*.vsix
+            release-files/*.deb
+            release-files/*.rpm
+            release-files/*.pkg
+            release-files/*.dmg
             release-files/SHA256SUMS.txt
           generate_release_notes: true
           draft: false
