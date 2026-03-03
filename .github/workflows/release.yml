@@ -123,7 +123,7 @@ jobs:
               mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
               ;;
             aarch64-apple-darwin)
-              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-arm64-apple-darwin22.0.tar.xz" \
+              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-arm64-apple-macos11.tar.xz" \
                 -o toolchain-dl/llvm.tar.xz
               tar xf toolchain-dl/llvm.tar.xz -C toolchain-dl
               mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
