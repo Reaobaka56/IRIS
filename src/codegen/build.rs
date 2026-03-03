@@ -293,7 +293,7 @@ pub(crate) fn find_clang() -> String {
 pub(crate) fn msys2_ucrt64_include() -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     {
-        return None;
+        None
     }
 
     #[cfg(target_os = "windows")]
@@ -306,10 +306,7 @@ pub(crate) fn msys2_ucrt64_include() -> Option<String> {
             }
         }
         if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-            candidates.push(format!(
-                r"{}\Programs\IRIS\toolchain\ucrt64\include",
-                lad
-            ));
+            candidates.push(format!(r"{}\Programs\IRIS\toolchain\ucrt64\include", lad));
         }
         candidates.push(r"C:\msys64\ucrt64\include".into());
         if let Ok(home) = std::env::var("USERPROFILE") {
@@ -330,7 +327,7 @@ pub(crate) fn msys2_ucrt64_include() -> Option<String> {
 pub(crate) fn msys2_ucrt64_lib() -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     {
-        return None;
+        None
     }
 
     #[cfg(target_os = "windows")]
@@ -365,7 +362,7 @@ pub(crate) fn msys2_ucrt64_lib() -> Option<String> {
 pub(crate) fn msys2_gcc_lib() -> Option<String> {
     #[cfg(not(target_os = "windows"))]
     {
-        return None;
+        None
     }
 
     #[cfg(target_os = "windows")]
@@ -383,10 +380,7 @@ pub(crate) fn msys2_gcc_lib() -> Option<String> {
         }
         // Inno Setup default install location
         if let Ok(lad) = std::env::var("LOCALAPPDATA") {
-            base_dirs.push(format!(
-                r"{}\Programs\IRIS\toolchain\ucrt64\lib\gcc",
-                lad
-            ));
+            base_dirs.push(format!(r"{}\Programs\IRIS\toolchain\ucrt64\lib\gcc", lad));
         }
         // System MSYS2
         base_dirs.push(r"C:\msys64\ucrt64\lib\gcc".into());
