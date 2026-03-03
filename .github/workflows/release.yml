@@ -168,13 +168,14 @@ jobs:
 
             # Bundle MinGW ucrt64 sysroot from runner's MSYS2 installation.
             # Without this, clang cannot find standard C headers (stdint.h, etc).
-            MSYS2_UCRT="/c/msys64/ucrt64"
+            # Use Windows-style path — Git Bash /c/ path translation can break glob expansion.
+            MSYS2_UCRT="C:/msys64/ucrt64"
             if [[ -d "$MSYS2_UCRT" ]]; then
               echo "  Bundling MinGW ucrt64 sysroot..."
 
-              # Headers — copy everything (includes sys/, sec_api/, sdks/, etc.)
-              mkdir -p toolchain/ucrt64/include
-              cp -r "$MSYS2_UCRT/include/"* toolchain/ucrt64/include/
+              # Headers — copy the entire include directory tree
+              mkdir -p toolchain/ucrt64
+              cp -R "$MSYS2_UCRT/include" toolchain/ucrt64/include
 
               # Essential link libraries
               mkdir -p toolchain/ucrt64/lib
