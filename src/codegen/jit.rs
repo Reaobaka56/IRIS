@@ -193,7 +193,12 @@ impl JitCompiler {
             .chars()
             .filter(|c| c.is_ascii_digit())
             .collect();
-        let unique = format!("iris_jit_{}_{}_{}", std::process::id(), hash_module(module), tid);
+        let unique = format!(
+            "iris_jit_{}_{}_{}",
+            std::process::id(),
+            hash_module(module),
+            tid
+        );
         let tmp_dir = std::env::temp_dir().join(&unique);
         let _ = std::fs::create_dir_all(&tmp_dir);
 
