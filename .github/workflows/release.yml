@@ -39,7 +39,7 @@ jobs:
             os: ubuntu-latest
             ext: ''
           - target: x86_64-apple-darwin
-            os: macos-latest
+            os: macos-13
             ext: ''
           - target: aarch64-apple-darwin
             os: macos-latest
@@ -117,10 +117,12 @@ jobs:
               mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
               ;;
             x86_64-apple-darwin)
-              curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-x86_64-apple-darwin17.0.tar.xz" \
-                -o toolchain-dl/llvm.tar.xz
-              tar xf toolchain-dl/llvm.tar.xz -C toolchain-dl
-              mv toolchain-dl/clang+llvm-* toolchain-dl/llvm
+              # No prebuilt x86_64-apple-darwin on LLVM 18.1.8; use Homebrew.
+              brew install --quiet llvm@18
+              BREW_LLVM="$(brew --prefix llvm@18)"
+              mkdir -p toolchain-dl/llvm/bin toolchain-dl/llvm/lib
+              cp -a "${BREW_LLVM}/bin/"* toolchain-dl/llvm/bin/ 2>/dev/null || true
+              cp -a "${BREW_LLVM}/lib/"*.dylib toolchain-dl/llvm/lib/ 2>/dev/null || true
               ;;
             aarch64-apple-darwin)
               curl -fSL "${LLVM_BASE}/clang+llvm-${LLVM_VER}-arm64-apple-macos11.tar.xz" \
