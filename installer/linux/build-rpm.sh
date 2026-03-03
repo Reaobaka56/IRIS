@@ -93,7 +93,6 @@ Name:           iris
 Version:        ${VERSION}
 Release:        ${RELEASE}
 Summary:        IRIS programming language compiler and toolchain
-BuildArch:      ${RPM_ARCH}
 
 License:        GPL-2.0-or-later
 URL:            https://github.com/moon9t/iris
@@ -160,13 +159,13 @@ if ! command -v rpmbuild &>/dev/null; then
     exit 1
 fi
 
-# Use --define to set architecture explicitly (avoids needing platform macros
+# Use --target to set architecture explicitly (avoids needing platform macros
 # for cross-arch builds, e.g. building aarch64 on x86_64 Ubuntu CI).
 rpmbuild \
     --define "_topdir $RPM_TOPDIR" \
-    --define "_arch ${RPM_ARCH}" \
     --define "_rpmdir $RPM_TOPDIR/RPMS" \
     --define "_build_name_fmt %%{NAME}-%%{VERSION}-%%{RELEASE}.%%{ARCH}.rpm" \
+    --target "${RPM_ARCH}-linux" \
     --buildroot "$BUILDROOT" \
     -bb "$RPM_TOPDIR/SPECS/iris.spec"
 
