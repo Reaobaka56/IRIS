@@ -48,7 +48,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0        # full history so build.rs can read git info
+          fetch-depth: 1        # shallow clone – build.rs only needs HEAD
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
