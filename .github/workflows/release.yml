@@ -168,14 +168,28 @@ jobs:
 
             # Bundle MinGW ucrt64 sysroot from runner's MSYS2 installation.
             # Without this, clang cannot find standard C headers (stdint.h, etc).
-            # Use Windows-style path — Git Bash /c/ path translation can break glob expansion.
             MSYS2_UCRT="C:/msys64/ucrt64"
-            if [[ -d "$MSYS2_UCRT" ]]; then
+
+            # Ensure mingw-w64 headers+libs are installed (runner may have a bare MSYS2).
+            C:/msys64/usr/bin/pacman.exe -S --noconfirm --needed \
+              mingw-w64-ucrt-x86_64-headers-git \
+              mingw-w64-ucrt-x86_64-crt-git \
+              mingw-w64-ucrt-x86_64-gcc-libs \
+              mingw-w64-ucrt-x86_64-winpthreads-git \
+              2>/dev/null || true
+
+            if [[ -d "$MSYS2_UCRT/include" ]]; then
               echo "  Bundling MinGW ucrt64 sysroot..."
 
               # Headers — copy the entire include directory tree
               mkdir -p toolchain/ucrt64
-              cp -R "$MSYS2_UCRT/include" toolchain/ucrt64/include
+              cp -R "$MSYS2_UCRT/include" toolchain/ucrt64/include 2>/dev/null || true
+
+              # If cp -R failed (symlink issues), fall back to rsync or robocopy
+              if [[ ! -f "toolchain/ucrt64/include/stdint.h" ]]; then
+                echo "  cp -R failed, falling back to robocopy..."
+                robocopy.exe "C:\\msys64\\ucrt64\\include" "toolchain\\ucrt64\\include" /E /NFL /NDL /NP > /dev/null 2>&1 || true
+              fi
 
               # Essential link libraries
               mkdir -p toolchain/ucrt64/lib
@@ -194,11 +208,13 @@ jobs:
               if [[ -n "$GCC_LIB_DIR" ]]; then
                 GCC_VER=$(basename "$GCC_LIB_DIR")
                 mkdir -p "toolchain/ucrt64/lib/gcc/x86_64-w64-mingw32/$GCC_VER"
-                cp "$GCC_LIB_DIR"/*.o "$GCC_LIB_DIR"/*.a \
-                  "toolchain/ucrt64/lib/gcc/x86_64-w64-mingw32/$GCC_VER/" 2>/dev/null || true
+                find "$GCC_LIB_DIR" -maxdepth 1 \( -name '*.o' -o -name '*.a' \) -exec \
+                  cp {} "toolchain/ucrt64/lib/gcc/x86_64-w64-mingw32/$GCC_VER/" \; 2>/dev/null || true
               fi
 
               echo "  ucrt64 sysroot: $(du -sh toolchain/ucrt64 | awk '{print $1}')"
+            else
+              echo "  WARNING: MSYS2 ucrt64 include dir not found at $MSYS2_UCRT/include"
             fi
           fi
 
