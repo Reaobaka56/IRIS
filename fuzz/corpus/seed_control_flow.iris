@@ -1,0 +1,9 @@
+def fib(n: i64) -> i64 {
+    if n <= 1 { n } else { fib(n - 1) + fib(n - 2) }
+}
+def main() -> i64 {
+    val result = fib(10);
+    for i in 0..5 { print(to_str(i)); }
+    while result > 0 { val x = result; }
+    result
+}

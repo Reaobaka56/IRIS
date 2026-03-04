@@ -1,0 +1,6 @@
+def main() -> i64 {
+    val a: i64 = 10;
+    val b: i64 = 5;
+    val add_ab = |x: i64| a + b + x;
+    add_ab(27)
+}

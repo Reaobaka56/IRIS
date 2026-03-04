@@ -1148,9 +1148,10 @@ impl<'m> Lowerer<'m> {
         );
         lambda_lowerer.builder.seal_unterminated_blocks();
 
-        // Patch the return type.
+        // Patch the return type and capture count.
         let mut ir_func = lambda_lowerer.builder.build();
         ir_func.return_ty = ret_ty.clone();
+        ir_func.capture_count = captures.len();
 
         // Register the lifted function.
         self.lifted_fns.borrow_mut().push(ir_func);

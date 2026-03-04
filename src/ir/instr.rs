@@ -1234,3 +1234,68 @@ impl IrInstr {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- BinOp Display ----------------------------------------------------
+
+    #[test]
+    fn binop_display() {
+        assert_eq!(format!("{}", BinOp::Add), "add");
+        assert_eq!(format!("{}", BinOp::Sub), "sub");
+        assert_eq!(format!("{}", BinOp::Mul), "mul");
+        assert_eq!(format!("{}", BinOp::Div), "div");
+        assert_eq!(format!("{}", BinOp::Mod), "mod");
+        assert_eq!(format!("{}", BinOp::Pow), "pow");
+        assert_eq!(format!("{}", BinOp::CmpEq), "cmpeq");
+        assert_eq!(format!("{}", BinOp::CmpNe), "cmpne");
+        assert_eq!(format!("{}", BinOp::CmpLt), "cmplt");
+        assert_eq!(format!("{}", BinOp::CmpLe), "cmple");
+        assert_eq!(format!("{}", BinOp::CmpGt), "cmpgt");
+        assert_eq!(format!("{}", BinOp::CmpGe), "cmpge");
+        assert_eq!(format!("{}", BinOp::BitAnd), "band");
+        assert_eq!(format!("{}", BinOp::BitOr), "bor");
+        assert_eq!(format!("{}", BinOp::BitXor), "bxor");
+        assert_eq!(format!("{}", BinOp::Shl), "shl");
+        assert_eq!(format!("{}", BinOp::Shr), "shr");
+        assert_eq!(format!("{}", BinOp::Min), "min");
+        assert_eq!(format!("{}", BinOp::Max), "max");
+        assert_eq!(format!("{}", BinOp::FloorDiv), "floordiv");
+    }
+
+    // -- ScalarUnaryOp Display --------------------------------------------
+
+    #[test]
+    fn unaryop_display() {
+        assert_eq!(format!("{}", ScalarUnaryOp::Neg), "neg");
+        assert_eq!(format!("{}", ScalarUnaryOp::Not), "not");
+        assert_eq!(format!("{}", ScalarUnaryOp::Sqrt), "sqrt");
+        assert_eq!(format!("{}", ScalarUnaryOp::Abs), "abs");
+        assert_eq!(format!("{}", ScalarUnaryOp::Floor), "floor");
+        assert_eq!(format!("{}", ScalarUnaryOp::Ceil), "ceil");
+        assert_eq!(format!("{}", ScalarUnaryOp::BitNot), "bnot");
+        assert_eq!(format!("{}", ScalarUnaryOp::Sin), "sin");
+        assert_eq!(format!("{}", ScalarUnaryOp::Cos), "cos");
+        assert_eq!(format!("{}", ScalarUnaryOp::Tan), "tan");
+        assert_eq!(format!("{}", ScalarUnaryOp::Exp), "exp");
+        assert_eq!(format!("{}", ScalarUnaryOp::Log), "log");
+        assert_eq!(format!("{}", ScalarUnaryOp::Log2), "log2");
+        assert_eq!(format!("{}", ScalarUnaryOp::Round), "round");
+        assert_eq!(format!("{}", ScalarUnaryOp::Sign), "sign");
+    }
+
+    // -- InstrId / ValueId ------------------------------------------------
+
+    #[test]
+    fn instrid_equality() {
+        assert_eq!(InstrId(0), InstrId(0));
+        assert_ne!(InstrId(0), InstrId(1));
+        assert!(InstrId(0) < InstrId(1));
+    }
+}

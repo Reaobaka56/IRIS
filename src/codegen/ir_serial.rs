@@ -2740,5 +2740,6 @@ fn deserialize_function(r: &mut Reader) -> Result<IrFunction, String> {
         next_value,
         attrs: Vec::new(),
         span_table: SpanTable::default(),
+        capture_count: 0,
     })
 }

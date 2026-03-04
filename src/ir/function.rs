@@ -67,6 +67,9 @@ pub struct IrFunction {
     /// Source position table for the debugger: maps `(block_id, instr_idx)` to
     /// the byte offset of the statement that produced the instruction.
     pub span_table: SpanTable,
+    /// Number of leading parameters that are lambda captures (0 for normal fns).
+    /// Used by LLVM codegen to emit env-based capture extraction.
+    pub capture_count: usize,
 }
 
 impl IrFunction {

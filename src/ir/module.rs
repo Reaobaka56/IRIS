@@ -168,6 +168,7 @@ impl IrFunctionBuilder {
             next_value: 0,
             attrs: Vec::new(),
             span_table: SpanTable::default(),
+            capture_count: 0,
         };
         Self {
             func,

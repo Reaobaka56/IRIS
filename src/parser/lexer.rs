@@ -664,3 +664,264 @@ impl<'src> Lexer<'src> {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: tokenize source and return the token nodes (without spans).
+    fn toks(src: &str) -> Vec<Token> {
+        Lexer::new(src)
+            .tokenize()
+            .expect("tokenize failed")
+            .into_iter()
+            .map(|s| s.node)
+            .collect()
+    }
+
+    // -- Span tests -------------------------------------------------------
+
+    #[test]
+    fn span_merge() {
+        let a = Span::new(2, 5);
+        let b = Span::new(8, 12);
+        let m = a.merge(b);
+        assert_eq!(m.start, BytePos(2));
+        assert_eq!(m.end, BytePos(12));
+    }
+
+    #[test]
+    fn span_at_zero_length() {
+        let s = Span::at(7);
+        assert_eq!(s.start, BytePos(7));
+        assert_eq!(s.end, BytePos(7));
+    }
+
+    // -- Keywords ---------------------------------------------------------
+
+    #[test]
+    fn lex_keywords() {
+        let tokens = toks("def val var return if else while loop break continue");
+        assert_eq!(tokens[0], Token::Def);
+        assert_eq!(tokens[1], Token::Val);
+        assert_eq!(tokens[2], Token::Var);
+        assert_eq!(tokens[3], Token::Return);
+        assert_eq!(tokens[4], Token::If);
+        assert_eq!(tokens[5], Token::Else);
+        assert_eq!(tokens[6], Token::While);
+        assert_eq!(tokens[7], Token::Loop);
+        assert_eq!(tokens[8], Token::Break);
+        assert_eq!(tokens[9], Token::Continue);
+    }
+
+    #[test]
+    fn lex_type_keywords() {
+        let tokens = toks("f32 f64 i32 i64 bool tensor str");
+        assert_eq!(tokens[0], Token::F32);
+        assert_eq!(tokens[1], Token::F64);
+        assert_eq!(tokens[2], Token::I32);
+        assert_eq!(tokens[3], Token::I64);
+        assert_eq!(tokens[4], Token::Bool);
+        assert_eq!(tokens[5], Token::Tensor);
+        assert_eq!(tokens[6], Token::Str);
+    }
+
+    #[test]
+    fn lex_advanced_keywords() {
+        let tokens = toks("record bring when choice for in spawn par async await const type trait impl pub extern");
+        assert_eq!(tokens[0], Token::Record);
+        assert_eq!(tokens[1], Token::Bring);
+        assert_eq!(tokens[2], Token::When);
+        assert_eq!(tokens[3], Token::Choice);
+        assert_eq!(tokens[4], Token::For);
+        assert_eq!(tokens[5], Token::In);
+        assert_eq!(tokens[6], Token::Spawn);
+        assert_eq!(tokens[7], Token::Par);
+        assert_eq!(tokens[8], Token::Async);
+        assert_eq!(tokens[9], Token::Await);
+        assert_eq!(tokens[10], Token::Const);
+        assert_eq!(tokens[11], Token::Type);
+        assert_eq!(tokens[12], Token::Trait);
+        assert_eq!(tokens[13], Token::Impl);
+        assert_eq!(tokens[14], Token::Pub);
+        assert_eq!(tokens[15], Token::Extern);
+    }
+
+    // -- Literals ---------------------------------------------------------
+
+    #[test]
+    fn lex_integer_literals() {
+        let tokens = toks("0 42 1000000");
+        assert_eq!(tokens[0], Token::IntLit(0));
+        assert_eq!(tokens[1], Token::IntLit(42));
+        assert_eq!(tokens[2], Token::IntLit(1000000));
+    }
+
+    #[test]
+    fn lex_float_literals() {
+        let tokens = toks("3.14 0.5 1.0e10 2.5E3");
+        assert!(matches!(tokens[0], Token::FloatLit(v) if (v - 3.14).abs() < 1e-10));
+        assert!(matches!(tokens[1], Token::FloatLit(v) if (v - 0.5).abs() < 1e-10));
+        assert!(matches!(tokens[2], Token::FloatLit(v) if (v - 1.0e10).abs() < 1e5));
+        assert!(matches!(tokens[3], Token::FloatLit(v) if (v - 2.5e3).abs() < 1e-10));
+    }
+
+    #[test]
+    fn lex_bool_literals() {
+        let tokens = toks("true false");
+        assert_eq!(tokens[0], Token::BoolLit(true));
+        assert_eq!(tokens[1], Token::BoolLit(false));
+    }
+
+    #[test]
+    fn lex_string_literal() {
+        let tokens = toks(r#""hello world""#);
+        assert_eq!(tokens[0], Token::StringLit("hello world".into()));
+    }
+
+    #[test]
+    fn lex_string_escape_sequences() {
+        let tokens = toks(r#""line1\nline2\ttab\\backslash\"quote""#);
+        assert_eq!(
+            tokens[0],
+            Token::StringLit("line1\nline2\ttab\\backslash\"quote".into())
+        );
+    }
+
+    #[test]
+    fn lex_fstring() {
+        let tokens = toks(r#"f"hello {name}""#);
+        assert_eq!(tokens[0], Token::FStringLit("hello {name}".into()));
+    }
+
+    // -- Punctuation and operators ----------------------------------------
+
+    #[test]
+    fn lex_two_char_operators() {
+        let tokens = toks("-> == != <= >= => && || .. ..=");
+        assert_eq!(tokens[0], Token::Arrow);
+        assert_eq!(tokens[1], Token::EqEq);
+        assert_eq!(tokens[2], Token::NotEq);
+        assert_eq!(tokens[3], Token::LtEq);
+        assert_eq!(tokens[4], Token::GtEq);
+        assert_eq!(tokens[5], Token::FatArrow);
+        assert_eq!(tokens[6], Token::AmpAmp);
+        assert_eq!(tokens[7], Token::PipePipe);
+        assert_eq!(tokens[8], Token::DotDot);
+        assert_eq!(tokens[9], Token::DotDotEq);
+    }
+
+    #[test]
+    fn lex_single_char_punctuation() {
+        let tokens = toks("( ) { } [ ] < > , : ; = + - * / % ! . | ? @");
+        assert_eq!(tokens[0], Token::LParen);
+        assert_eq!(tokens[1], Token::RParen);
+        assert_eq!(tokens[2], Token::LBrace);
+        assert_eq!(tokens[3], Token::RBrace);
+        assert_eq!(tokens[4], Token::LBracket);
+        assert_eq!(tokens[5], Token::RBracket);
+        assert_eq!(tokens[6], Token::LAngle);
+        assert_eq!(tokens[7], Token::RAngle);
+        assert_eq!(tokens[8], Token::Comma);
+        assert_eq!(tokens[9], Token::Colon);
+        assert_eq!(tokens[10], Token::Semi);
+        assert_eq!(tokens[11], Token::Eq);
+        assert_eq!(tokens[12], Token::Plus);
+        assert_eq!(tokens[13], Token::Minus);
+        assert_eq!(tokens[14], Token::Star);
+        assert_eq!(tokens[15], Token::Slash);
+        assert_eq!(tokens[16], Token::Percent);
+        assert_eq!(tokens[17], Token::Bang);
+        assert_eq!(tokens[18], Token::Dot);
+        assert_eq!(tokens[19], Token::Pipe);
+        assert_eq!(tokens[20], Token::Question);
+        assert_eq!(tokens[21], Token::At);
+    }
+
+    // -- Comments ---------------------------------------------------------
+
+    #[test]
+    fn lex_skips_line_comments() {
+        let tokens = toks("def // this is a comment\nmain");
+        assert_eq!(tokens[0], Token::Def);
+        assert_eq!(tokens[1], Token::Ident("main".into()));
+        assert_eq!(tokens[2], Token::Eof);
+    }
+
+    // -- Identifiers ------------------------------------------------------
+
+    #[test]
+    fn lex_identifiers() {
+        let tokens = toks("foo _bar baz_123 CamelCase");
+        assert_eq!(tokens[0], Token::Ident("foo".into()));
+        assert_eq!(tokens[1], Token::Ident("_bar".into()));
+        assert_eq!(tokens[2], Token::Ident("baz_123".into()));
+        assert_eq!(tokens[3], Token::Ident("CamelCase".into()));
+    }
+
+    // -- Complex expressions ----------------------------------------------
+
+    #[test]
+    fn lex_function_definition() {
+        let tokens = toks("def add(a: i64, b: i64) -> i64 { a + b }");
+        assert_eq!(tokens[0], Token::Def);
+        assert_eq!(tokens[1], Token::Ident("add".into()));
+        assert_eq!(tokens[2], Token::LParen);
+        assert_eq!(tokens[3], Token::Ident("a".into()));
+        assert_eq!(tokens[4], Token::Colon);
+        assert_eq!(tokens[5], Token::I64);
+        assert_eq!(tokens[6], Token::Comma);
+    }
+
+    // -- Error conditions -------------------------------------------------
+
+    #[test]
+    fn lex_unterminated_string_is_err() {
+        let result = Lexer::new(r#""hello"#).tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lex_invalid_escape_is_err() {
+        let result = Lexer::new(r#""\z""#).tokenize();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn lex_unrecognized_char_is_err() {
+        let result = Lexer::new("def main() { # }").tokenize();
+        assert!(result.is_err());
+    }
+
+    // -- EOF token --------------------------------------------------------
+
+    #[test]
+    fn lex_empty_source() {
+        let tokens = toks("");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::Eof);
+    }
+
+    #[test]
+    fn lex_whitespace_only() {
+        let tokens = toks("   \n\t  ");
+        assert_eq!(tokens.len(), 1);
+        assert_eq!(tokens[0], Token::Eof);
+    }
+
+    // -- Token Display ----------------------------------------------------
+
+    #[test]
+    fn token_display() {
+        assert_eq!(format!("{}", Token::Def), "def");
+        assert_eq!(format!("{}", Token::Arrow), "->");
+        assert_eq!(format!("{}", Token::IntLit(42)), "42");
+        assert_eq!(format!("{}", Token::BoolLit(true)), "true");
+        assert_eq!(format!("{}", Token::StringLit("hi".into())), "\"hi\"");
+        assert_eq!(format!("{}", Token::Eof), "<eof>");
+    }
+}

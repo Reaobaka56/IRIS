@@ -1,0 +1,10 @@
+record Point { x: f64, y: f64 }
+choice Color { Red, Green, Blue }
+def describe(c: Color) -> i64 {
+    when c {
+        Color.Red => 0,
+        Color.Green => 1,
+        Color.Blue => 2,
+    }
+}
+def main() -> i64 { describe(Color.Red) }

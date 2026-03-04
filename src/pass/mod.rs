@@ -99,6 +99,110 @@ impl PassManager {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::module::IrModule;
+
+    /// A no-op pass that always succeeds.
+    struct NoopPass;
+    impl Pass for NoopPass {
+        fn name(&self) -> &'static str {
+            "noop"
+        }
+        fn run(&mut self, _module: &mut IrModule) -> Result<(), PassError> {
+            Ok(())
+        }
+    }
+
+    /// A pass that always fails with a custom error.
+    struct FailPass;
+    impl Pass for FailPass {
+        fn name(&self) -> &'static str {
+            "fail"
+        }
+        fn run(&mut self, _module: &mut IrModule) -> Result<(), PassError> {
+            Err(PassError::TypeError {
+                func: "fail".into(),
+                detail: "intentional failure".into(),
+            })
+        }
+    }
+
+    /// A pass that increments a counter on each function to verify mutation.
+    struct CountPass {
+        count: usize,
+    }
+    impl Pass for CountPass {
+        fn name(&self) -> &'static str {
+            "count"
+        }
+        fn run(&mut self, _module: &mut IrModule) -> Result<(), PassError> {
+            self.count += 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn pass_manager_empty_pipeline() {
+        let mut pm = PassManager::new();
+        let mut module = IrModule::new("test");
+        assert!(pm.run(&mut module).is_ok());
+    }
+
+    #[test]
+    fn pass_manager_runs_all_passes() {
+        let mut pm = PassManager::new();
+        pm.add_pass(NoopPass);
+        pm.add_pass(NoopPass);
+        pm.add_pass(NoopPass);
+        let mut module = IrModule::new("test");
+        assert!(pm.run(&mut module).is_ok());
+    }
+
+    #[test]
+    fn pass_manager_aborts_on_failure() {
+        let mut pm = PassManager::new();
+        pm.add_pass(NoopPass);
+        pm.add_pass(FailPass);
+        pm.add_pass(NoopPass); // should not run
+        let mut module = IrModule::new("test");
+        let result = pm.run(&mut module);
+        assert!(result.is_err());
+        let (name, _err) = result.unwrap_err();
+        assert_eq!(name, "fail");
+    }
+
+    #[test]
+    fn pass_manager_pass_names() {
+        let mut pm = PassManager::new();
+        pm.add_pass(NoopPass);
+        pm.add_pass(FailPass);
+        assert_eq!(pm.pass_names(), vec!["noop", "fail"]);
+    }
+
+    #[test]
+    fn standard_pass_names() {
+        // Verify that all the production passes have distinct names
+        let names: Vec<&str> = vec![
+            ConstFoldPass.name(),
+            DeadNodePass.name(),
+            ExhaustivePass.name(),
+            GcAnnotatePass.name(),
+            InlinePass::default().name(),
+            LoopUnrollPass::default().name(),
+            StrengthReducePass.name(),
+            ShapeCheckPass.name(),
+        ];
+        let unique: std::collections::HashSet<&str> = names.iter().copied().collect();
+        assert_eq!(names.len(), unique.len(), "pass names must be unique");
+    }
+}
+
 impl Default for PassManager {
     fn default() -> Self {
         Self::new()

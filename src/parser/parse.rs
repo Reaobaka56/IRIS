@@ -2135,3 +2135,237 @@ impl<'t> Parser<'t> {
         expr
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::parser::lexer::Lexer;
+
+    /// Helper: parse source to AST module, expecting no errors.
+    fn parse_ok(src: &str) -> AstModule {
+        let tokens = Lexer::new(src).tokenize().expect("lex failed");
+        let mut parser = Parser::new(&tokens);
+        let (module, errors) = parser.parse_module_recovering();
+        assert!(
+            errors.is_empty(),
+            "unexpected parse errors: {:?}",
+            errors
+        );
+        module
+    }
+
+    /// Helper: parse source and expect at least one parse error.
+    fn parse_err(src: &str) -> Vec<crate::error::ParseError> {
+        let tokens = Lexer::new(src).tokenize().expect("lex failed");
+        let mut parser = Parser::new(&tokens);
+        let (_module, errors) = parser.parse_module_recovering();
+        assert!(!errors.is_empty(), "expected parse errors but got none");
+        errors
+    }
+
+    // -- Functions --------------------------------------------------------
+
+    #[test]
+    fn parse_empty_function() {
+        let m = parse_ok("def main() -> i64 { 0 }");
+        assert_eq!(m.functions.len(), 1);
+        assert_eq!(m.functions[0].name.name, "main");
+    }
+
+    #[test]
+    fn parse_function_with_params() {
+        let m = parse_ok("def add(a: i64, b: i64) -> i64 { a + b }");
+        assert_eq!(m.functions.len(), 1);
+        assert_eq!(m.functions[0].params.len(), 2);
+        assert_eq!(m.functions[0].params[0].name.name, "a");
+        assert_eq!(m.functions[0].params[1].name.name, "b");
+    }
+
+    #[test]
+    fn parse_multiple_functions() {
+        let src = r#"
+            def foo() -> i64 { 1 }
+            def bar() -> i64 { 2 }
+            def baz() -> i64 { 3 }
+        "#;
+        let m = parse_ok(src);
+        assert_eq!(m.functions.len(), 3);
+    }
+
+    // -- Records and Enums ------------------------------------------------
+
+    #[test]
+    fn parse_record() {
+        let m = parse_ok("record Point { x: f64, y: f64 }");
+        assert_eq!(m.structs.len(), 1);
+        assert_eq!(m.structs[0].name.name, "Point");
+        assert_eq!(m.structs[0].fields.len(), 2);
+    }
+
+    #[test]
+    fn parse_enum() {
+        let m = parse_ok("choice Color { Red, Green, Blue }");
+        assert_eq!(m.enums.len(), 1);
+        assert_eq!(m.enums[0].name.name, "Color");
+        assert_eq!(m.enums[0].variants.len(), 3);
+    }
+
+    // -- Control flow -----------------------------------------------------
+
+    #[test]
+    fn parse_if_else() {
+        let m = parse_ok("def f(x: i64) -> i64 { if x > 0 { x } else { 0 - x } }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    #[test]
+    fn parse_while_loop() {
+        let m = parse_ok("def f() -> i64 { var i = 0; while i < 10 { i = i + 1; } i }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    #[test]
+    fn parse_for_range() {
+        let m = parse_ok("def f() -> i64 { for i in 0..10 { print(to_str(i)); } 0 }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    // -- Bindings ---------------------------------------------------------
+
+    #[test]
+    fn parse_val_binding() {
+        let m = parse_ok("def f() -> i64 { val x = 42; x }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    #[test]
+    fn parse_var_binding() {
+        let m = parse_ok("def f() -> i64 { var x = 0; x = 1; x }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    // -- Types ------------------------------------------------------------
+
+    #[test]
+    fn parse_tensor_type() {
+        let m = parse_ok("def f(t: tensor<f32, [3, 4]>) -> i64 { 0 }");
+        assert_eq!(m.functions[0].params.len(), 1);
+    }
+
+    #[test]
+    fn parse_option_type() {
+        let m = parse_ok("def f() -> option<i64> { none }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    #[test]
+    fn parse_result_type() {
+        let m = parse_ok("def f() -> result<i64, str> { ok(42) }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    #[test]
+    fn parse_list_type() {
+        let m = parse_ok("def f(l: list<i64>) -> i64 { 0 }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    #[test]
+    fn parse_map_type() {
+        let m = parse_ok("def f(m: map<str, i64>) -> i64 { 0 }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    // -- Closures ---------------------------------------------------------
+
+    #[test]
+    fn parse_closure() {
+        let m = parse_ok("def f() -> i64 { val double = |x: i64| x * 2; double(21) }");
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    // -- Pattern matching -------------------------------------------------
+
+    #[test]
+    fn parse_when_expression() {
+        let src = r#"
+            choice Dir { Up, Down }
+            def f(d: Dir) -> i64 {
+                when d {
+                    Dir.Up   => 1,
+                    Dir.Down => 0,
+                }
+            }
+        "#;
+        let m = parse_ok(src);
+        assert_eq!(m.enums.len(), 1);
+        assert_eq!(m.functions.len(), 1);
+    }
+
+    // -- Const declarations -----------------------------------------------
+
+    #[test]
+    fn parse_const() {
+        let m = parse_ok("const PI: f64 = 3.14159");
+        assert_eq!(m.consts.len(), 1);
+    }
+
+    // -- Error recovery ---------------------------------------------------
+
+    #[test]
+    fn parse_missing_return_type() {
+        let _ = parse_err("def f() { 0 }");
+    }
+
+    #[test]
+    fn parse_missing_closing_brace() {
+        let _ = parse_err("def f() -> i64 { 0");
+    }
+
+    // -- Bring (imports) --------------------------------------------------
+
+    #[test]
+    fn parse_bring() {
+        let m = parse_ok("bring std.math\ndef f() -> i64 { 0 }");
+        assert_eq!(m.brings.len(), 1);
+    }
+
+    // -- Traits and impls -------------------------------------------------
+
+    #[test]
+    fn parse_trait() {
+        let m = parse_ok("trait Printable { def to_string(self: Self) -> str }");
+        assert_eq!(m.traits.len(), 1);
+    }
+
+    // -- Complex programs -------------------------------------------------
+
+    #[test]
+    fn parse_full_program() {
+        let src = r#"
+            record Point { x: f64, y: f64 }
+            choice Shape { Circle, Square }
+            const MAX: i64 = 100
+            def distance(a: Point, b: Point) -> f64 {
+                val dx = b.x - a.x;
+                val dy = b.y - a.y;
+                sqrt(dx * dx + dy * dy)
+            }
+            def main() -> i64 {
+                val p1 = Point { x: 0.0, y: 0.0 };
+                val p2 = Point { x: 3.0, y: 4.0 };
+                val d = distance(p1, p2);
+                0
+            }
+        "#;
+        let m = parse_ok(src);
+        assert_eq!(m.structs.len(), 1);
+        assert_eq!(m.enums.len(), 1);
+        assert_eq!(m.consts.len(), 1);
+        assert_eq!(m.functions.len(), 2);
+    }
+}

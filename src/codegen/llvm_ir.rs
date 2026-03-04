@@ -179,11 +179,20 @@ fn emit_llvm_ir_impl(
     let mut fn_sigs: HashMap<String, (String, Vec<String>)> = HashMap::new();
     for func in module.functions() {
         let ret_s = llvm_type_complete(&func.return_ty).unwrap_or_else(|_| "ptr".to_owned());
-        let param_ss: Vec<String> = func
-            .params
-            .iter()
-            .map(|p| llvm_type_complete(&p.ty).unwrap_or_else(|_| "ptr".to_owned()))
-            .collect();
+        let is_lambda = func.name.starts_with("__lambda_");
+        let param_ss: Vec<String> = if is_lambda {
+            // All lambdas use uniform calling convention: (ptr %env, user_params...)
+            let mut ss = vec!["ptr".to_owned()]; // env
+            for p in func.params.iter().skip(func.capture_count) {
+                ss.push(llvm_type_complete(&p.ty).unwrap_or_else(|_| "ptr".to_owned()));
+            }
+            ss
+        } else {
+            func.params
+                .iter()
+                .map(|p| llvm_type_complete(&p.ty).unwrap_or_else(|_| "ptr".to_owned()))
+                .collect()
+        };
         fn_sigs.insert(func.name.clone(), (ret_s, param_ss));
     }
 
@@ -260,11 +269,25 @@ fn emit_function_ir_with_name(
     out: &mut String,
 ) -> Result<(), CodegenError> {
     let ret = llvm_type_complete(&func.return_ty)?;
-    let params: Result<Vec<String>, CodegenError> = func
-        .params
-        .iter()
-        .map(|p| Ok(format!("{} %{}", llvm_type_complete(&p.ty)?, p.name)))
-        .collect();
+
+    let cc = func.capture_count;
+    let is_lambda = func.name.starts_with("__lambda_");
+
+    // All lambdas use uniform calling convention: (ptr %env, user_params...).
+    let params_str = if is_lambda {
+        let mut parts = vec!["ptr %env".to_owned()];
+        for p in func.params.iter().skip(cc) {
+            parts.push(format!("{} %{}", llvm_type_complete(&p.ty)?, p.name));
+        }
+        parts.join(", ")
+    } else {
+        let params: Result<Vec<String>, CodegenError> = func
+            .params
+            .iter()
+            .map(|p| Ok(format!("{} %{}", llvm_type_complete(&p.ty)?, p.name)))
+            .collect();
+        params?.join(", ")
+    };
 
     // Determine if pure (no side-effecting instructions) for attributes.
     let is_pure = func
@@ -276,11 +299,12 @@ fn emit_function_ir_with_name(
     writeln!(
         out,
         "define {} @{}({}){} {{",
-        ret,
-        llvm_name,
-        params?.join(", "),
-        attrs
+        ret, llvm_name, params_str, attrs
     )?;
+
+    // For lambdas with captures: emit capture extraction preamble.
+    // (Preamble is emitted inside the entry block by emit_function_body.)
+
     emit_function_body(func, entry_rename, str_table, fn_sigs, module, out)?;
     writeln!(out, "}}\n")?;
     Ok(())
@@ -446,12 +470,18 @@ fn emit_function_body(
                 | IrInstr::MakeErr { result, .. }
                 | IrInstr::OptionUnwrap { result, .. }
                 | IrInstr::ResultUnwrap { result, .. }
-                | IrInstr::ResultUnwrapErr { result, .. }
-                | IrInstr::CallClosure {
+                | IrInstr::ResultUnwrapErr { result, .. } => {
+                    emitted_types.insert(*result, "ptr".to_owned());
+                }
+                // CallClosure: inline indirect call returns the native type.
+                IrInstr::CallClosure {
                     result: Some(result),
+                    result_ty,
                     ..
                 } => {
-                    emitted_types.insert(*result, "ptr".to_owned());
+                    let s = llvm_type_complete(result_ty)
+                        .unwrap_or_else(|_| "ptr".to_owned());
+                    emitted_types.insert(*result, s);
                 }
                 // ListGet/ListPop/MapGet: runtime returns boxed IrisVal*, we unbox
                 // to the element type, so emitted type matches the element type.
@@ -600,6 +630,68 @@ fn emit_function_body(
     for block in func.blocks() {
         let blabel = block_label(block.name.as_deref(), block.id);
         writeln!(out, "{}:", blabel)?;
+
+        // For lambdas: emit capture extraction in the entry block.
+        if block.id == entry_id && func.capture_count > 0 {
+            let cc = func.capture_count;
+            for (i, p) in func.params.iter().take(cc).enumerate() {
+                writeln!(
+                    out,
+                    "  %__cap_raw_{} = call ptr @iris_closure_get_capture(ptr %env, i32 {})",
+                    i, i
+                )?;
+                match &p.ty {
+                    crate::ir::types::IrType::Scalar(crate::ir::types::DType::I64)
+                    | crate::ir::types::IrType::Scalar(crate::ir::types::DType::U64)
+                    | crate::ir::types::IrType::Scalar(crate::ir::types::DType::USize) => {
+                        writeln!(
+                            out,
+                            "  %{} = call i64 @iris_unbox_i64(ptr %__cap_raw_{})",
+                            p.name, i
+                        )?;
+                    }
+                    crate::ir::types::IrType::Scalar(crate::ir::types::DType::I32)
+                    | crate::ir::types::IrType::Scalar(crate::ir::types::DType::U32) => {
+                        writeln!(
+                            out,
+                            "  %__cap_i64_{} = call i64 @iris_unbox_i64(ptr %__cap_raw_{})",
+                            i, i
+                        )?;
+                        writeln!(out, "  %{} = trunc i64 %__cap_i64_{} to i32", p.name, i)?;
+                    }
+                    crate::ir::types::IrType::Scalar(crate::ir::types::DType::F64) => {
+                        writeln!(
+                            out,
+                            "  %{} = call double @iris_unbox_f64(ptr %__cap_raw_{})",
+                            p.name, i
+                        )?;
+                    }
+                    crate::ir::types::IrType::Scalar(crate::ir::types::DType::F32) => {
+                        writeln!(
+                            out,
+                            "  %__cap_f64_{} = call double @iris_unbox_f64(ptr %__cap_raw_{})",
+                            i, i
+                        )?;
+                        writeln!(out, "  %{} = fptrunc double %__cap_f64_{} to float", p.name, i)?;
+                    }
+                    crate::ir::types::IrType::Scalar(crate::ir::types::DType::Bool) => {
+                        writeln!(
+                            out,
+                            "  %__cap_i32_{} = call i32 @iris_unbox_bool(ptr %__cap_raw_{})",
+                            i, i
+                        )?;
+                        writeln!(out, "  %{} = trunc i32 %__cap_i32_{} to i1", p.name, i)?;
+                    }
+                    _ => {
+                        writeln!(
+                            out,
+                            "  %{} = call ptr @iris_closure_get_capture(ptr %env, i32 {})",
+                            p.name, i
+                        )?;
+                    }
+                }
+            }
+        }
 
         // Phi nodes for non-entry blocks.
         if block.id != entry_id {
@@ -2435,31 +2527,49 @@ fn emit_instr_ir(
             result,
             closure,
             args,
-            ..
+            result_ty,
         } => {
-            let mut args_parts: Vec<String> = Vec::new();
+            let closure_v = val(*closure);
+
+            // Extract function pointer from the closure struct.
+            *gep_counter += 1;
+            let fn_ptr_name = format!("%closure_fn{}", *gep_counter);
+            writeln!(
+                out,
+                "  {} = call ptr @iris_closure_fn(ptr {})",
+                fn_ptr_name, closure_v
+            )?;
+
+            // Build argument list: (ptr %closure, user_args...).
+            // The lambda function itself extracts captures from %env.
+            let mut call_args: Vec<String> = vec![format!("ptr {}", closure_v)];
+
+            // Add passed arguments (already native-typed in the IR).
             for a in args {
                 let av = val(*a);
                 let aty = func.value_type(*a);
-                let ptr_a = box_to_ptr(out, &av, aty, gep_counter)?;
-                args_parts.push(format!("ptr {}", ptr_a));
+                let llvm_ty = match aty {
+                    Some(t) => llvm_type_complete(t)?,
+                    None => "i64".to_owned(),
+                };
+                call_args.push(format!("{} {}", llvm_ty, av));
             }
-            let args_str = args_parts.join(", ");
+
+            let ret_llvm_ty = llvm_type_complete(result_ty)?;
+            let args_str = call_args.join(", ");
+
             if let Some(r) = result {
-                writeln!(
-                    out,
-                    "  %v{} = call ptr @iris_call_closure(ptr {}, {})",
-                    r.0,
-                    val(*closure),
-                    args_str
-                )?;
+                if ret_llvm_ty == "void" {
+                    writeln!(out, "  call void {}({})", fn_ptr_name, args_str)?;
+                } else {
+                    writeln!(
+                        out,
+                        "  %v{} = call {} {}({})",
+                        r.0, ret_llvm_ty, fn_ptr_name, args_str
+                    )?;
+                }
             } else {
-                writeln!(
-                    out,
-                    "  call void @iris_call_closure_void(ptr {}, {})",
-                    val(*closure),
-                    args_str
-                )?;
+                writeln!(out, "  call void {}({})", fn_ptr_name, args_str)?;
             }
         }
 
@@ -3274,6 +3384,8 @@ fn emit_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         "declare ptr @iris_make_closure(ptr, i32, ...)",
         "declare ptr @iris_call_closure(ptr, ...)",
         "declare void @iris_call_closure_void(ptr, ...)",
+        "declare ptr @iris_closure_fn(ptr)",
+        "declare ptr @iris_closure_get_capture(ptr, i32)",
         // Atomics / Mutex
         "declare ptr @iris_atomic_new(ptr)",
         "declare ptr @iris_atomic_load(ptr)",

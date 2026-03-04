@@ -656,18 +656,34 @@ static int iris_val_compare(IrisVal* a, IrisVal* b) {
     }
 }
 
+/* ---- stable merge sort (O(n log n), preserves equal-element order) ---- */
+static void iris_merge(IrisVal** arr, IrisVal** tmp, size_t lo, size_t mid, size_t hi) {
+    size_t i = lo, j = mid, k = lo;
+    while (i < mid && j < hi) {
+        if (iris_val_compare(arr[i], arr[j]) <= 0)
+            tmp[k++] = arr[i++];
+        else
+            tmp[k++] = arr[j++];
+    }
+    while (i < mid) tmp[k++] = arr[i++];
+    while (j < hi)  tmp[k++] = arr[j++];
+    for (size_t x = lo; x < hi; x++) arr[x] = tmp[x];
+}
+
+static void iris_merge_sort_rec(IrisVal** arr, IrisVal** tmp, size_t lo, size_t hi) {
+    if (hi - lo <= 1) return;
+    size_t mid = lo + (hi - lo) / 2;
+    iris_merge_sort_rec(arr, tmp, lo, mid);
+    iris_merge_sort_rec(arr, tmp, mid, hi);
+    iris_merge(arr, tmp, lo, mid, hi);
+}
+
 void iris_list_sort(IrisList* l) {
     if (!l || l->len <= 1) return;
-    /* Simple bubble sort for stability; replace with qsort if needed */
-    for (size_t i = 0; i < l->len - 1; i++) {
-        for (size_t j = 0; j < l->len - 1 - i; j++) {
-            if (iris_val_compare(l->data[j], l->data[j+1]) > 0) {
-                IrisVal* t = l->data[j];
-                l->data[j] = l->data[j+1];
-                l->data[j+1] = t;
-            }
-        }
-    }
+    IrisVal** tmp = (IrisVal**)malloc(l->len * sizeof(IrisVal*));
+    if (!tmp) return;  /* OOM — leave list unsorted rather than crash */
+    iris_merge_sort_rec(l->data, tmp, 0, l->len);
+    free(tmp);
 }
 
 IrisList* iris_list_concat(IrisList* a, IrisList* b) {
@@ -1201,14 +1217,28 @@ IrisVal* iris_make_closure(void* fn, int ncaptures, ...) {
 }
 
 IrisVal* iris_call_closure(IrisVal* closure, ...) {
-    /* Stub: closure invocation requires codegen cooperation.
-       For now, return unit sentinel. */
+    /* Stub: closure invocation now handled inline by LLVM codegen.
+       Kept for link compatibility — should not be reached at runtime. */
     (void)closure;
     return iris_box_i64(0);
 }
 
 void iris_call_closure_void(IrisVal* closure, ...) {
     (void)closure;
+}
+
+/* ---- Closure accessor helpers (called from generated LLVM IR) ---- */
+
+void* iris_closure_fn(IrisVal* closure) {
+    return ((IrisClosure*)closure->ptr)->fn;
+}
+
+int iris_closure_ncaptures(IrisVal* closure) {
+    return ((IrisClosure*)closure->ptr)->captures->len;
+}
+
+IrisVal* iris_closure_get_capture(IrisVal* closure, int idx) {
+    return ((IrisClosure*)closure->ptr)->captures->data[idx];
 }
 
 /* ======================================================================== */

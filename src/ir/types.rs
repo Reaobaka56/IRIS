@@ -173,3 +173,206 @@ impl std::fmt::Display for IrType {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // -- DType Display ----------------------------------------------------
+
+    #[test]
+    fn dtype_display() {
+        assert_eq!(format!("{}", DType::F32), "f32");
+        assert_eq!(format!("{}", DType::F64), "f64");
+        assert_eq!(format!("{}", DType::I32), "i32");
+        assert_eq!(format!("{}", DType::I64), "i64");
+        assert_eq!(format!("{}", DType::Bool), "bool");
+        assert_eq!(format!("{}", DType::U8), "u8");
+        assert_eq!(format!("{}", DType::I8), "i8");
+        assert_eq!(format!("{}", DType::U32), "u32");
+        assert_eq!(format!("{}", DType::U64), "u64");
+        assert_eq!(format!("{}", DType::USize), "usize");
+    }
+
+    // -- Dim Display ------------------------------------------------------
+
+    #[test]
+    fn dim_display() {
+        assert_eq!(format!("{}", Dim::Literal(3)), "3");
+        assert_eq!(format!("{}", Dim::Symbolic("M".into())), "M");
+    }
+
+    #[test]
+    fn dim_equality() {
+        assert_eq!(Dim::Literal(5), Dim::Literal(5));
+        assert_ne!(Dim::Literal(5), Dim::Literal(6));
+        assert_eq!(
+            Dim::Symbolic("N".into()),
+            Dim::Symbolic("N".into())
+        );
+        assert_ne!(
+            Dim::Symbolic("M".into()),
+            Dim::Symbolic("N".into())
+        );
+    }
+
+    // -- Shape ------------------------------------------------------------
+
+    #[test]
+    fn shape_rank() {
+        let s0 = Shape(vec![]);
+        assert_eq!(s0.rank(), 0);
+
+        let s2 = Shape(vec![Dim::Literal(3), Dim::Literal(4)]);
+        assert_eq!(s2.rank(), 2);
+    }
+
+    #[test]
+    fn shape_is_fully_concrete() {
+        let concrete = Shape(vec![Dim::Literal(2), Dim::Literal(3)]);
+        assert!(concrete.is_fully_concrete());
+
+        let symbolic = Shape(vec![Dim::Literal(2), Dim::Symbolic("N".into())]);
+        assert!(!symbolic.is_fully_concrete());
+    }
+
+    #[test]
+    fn shape_display() {
+        assert_eq!(format!("{}", Shape(vec![])), "[]");
+        assert_eq!(
+            format!("{}", Shape(vec![Dim::Literal(3), Dim::Symbolic("K".into())])),
+            "[3, K]"
+        );
+    }
+
+    // -- IrType Display ---------------------------------------------------
+
+    #[test]
+    fn irtype_scalar_display() {
+        assert_eq!(format!("{}", IrType::Scalar(DType::I64)), "i64");
+        assert_eq!(format!("{}", IrType::Scalar(DType::F32)), "f32");
+    }
+
+    #[test]
+    fn irtype_tensor_display() {
+        let t = IrType::Tensor {
+            dtype: DType::F32,
+            shape: Shape(vec![Dim::Literal(3), Dim::Literal(4)]),
+        };
+        assert_eq!(format!("{}", t), "tensor<f32, [3, 4]>");
+    }
+
+    #[test]
+    fn irtype_fn_display() {
+        let t = IrType::Fn {
+            params: vec![IrType::Scalar(DType::I64), IrType::Scalar(DType::Bool)],
+            ret: Box::new(IrType::Str),
+        };
+        assert_eq!(format!("{}", t), "fn(i64, bool) -> str");
+    }
+
+    #[test]
+    fn irtype_compound_display() {
+        assert_eq!(format!("{}", IrType::Infer), "_");
+        assert_eq!(format!("{}", IrType::Str), "str");
+        assert_eq!(
+            format!(
+                "{}",
+                IrType::Array {
+                    elem: Box::new(IrType::Scalar(DType::I64)),
+                    len: 5
+                }
+            ),
+            "[i64; 5]"
+        );
+        assert_eq!(
+            format!("{}", IrType::Option(Box::new(IrType::Scalar(DType::I64)))),
+            "option<i64>"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                IrType::ResultType(
+                    Box::new(IrType::Scalar(DType::I64)),
+                    Box::new(IrType::Str)
+                )
+            ),
+            "result<i64,str>"
+        );
+        assert_eq!(
+            format!("{}", IrType::Chan(Box::new(IrType::Scalar(DType::I64)))),
+            "chan<i64>"
+        );
+        assert_eq!(
+            format!("{}", IrType::List(Box::new(IrType::Str))),
+            "list<str>"
+        );
+        assert_eq!(
+            format!(
+                "{}",
+                IrType::Map(Box::new(IrType::Str), Box::new(IrType::Scalar(DType::I64)))
+            ),
+            "map<str, i64>"
+        );
+        assert_eq!(
+            format!("{}", IrType::Grad(Box::new(IrType::Scalar(DType::F64)))),
+            "grad<f64>"
+        );
+        assert_eq!(
+            format!("{}", IrType::Sparse(Box::new(IrType::Scalar(DType::F32)))),
+            "sparse<f32>"
+        );
+        assert_eq!(
+            format!("{}", IrType::Atomic(Box::new(IrType::Scalar(DType::I64)))),
+            "atomic<i64>"
+        );
+        assert_eq!(
+            format!("{}", IrType::Mutex(Box::new(IrType::Scalar(DType::I64)))),
+            "mutex<i64>"
+        );
+    }
+
+    #[test]
+    fn irtype_tuple_display() {
+        let t = IrType::Tuple(vec![
+            IrType::Scalar(DType::I64),
+            IrType::Scalar(DType::F64),
+            IrType::Scalar(DType::Bool),
+        ]);
+        assert_eq!(format!("{}", t), "(i64, f64, bool)");
+    }
+
+    #[test]
+    fn irtype_struct_display() {
+        let t = IrType::Struct {
+            name: "Point".into(),
+            fields: vec![
+                ("x".into(), IrType::Scalar(DType::F64)),
+                ("y".into(), IrType::Scalar(DType::F64)),
+            ],
+        };
+        assert_eq!(format!("{}", t), "%Point");
+    }
+
+    #[test]
+    fn irtype_enum_display() {
+        let t = IrType::Enum {
+            name: "Color".into(),
+            variants: vec!["Red".into(), "Green".into(), "Blue".into()],
+        };
+        assert_eq!(format!("{}", t), "enum.Color");
+    }
+
+    // -- Equality ---------------------------------------------------------
+
+    #[test]
+    fn irtype_equality() {
+        assert_eq!(IrType::Scalar(DType::I64), IrType::Scalar(DType::I64));
+        assert_ne!(IrType::Scalar(DType::I64), IrType::Scalar(DType::F64));
+        assert_ne!(IrType::Infer, IrType::Str);
+    }
+}
