@@ -291,8 +291,24 @@ impl<'src> Lexer<'src> {
                 self.pos += 1;
             }
             if self.src[self.pos..].starts_with("//") {
+                // Line comment: skip to end of line.
                 while self.pos < self.src.len() && self.src.as_bytes()[self.pos] != b'\n' {
                     self.pos += 1;
+                }
+            } else if self.src[self.pos..].starts_with("/*") {
+                // Block comment: skip until matching `*/`.  Supports nesting.
+                self.pos += 2;
+                let mut depth = 1usize;
+                while self.pos < self.src.len() && depth > 0 {
+                    if self.src[self.pos..].starts_with("/*") {
+                        depth += 1;
+                        self.pos += 2;
+                    } else if self.src[self.pos..].starts_with("*/") {
+                        depth -= 1;
+                        self.pos += 2;
+                    } else {
+                        self.pos += 1;
+                    }
                 }
             } else {
                 break;
@@ -644,9 +660,7 @@ impl<'src> Lexer<'src> {
             "pub" => Token::Pub,
             "extern" => Token::Extern,
             "model" => Token::Model,
-            "layer" => Token::Layer,
-            "input" => Token::Input,
-            "output" => Token::Output,
+            // "layer", "input", "output" are contextual — parsed as Ident inside model blocks
             "f32" => Token::F32,
             "f64" => Token::F64,
             "i32" => Token::I32,

@@ -1,0 +1,20 @@
+def factorial(n: i64) -> i64 {
+    if n <= 1 { 1 } else { n * factorial(n - 1) }
+}
+def sum_to(n: i64) -> i64 {
+    var total = 0;
+    for i in 0..n {
+        total = total + i;
+    }
+    total
+}
+def main() -> i64 {
+    val f = factorial(10);
+    val s = sum_to(100);
+    var x = 100;
+    while x > 0 {
+        x = x - 10;
+    }
+    print(f + s + x);
+    0
+}

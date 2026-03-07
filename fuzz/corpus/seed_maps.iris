@@ -1,0 +1,15 @@
+def main() -> i64 {
+    val m = map()
+    map_set(m, "one", 1);
+    map_set(m, "two", 2);
+    map_set(m, "three", 3);
+    val _v = map_get(m, "two");
+    map_set(m, "four", 4);
+    val _keys = map_keys(m);
+    val _vals = map_values(m);
+    val _has = map_contains(m, "one");
+    map_remove(m, "three");
+    val n = map_len(m);
+    print(n);
+    0
+}

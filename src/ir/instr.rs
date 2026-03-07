@@ -517,6 +517,32 @@ pub enum IrInstr {
         ty: IrType,
     },
 
+    // ---- Reverse-mode AD (backpropagation) ----
+    /// Record a value on the tape for later reverse-mode differentiation.
+    /// This wraps a primal value and records it in the computation graph.
+    TapeRecord {
+        result: ValueId,
+        /// The primal value to record.
+        value: ValueId,
+        /// Operation that produced this value ("add", "mul", "sin", etc.)
+        op: String,
+        /// Parent values in the computation graph (inputs to the op).
+        parents: Vec<ValueId>,
+    },
+    /// Trigger reverse-mode backpropagation from a loss value.
+    /// Computes gradients for all taped values via the chain rule.
+    Backward {
+        result: ValueId,
+        /// The scalar loss value to differentiate.
+        loss: ValueId,
+    },
+    /// Extract the gradient accumulated for a specific taped value after Backward.
+    TapeGrad {
+        result: ValueId,
+        /// The tape node whose gradient to extract.
+        tape_node: ValueId,
+    },
+
     // ---- Sparse tensor operations ----
     /// Convert a dense array/tensor to sparse representation.
     Sparsify {
@@ -964,6 +990,9 @@ impl IrInstr {
             IrInstr::MakeGrad { result, .. } => Some(*result),
             IrInstr::GradValue { result, .. } => Some(*result),
             IrInstr::GradTangent { result, .. } => Some(*result),
+            IrInstr::TapeRecord { result, .. } => Some(*result),
+            IrInstr::Backward { result, .. } => Some(*result),
+            IrInstr::TapeGrad { result, .. } => Some(*result),
             IrInstr::ConstStr { result, .. } => Some(*result),
             IrInstr::StrLen { result, .. } => Some(*result),
             IrInstr::StrConcat { result, .. } => Some(*result),
@@ -1143,6 +1172,13 @@ impl IrInstr {
             IrInstr::MakeGrad { value, tangent, .. } => vec![*value, *tangent],
             IrInstr::GradValue { operand, .. } => vec![*operand],
             IrInstr::GradTangent { operand, .. } => vec![*operand],
+            IrInstr::TapeRecord { value, parents, .. } => {
+                let mut ops = vec![*value];
+                ops.extend_from_slice(parents);
+                ops
+            }
+            IrInstr::Backward { loss, .. } => vec![*loss],
+            IrInstr::TapeGrad { tape_node, .. } => vec![*tape_node],
             IrInstr::ConstStr { .. } => vec![],
             IrInstr::StrLen { operand, .. } => vec![*operand],
             IrInstr::StrConcat { lhs, rhs, .. } => vec![*lhs, *rhs],
@@ -1297,5 +1333,244 @@ mod tests {
         assert_eq!(InstrId(0), InstrId(0));
         assert_ne!(InstrId(0), InstrId(1));
         assert!(InstrId(0) < InstrId(1));
+    }
+
+    // -- result() for various instruction types --------------------------------
+
+    #[test]
+    fn result_const_int() {
+        let i = IrInstr::ConstInt {
+            result: ValueId(0),
+            value: 42,
+            ty: IrType::Scalar(crate::ir::types::DType::I64),
+        };
+        assert_eq!(i.result(), Some(ValueId(0)));
+    }
+
+    #[test]
+    fn result_const_float() {
+        let i = IrInstr::ConstFloat {
+            result: ValueId(1),
+            value: 3.14,
+            ty: IrType::Scalar(crate::ir::types::DType::F64),
+        };
+        assert_eq!(i.result(), Some(ValueId(1)));
+    }
+
+    #[test]
+    fn result_const_bool() {
+        let i = IrInstr::ConstBool {
+            result: ValueId(2),
+            value: true,
+        };
+        assert_eq!(i.result(), Some(ValueId(2)));
+    }
+
+    #[test]
+    fn result_const_str() {
+        let i = IrInstr::ConstStr {
+            result: ValueId(3),
+            value: "hello".into(),
+        };
+        assert_eq!(i.result(), Some(ValueId(3)));
+    }
+
+    #[test]
+    fn result_return_none() {
+        let i = IrInstr::Return { values: vec![] };
+        assert_eq!(i.result(), None);
+    }
+
+    #[test]
+    fn result_br_none() {
+        let i = IrInstr::Br {
+            target: crate::ir::block::BlockId(0),
+            args: vec![],
+        };
+        assert_eq!(i.result(), None);
+    }
+
+    #[test]
+    fn result_print_none() {
+        let i = IrInstr::Print {
+            operand: ValueId(0),
+        };
+        assert_eq!(i.result(), None);
+    }
+
+    #[test]
+    fn result_store_none() {
+        let i = IrInstr::Store {
+            tensor: ValueId(0),
+            indices: vec![ValueId(1)],
+            value: ValueId(2),
+        };
+        assert_eq!(i.result(), None);
+    }
+
+    #[test]
+    fn result_call_with_result() {
+        let i = IrInstr::Call {
+            result: Some(ValueId(5)),
+            callee: "foo".into(),
+            args: vec![],
+            result_ty: Some(IrType::Scalar(crate::ir::types::DType::I64)),
+        };
+        assert_eq!(i.result(), Some(ValueId(5)));
+    }
+
+    #[test]
+    fn result_call_without_result() {
+        let i = IrInstr::Call {
+            result: None,
+            callee: "print_hello".into(),
+            args: vec![],
+            result_ty: None,
+        };
+        assert_eq!(i.result(), None);
+    }
+
+    #[test]
+    fn result_make_closure() {
+        let i = IrInstr::MakeClosure {
+            result: ValueId(10),
+            fn_name: "lambda".into(),
+            captures: vec![],
+            result_ty: IrType::Str,
+        };
+        assert_eq!(i.result(), Some(ValueId(10)));
+    }
+
+    #[test]
+    fn result_list_push_none() {
+        let i = IrInstr::ListPush {
+            list: ValueId(0),
+            value: ValueId(1),
+        };
+        assert_eq!(i.result(), None);
+    }
+
+    // -- is_terminator() -------------------------------------------------------
+
+    #[test]
+    fn is_terminator_return() {
+        assert!(IrInstr::Return { values: vec![] }.is_terminator());
+    }
+
+    #[test]
+    fn is_terminator_br() {
+        assert!(IrInstr::Br {
+            target: crate::ir::block::BlockId(0),
+            args: vec![]
+        }
+        .is_terminator());
+    }
+
+    #[test]
+    fn is_terminator_condbr() {
+        assert!(IrInstr::CondBr {
+            cond: ValueId(0),
+            then_block: crate::ir::block::BlockId(1),
+            then_args: vec![],
+            else_block: crate::ir::block::BlockId(2),
+            else_args: vec![],
+        }
+        .is_terminator());
+    }
+
+    #[test]
+    fn is_terminator_switch_variant() {
+        assert!(IrInstr::SwitchVariant {
+            scrutinee: ValueId(0),
+            arms: vec![],
+            default_block: None,
+        }
+        .is_terminator());
+    }
+
+    #[test]
+    fn is_terminator_const_int_false() {
+        assert!(!IrInstr::ConstInt {
+            result: ValueId(0),
+            value: 0,
+            ty: IrType::Scalar(crate::ir::types::DType::I64),
+        }
+        .is_terminator());
+    }
+
+    #[test]
+    fn is_terminator_call_false() {
+        assert!(!IrInstr::Call {
+            result: None,
+            callee: "f".into(),
+            args: vec![],
+            result_ty: None,
+        }
+        .is_terminator());
+    }
+
+    // -- operands() ------------------------------------------------------------
+
+    #[test]
+    fn operands_binop() {
+        let i = IrInstr::BinOp {
+            result: ValueId(2),
+            op: BinOp::Add,
+            lhs: ValueId(0),
+            rhs: ValueId(1),
+            ty: IrType::Scalar(crate::ir::types::DType::I64),
+        };
+        assert_eq!(i.operands(), vec![ValueId(0), ValueId(1)]);
+    }
+
+    #[test]
+    fn operands_const_empty() {
+        let i = IrInstr::ConstInt {
+            result: ValueId(0),
+            value: 1,
+            ty: IrType::Scalar(crate::ir::types::DType::I64),
+        };
+        assert!(i.operands().is_empty());
+    }
+
+    #[test]
+    fn operands_return() {
+        let i = IrInstr::Return {
+            values: vec![ValueId(0), ValueId(1)],
+        };
+        assert_eq!(i.operands(), vec![ValueId(0), ValueId(1)]);
+    }
+
+    #[test]
+    fn operands_call_closure() {
+        let i = IrInstr::CallClosure {
+            result: Some(ValueId(5)),
+            closure: ValueId(0),
+            args: vec![ValueId(1), ValueId(2)],
+            result_ty: IrType::Scalar(crate::ir::types::DType::I64),
+        };
+        assert_eq!(i.operands(), vec![ValueId(0), ValueId(1), ValueId(2)]);
+    }
+
+    #[test]
+    fn operands_condbr() {
+        let i = IrInstr::CondBr {
+            cond: ValueId(0),
+            then_block: crate::ir::block::BlockId(1),
+            then_args: vec![ValueId(1)],
+            else_block: crate::ir::block::BlockId(2),
+            else_args: vec![ValueId(2)],
+        };
+        assert_eq!(i.operands(), vec![ValueId(0), ValueId(1), ValueId(2)]);
+    }
+
+    #[test]
+    fn operands_make_struct() {
+        let i = IrInstr::MakeStruct {
+            result: ValueId(5),
+            fields: vec![ValueId(0), ValueId(1), ValueId(2)],
+            result_ty: IrType::Str,
+        };
+        assert_eq!(i.operands(), vec![ValueId(0), ValueId(1), ValueId(2)]);
     }
 }

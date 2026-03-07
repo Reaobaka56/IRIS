@@ -170,7 +170,20 @@ impl FileCompiler {
 
     fn parse_source(&self, src: &str) -> Result<AstModule, Error> {
         let tokens = Lexer::new(src).tokenize()?;
-        Ok(Parser::new(&tokens).parse_module()?)
+        let mut parser = Parser::new(&tokens);
+        let (module, errors) = parser.parse_module_recovering();
+        if errors.is_empty() {
+            return Ok(module);
+        }
+        // Report all parse errors; return the first as the canonical error.
+        // (The LSP path uses compile_with_recovery separately and does not go through here.)
+        for e in &errors {
+            eprintln!("\x1b[1;31merror\x1b[0m: {}", e);
+        }
+        if errors.len() > 1 {
+            eprintln!("\x1b[1;31merror\x1b[0m: aborting due to {} parse error(s)", errors.len());
+        }
+        Err(Error::Parse(errors.into_iter().next().unwrap()))
     }
 
     /// Parse source text, using the build cache to skip re-parsing when the

@@ -218,7 +218,17 @@
         {
           "comment": "HTTP / JSON / Regex builtins",
           "name": "support.function.builtin.iris",
-          "match": "\\b(http_get|http_post|json_stringify|regex_match|regex_find_all|regex_replace)\\b"
+          "match": "\\b(http_get|http_post|http_request|http_post_json|json_stringify|regex_match|regex_find_all|regex_replace)\\b"
+        },
+        {
+          "comment": "TCP / UDP networking builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(tcp_connect|tcp_listen|tcp_accept|tcp_read|tcp_write|tcp_close|udp_open|udp_send|udp_recv|udp_close)\\b"
+        },
+        {
+          "comment": "Terminal / interactive input builtins",
+          "name": "support.function.builtin.iris",
+          "match": "\\b(read_key|read_password|term_clear|term_cursor|term_show_cursor|term_set_color|term_reset|term_rows|term_cols)\\b"
         },
         {
           "comment": "Date / Time builtins",
@@ -234,6 +244,41 @@
           "comment": "Random / Hash / Crypto builtins",
           "name": "support.function.builtin.iris",
           "match": "\\b(random|random_range|hash|base64_encode|base64_decode|uuid|sha256|hex_encode|hex_decode)\\b"
+        },
+        {
+          "comment": "ML stdlib: linear algebra, activations, loss, metrics",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(dot|vec_add|vec_sub|vec_scale|norm|vec_mean|vec_var|vec_std|standardize|min_max_normalize|shuffle_indices|train_test_split)\\b"
+        },
+        {
+          "comment": "ML stdlib: activations and loss functions",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(sigmoid|sigmoid_deriv|relu|relu_deriv|leaky_relu|tanh_act|tanh_deriv|softmax|mse|binary_cross_entropy|cross_entropy|mae)\\b"
+        },
+        {
+          "comment": "ML stdlib: algorithms",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(linear_regression_train|linear_predict|linreg_train|linreg_predict|logreg_train|logreg_predict_prob|logreg_predict|euclidean_dist|knn_predict)\\b"
+        },
+        {
+          "comment": "ML stdlib: clustering and Bayesian",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(kmeans_init_centroids|kmeans_assign|kmeans_update|kmeans_train|gnb_train|gnb_predict|gini|majority_class)\\b"
+        },
+        {
+          "comment": "ML stdlib: optimizers and dense layer",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(sgd_update|sgd_momentum_update|adam_update|dense_forward|apply_relu|apply_sigmoid|apply_tanh|xavier_init|zero_bias)\\b"
+        },
+        {
+          "comment": "ML stdlib: metrics",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(accuracy|r2_score|confusion_matrix_binary|precision|recall|f1_score)\\b"
+        },
+        {
+          "comment": "NN stdlib: MLP",
+          "name": "support.function.stdlib.iris",
+          "match": "\\b(mlp_create|mlp_forward|mlp_backward|mlp_train_step|mlp_train|mlp_predict|mlp_predict_class|mlp_eval_loss|encode_shape|shape_n_in|shape_n_out|layer_weight_offset|layer_bias_offset)\\b"
         }
       ]
     },

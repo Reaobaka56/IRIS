@@ -2,7 +2,47 @@ use std::path::PathBuf;
 use std::process;
 
 use iris::cli::{parse_args, ParseArgsResult};
-use iris::diagnostics::render_error;
+use iris::diagnostics::{render_error, render_error_colored, render_error_colored_with_file};
+
+/// Returns `true` if stderr is connected to a terminal (for colored output).
+fn is_stderr_tty() -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::io::AsRawHandle;
+        let handle = std::io::stderr().as_raw_handle();
+        // Enable virtual terminal processing on Windows 10+
+        unsafe {
+            let mut mode: u32 = 0;
+            if winapi_GetConsoleMode(handle, &mut mode) != 0 {
+                let _ = winapi_SetConsoleMode(handle, mode | 0x0004);
+                return true;
+            }
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        unsafe { libc_isatty(2) != 0 }
+    }
+}
+
+#[cfg(windows)]
+extern "system" {
+    fn GetConsoleMode(handle: *mut std::ffi::c_void, mode: *mut u32) -> i32;
+    fn SetConsoleMode(handle: *mut std::ffi::c_void, mode: u32) -> i32;
+}
+
+#[cfg(windows)]
+use GetConsoleMode as winapi_GetConsoleMode;
+#[cfg(windows)]
+use SetConsoleMode as winapi_SetConsoleMode;
+
+#[cfg(not(windows))]
+extern "C" {
+    fn isatty(fd: i32) -> i32;
+}
+#[cfg(not(windows))]
+use isatty as libc_isatty;
 
 /// 64 MB stack — Windows default is only 1 MB, which overflows on deeply
 /// nested IRIS expressions during recursive IR lowering.
@@ -58,6 +98,18 @@ fn run() {
                 process::exit(1);
             }
         }
+        Ok(ParseArgsResult::Test) => {
+            if let Err(e) = iris::test_runner::run_test_command(&args) {
+                eprintln!("error: {}", e);
+                process::exit(1);
+            }
+        }
+        Ok(ParseArgsResult::Profile) => {
+            if let Err(e) = iris::profiler::run_profile_command(&args) {
+                eprintln!("error: {}", e);
+                process::exit(1);
+            }
+        }
         Ok(ParseArgsResult::Args(cli)) => {
             if cli.emit == iris::EmitKind::Binary {
                 let source = std::fs::read_to_string(&cli.path).unwrap_or_default();
@@ -67,7 +119,11 @@ fn run() {
                 ) {
                     Ok(m) => m,
                     Err(e) => {
-                        eprint!("{}", render_error(&source, &e));
+                        if is_stderr_tty() {
+                            eprint!("{}", render_error_colored_with_file(&source, &e, &cli.path.display().to_string()));
+                        } else {
+                            eprint!("{}", render_error(&source, &e));
+                        }
                         process::exit(1);
                     }
                 };
@@ -124,7 +180,11 @@ fn run() {
                     }
                 }
                 Err(e) => {
-                    eprint!("{}", render_error(&source, &e));
+                    if is_stderr_tty() {
+                        eprint!("{}", render_error_colored_with_file(&source, &e, &cli.path.display().to_string()));
+                    } else {
+                        eprint!("{}", render_error(&source, &e));
+                    }
                     process::exit(1);
                 }
             }
@@ -207,7 +267,7 @@ fn run_repl_input(repl: &mut iris::ReplState, input: &str) {
         Err(e) => {
             // Use the rich diagnostic renderer when possible.
             // In the REPL the "source" is the input line itself.
-            let rendered = render_error(input, &e);
+            let rendered = render_error_colored(input, &e);
             if rendered.trim().is_empty() {
                 eprintln!("\x1b[1;31merror\x1b[0m: {}", e);
             } else {

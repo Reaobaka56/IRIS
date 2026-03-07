@@ -15,7 +15,8 @@ use std::fmt::Write;
 use crate::error::CodegenError;
 use crate::ir::block::BlockId;
 use crate::ir::function::IrFunction;
-use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp};
+use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp, TensorOp};
+use super::llvm_ir::is_matmul_notation;
 use crate::ir::module::IrModule;
 use crate::ir::types::{DType, IrType};
 use crate::ir::value::ValueId;
@@ -514,8 +515,78 @@ fn emit_llvm_instr(
             }
         }
 
-        IrInstr::TensorOp { result, .. } => {
-            writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+        IrInstr::TensorOp { result, op, inputs, .. } => {
+            match op {
+                TensorOp::Einsum { notation } => {
+                    if inputs.len() == 2 && is_matmul_notation(notation) {
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @iris_tensor_matmul(ptr {}, ptr {})",
+                            result.0,
+                            val(inputs[0]),
+                            val(inputs[1])
+                        )?;
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                TensorOp::Unary { op: unary_op } => {
+                    if inputs.len() == 1 {
+                        let fn_name = match unary_op.as_str() {
+                            "relu" => "iris_tensor_relu",
+                            "sigmoid" => "iris_tensor_sigmoid",
+                            "tanh" => "iris_tensor_tanh_act",
+                            "neg" => "iris_tensor_neg",
+                            "exp" => "iris_tensor_exp",
+                            "log" => "iris_tensor_log",
+                            "sqrt" => "iris_tensor_sqrt",
+                            "abs" => "iris_tensor_abs",
+                            _ => "iris_tensor_op",
+                        };
+                        if fn_name == "iris_tensor_op" {
+                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
+                        } else {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @{}(ptr {})",
+                                result.0,
+                                fn_name,
+                                val(inputs[0])
+                            )?;
+                        }
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                TensorOp::Reduce { op: reduce_op, axes, keepdims } => {
+                    if inputs.len() == 1 && axes.len() == 1 {
+                        let fn_name = match reduce_op.as_str() {
+                            "sum" => "iris_tensor_reduce_sum",
+                            "max" => "iris_tensor_reduce_max",
+                            "mean" => "iris_tensor_reduce_mean",
+                            _ => "iris_tensor_op",
+                        };
+                        if fn_name == "iris_tensor_op" {
+                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
+                        } else {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @{}(ptr {}, i32 {}, i32 {})",
+                                result.0,
+                                fn_name,
+                                val(inputs[0]),
+                                axes[0],
+                                if *keepdims { 1 } else { 0 }
+                            )?;
+                        }
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                _ => {
+                    writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                }
+            }
         }
 
         IrInstr::Load {
@@ -779,16 +850,72 @@ fn emit_llvm_instr(
                 val(*value)
             )?;
         }
-        IrInstr::ChanRecv { result, chan, .. } => {
+        IrInstr::ChanRecv { result, chan, elem_ty } => {
+            // iris_chan_recv returns IrisVal* (boxed); unbox to the element type.
+            let raw = format!("%raw_recv{}", gep_counter);
+            *gep_counter += 1;
             writeln!(
                 out,
-                "  %v{} = call ptr @iris_chan_recv(ptr {})",
-                result.0,
+                "  {} = call ptr @iris_chan_recv(ptr {})",
+                raw,
                 val(*chan)
             )?;
+            match elem_ty {
+                IrType::Scalar(DType::I64) | IrType::Scalar(DType::U64) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call i64 @iris_unbox_i64(ptr {})",
+                        result.0, raw
+                    )?;
+                }
+                IrType::Scalar(DType::I32) | IrType::Scalar(DType::U32) => {
+                    let tmp = format!("%raw_recv_i64_{}", gep_counter);
+                    *gep_counter += 1;
+                    writeln!(out, "  {} = call i64 @iris_unbox_i64(ptr {})", tmp, raw)?;
+                    writeln!(out, "  %v{} = trunc i64 {} to i32", result.0, tmp)?;
+                }
+                IrType::Scalar(DType::F64) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call double @iris_unbox_f64(ptr {})",
+                        result.0, raw
+                    )?;
+                }
+                IrType::Scalar(DType::F32) => {
+                    let tmp = format!("%raw_recv_f64_{}", gep_counter);
+                    *gep_counter += 1;
+                    writeln!(out, "  {} = call double @iris_unbox_f64(ptr {})", tmp, raw)?;
+                    writeln!(out, "  %v{} = fptrunc double {} to float", result.0, tmp)?;
+                }
+                IrType::Scalar(DType::Bool) => {
+                    let tmp = format!("%raw_recv_bool_{}", gep_counter);
+                    *gep_counter += 1;
+                    writeln!(out, "  {} = call i32 @iris_unbox_bool(ptr {})", tmp, raw)?;
+                    writeln!(out, "  %v{} = trunc i32 {} to i1", result.0, tmp)?;
+                }
+                IrType::Str => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_unbox_str(ptr {})",
+                        result.0, raw
+                    )?;
+                }
+                _ => {
+                    // For compound types, keep as ptr.
+                    writeln!(out, "  %v{} = bitcast ptr {} to ptr", result.0, raw)?;
+                }
+            }
         }
-        IrInstr::Spawn { body_fn, .. } => {
-            writeln!(out, "  call void @iris_spawn_fn(ptr @{})", body_fn)?;
+        IrInstr::Spawn { body_fn, args } => {
+            if args.is_empty() {
+                writeln!(out, "  call void @iris_spawn_fn(ptr @{}, ptr null)", body_fn)?;
+            } else {
+                writeln!(
+                    out,
+                    "  call void @iris_spawn_fn(ptr @{}_trampoline, ptr null)",
+                    body_fn
+                )?;
+            }
         }
 
         // Atomic / Mutex ops: emit as opaque runtime calls.
@@ -946,6 +1073,18 @@ fn emit_llvm_instr(
 
         IrInstr::GradTangent { result, .. } => {
             writeln!(out, "  %v{} = call ptr @iris_grad_tangent()", result.0)?;
+        }
+
+        IrInstr::TapeRecord { result, .. } => {
+            writeln!(out, "  %v{} = call ptr @iris_tape_record()", result.0)?;
+        }
+
+        IrInstr::Backward { result, .. } => {
+            writeln!(out, "  %v{} = call ptr @iris_backward()", result.0)?;
+        }
+
+        IrInstr::TapeGrad { result, .. } => {
+            writeln!(out, "  %v{} = call ptr @iris_tape_grad()", result.0)?;
         }
 
         IrInstr::Sparsify { result, .. } => {
@@ -1729,7 +1868,7 @@ fn emit_iris_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         "declare ptr @iris_chan_new()",
         "declare void @iris_chan_send(ptr, ptr)",
         "declare ptr @iris_chan_recv(ptr)",
-        "declare void @iris_spawn_fn(ptr)",
+        "declare void @iris_spawn_fn(ptr, ptr)",
         "declare void @iris_par_for(ptr, i64, i64)",
         // Atomics / Mutex
         "declare ptr @iris_atomic_new()",

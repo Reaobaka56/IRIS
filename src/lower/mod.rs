@@ -13,6 +13,44 @@ pub mod ir_from_graph;
 pub use graph::lower_model;
 pub use ir_from_graph::lower_graph_to_ir;
 
+/// Simple Levenshtein distance between two strings (caps at 4 for speed).
+fn levenshtein(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let m = a.len();
+    let n = b.len();
+    if m.abs_diff(n) > 4 {
+        return 5;
+    }
+    let mut dp = vec![vec![0usize; n + 1]; m + 1];
+    for i in 0..=m { dp[i][0] = i; }
+    for j in 0..=n { dp[0][j] = j; }
+    for i in 1..=m {
+        for j in 1..=n {
+            dp[i][j] = if a[i-1] == b[j-1] {
+                dp[i-1][j-1]
+            } else {
+                1 + dp[i-1][j].min(dp[i][j-1]).min(dp[i-1][j-1])
+            };
+        }
+    }
+    dp[m][n]
+}
+
+/// Find the closest name in `candidates` to `name`, if within edit distance 2.
+fn did_you_mean<'a>(name: &str, candidates: impl Iterator<Item = &'a str>) -> Option<String> {
+    let mut best: Option<(usize, &str)> = None;
+    for c in candidates {
+        let d = levenshtein(name, c);
+        if d <= 2 {
+            if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+                best = Some((d, c));
+            }
+        }
+    }
+    best.map(|(_, s)| s.to_owned())
+}
+
 use std::collections::HashMap;
 
 use crate::error::LowerError;
@@ -112,6 +150,22 @@ pub fn lower(ast: &AstModule, module_name: &str) -> Result<IrModule, LowerError>
     let generic_fns = std::rc::Rc::new(generic_fn_map);
     let fn_defaults = std::rc::Rc::new(fn_defaults_map);
 
+    // Pre-populate built-in / runtime function return types so call sites
+    // get concrete types instead of Infer.
+    fn_sigs.entry("println".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("print".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("eprintln".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("eprint".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("sleep_ms".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("random_i64".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("random_f64".into()).or_insert(IrType::Scalar(DType::F64));
+    fn_sigs.entry("time_ms".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("exit".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("len".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("str_len".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("assert".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs.entry("assert_eq".into()).or_insert(IrType::Scalar(DType::I64));
+
     // 3b. Collect global const declarations as named expressions.
     let const_defs_map: HashMap<String, AstExpr> = ast
         .consts
@@ -156,8 +210,21 @@ pub fn lower(ast: &AstModule, module_name: &str) -> Result<IrModule, LowerError>
                     .push((dispatch_ty.clone(), mangled.clone()));
             }
             // Build a renamed copy of the method for lowering.
+            // Replace bare `self` param type with the concrete struct type.
             let mut renamed = method.clone();
             renamed.name.name = mangled;
+            for param in &mut renamed.params {
+                if param.name.name == "self" {
+                    if let crate::parser::ast::AstType::Named(ref n, _) = param.ty {
+                        if n == "self" {
+                            param.ty = crate::parser::ast::AstType::Named(
+                                impl_def.type_name.clone(),
+                                param.ty.span(),
+                            );
+                        }
+                    }
+                }
+            }
             impl_fns.push(renamed);
         }
     }
@@ -254,6 +321,9 @@ struct Lowerer<'m> {
     trait_dispatch: std::rc::Rc<HashMap<String, Vec<(IrType, String)>>>,
     /// Default parameter expressions: fn_name → [Option<AstExpr>] per param.
     fn_defaults: std::rc::Rc<HashMap<String, Vec<Option<crate::parser::ast::AstExpr>>>>,
+    /// Expected type from a `val x: T = expr` annotation — used by collection
+    /// constructors (e.g. `list()`, `map()`) to infer the element/key/value type.
+    binding_ty: Option<IrType>,
 }
 
 impl<'m> Lowerer<'m> {
@@ -311,6 +381,7 @@ impl<'m> Lowerer<'m> {
             const_defs,
             trait_dispatch,
             fn_defaults,
+            binding_ty: None,
         }
     }
 
@@ -329,9 +400,17 @@ impl<'m> Lowerer<'m> {
         self.scope
             .get(&ident.name)
             .cloned()
-            .ok_or_else(|| LowerError::UndefinedVariable {
-                name: ident.name.clone(),
-                span: ident.span,
+            .ok_or_else(|| {
+                // Build a combined candidate list: scope names + known function names.
+                let scope_names: Vec<&str> = self.scope.keys().map(|s| s.as_str()).collect();
+                let fn_names: Vec<&str> = self.fn_sigs.keys().map(|s| s.as_str()).collect();
+                let all = scope_names.iter().chain(fn_names.iter()).copied();
+                let suggestion = did_you_mean(&ident.name, all);
+                LowerError::UndefinedVariable {
+                    name: ident.name.clone(),
+                    span: ident.span,
+                    suggestion,
+                }
             })
     }
 
@@ -377,7 +456,7 @@ impl<'m> Lowerer<'m> {
 
             AstExpr::FloatLit { value, .. } => {
                 let result = self.builder.fresh_value();
-                let ty = IrType::Scalar(DType::F32);
+                let ty = IrType::Scalar(DType::F64);
                 self.builder.push_instr(
                     IrInstr::ConstFloat {
                         result,
@@ -627,6 +706,7 @@ impl<'m> Lowerer<'m> {
                     .ok_or_else(|| LowerError::UndefinedVariable {
                         name: name.clone(),
                         span: *span,
+                        suggestion: None,
                     })?
                     .clone();
 
@@ -1038,7 +1118,34 @@ impl<'m> Lowerer<'m> {
                 };
 
                 // Build the mangled function name `TypeName__method`.
-                let mangled = format!("{}__{}", type_name, method);
+                // If not found in fn_sigs, check trait dispatch for `Trait__TypeName__method`.
+                let struct_mangled = format!("{}__{}", type_name, method);
+                let mangled = if self.fn_sigs.contains_key(&struct_mangled) {
+                    struct_mangled
+                } else if let Some(impls) = self.trait_dispatch.get(method) {
+                    // Find the impl for this concrete type.
+                    let dispatch_ty = IrType::Struct {
+                        name: type_name.clone(),
+                        fields: Vec::new(),
+                    };
+                    impls
+                        .iter()
+                        .find(|(ty, _)| {
+                            if let (
+                                IrType::Struct { name: n1, .. },
+                                IrType::Struct { name: n2, .. },
+                            ) = (ty, &dispatch_ty)
+                            {
+                                n1 == n2
+                            } else {
+                                ty == &dispatch_ty
+                            }
+                        })
+                        .map(|(_, name)| name.clone())
+                        .unwrap_or(struct_mangled)
+                } else {
+                    struct_mangled
+                };
 
                 // Look up return type.
                 let ret_ty = self.fn_sigs.get(&mangled).cloned().unwrap_or(IrType::Infer);
@@ -1186,6 +1293,31 @@ impl<'m> Lowerer<'m> {
         args: &[AstExpr],
         span: Span,
     ) -> Result<(ValueId, IrType), LowerError> {
+        // Built-in: println(x) / print(x) → Print instruction
+        if callee.name == "println" || callee.name == "print" || callee.name == "eprintln" {
+            if args.len() != 1 {
+                return Err(LowerError::Unsupported {
+                    detail: format!("{}() requires exactly 1 argument", callee.name),
+                    span,
+                });
+            }
+            let (operand, _) = self.lower_expr(&args[0])?;
+            self.builder
+                .push_instr(IrInstr::Print { operand }, None);
+            // Return a dummy i64 0 as the "unit" value.
+            let dummy = self.builder.fresh_value();
+            let dummy_ty = IrType::Scalar(DType::I64);
+            self.builder.push_instr(
+                IrInstr::ConstInt {
+                    result: dummy,
+                    value: 0,
+                    ty: dummy_ty.clone(),
+                },
+                Some(dummy_ty.clone()),
+            );
+            return Ok((dummy, dummy_ty));
+        }
+
         // Built-in: channel() → ChanNew
         if callee.name == "channel" {
             let elem_ty = IrType::Infer;
@@ -1260,8 +1392,8 @@ impl<'m> Lowerer<'m> {
             return Ok((result, elem_ty));
         }
 
-        // Built-in: atomic_new(v) → AtomicNew
-        if callee.name == "atomic_new" {
+        // Built-in: atomic(v) / atomic_new(v) → AtomicNew
+        if callee.name == "atomic" || callee.name == "atomic_new" {
             if args.len() != 1 {
                 return Err(LowerError::Unsupported {
                     detail: "atomic_new() requires exactly 1 argument".into(),
@@ -2095,7 +2227,12 @@ impl<'m> Lowerer<'m> {
                     span,
                 });
             }
-            let elem_ty = IrType::Scalar(DType::I64); // default; type inference may refine
+            // Use the declared binding type (from `val x: list<T> = list()`) if available.
+            let elem_ty = if let Some(IrType::List(inner)) = &self.binding_ty {
+                *inner.clone()
+            } else {
+                IrType::Scalar(DType::I64) // default
+            };
             let result = self.builder.fresh_value();
             let list_ty = IrType::List(Box::new(elem_ty.clone()));
             self.builder
@@ -2103,8 +2240,8 @@ impl<'m> Lowerer<'m> {
             return Ok((result, list_ty));
         }
 
-        // Built-in: push(lst, val) → ListPush — append to list
-        if callee.name == "push" {
+        // Built-in: push(lst, val) / list_push(lst, val) → ListPush — append to list
+        if callee.name == "push" || callee.name == "list_push" {
             if args.len() != 2 {
                 return Err(LowerError::Unsupported {
                     detail: "push() requires 2 arguments: (list, value)".into(),
@@ -2126,6 +2263,32 @@ impl<'m> Lowerer<'m> {
                 Some(ty.clone()),
             );
             return Ok((dummy, ty));
+        }
+
+        // Built-in: pop(lst) → ListPop → elem  (alias for list_pop)
+        if callee.name == "pop" {
+            if args.len() != 1 {
+                return Err(LowerError::Unsupported {
+                    detail: "pop() requires 1 argument: (list)".into(),
+                    span,
+                });
+            }
+            let (list, list_ty) = self.lower_expr(&args[0])?;
+            let elem_ty = if let IrType::List(inner) = &list_ty {
+                *inner.clone()
+            } else {
+                IrType::Scalar(DType::I64)
+            };
+            let result = self.builder.fresh_value();
+            self.builder.push_instr(
+                IrInstr::ListPop {
+                    result,
+                    list,
+                    elem_ty: elem_ty.clone(),
+                },
+                Some(elem_ty.clone()),
+            );
+            return Ok((result, elem_ty));
         }
 
         // Built-in: list_len(lst) → ListLen → i64
@@ -2232,8 +2395,12 @@ impl<'m> Lowerer<'m> {
                     span,
                 });
             }
-            let key_ty = IrType::Str;
-            let val_ty = IrType::Scalar(DType::I64);
+            // Use binding_ty from `val m: map<K, V> = map()` annotation if available.
+            let (key_ty, val_ty) = if let Some(IrType::Map(k, v)) = &self.binding_ty {
+                (*k.clone(), *v.clone())
+            } else {
+                (IrType::Str, IrType::Scalar(DType::I64))
+            };
             let result = self.builder.fresh_value();
             let map_ty = IrType::Map(Box::new(key_ty.clone()), Box::new(val_ty.clone()));
             self.builder.push_instr(
@@ -3475,6 +3642,94 @@ impl<'m> Lowerer<'m> {
             }
         }
 
+        // ── Functional list operations: expand inline instead of BuiltinCall ──
+        // These use CallClosure which the codegen handles natively, so they work
+        // with both the interpreter and the binary/LLVM backend.
+        if matches!(
+            callee.name.as_str(),
+            "list_map" | "list_filter" | "list_reduce" | "list_any" | "list_all"
+        ) {
+            match callee.name.as_str() {
+                "list_map" => {
+                    // list_map(list, closure)
+                    if args.len() != 2 {
+                        return Err(LowerError::Unsupported {
+                            detail: "list_map() requires 2 arguments: (list, closure)".into(),
+                            span,
+                        });
+                    }
+                    let (base_val, base_ty) = self.lower_expr(&args[0])?;
+                    let elem_ty = match &base_ty {
+                        IrType::List(inner) => *inner.clone(),
+                        _ => IrType::Scalar(DType::I64),
+                    };
+                    return self.lower_list_map(base_val, elem_ty, &args[1..], span);
+                }
+                "list_filter" => {
+                    // list_filter(list, closure)
+                    if args.len() != 2 {
+                        return Err(LowerError::Unsupported {
+                            detail: "list_filter() requires 2 arguments: (list, closure)".into(),
+                            span,
+                        });
+                    }
+                    let (base_val, base_ty) = self.lower_expr(&args[0])?;
+                    let elem_ty = match &base_ty {
+                        IrType::List(inner) => *inner.clone(),
+                        _ => IrType::Scalar(DType::I64),
+                    };
+                    return self.lower_list_filter(base_val, elem_ty, &args[1..], span);
+                }
+                "list_reduce" => {
+                    // list_reduce(list, initial, closure)
+                    if args.len() != 3 {
+                        return Err(LowerError::Unsupported {
+                            detail: "list_reduce() requires 3 arguments: (list, initial, closure)"
+                                .into(),
+                            span,
+                        });
+                    }
+                    let (base_val, base_ty) = self.lower_expr(&args[0])?;
+                    let elem_ty = match &base_ty {
+                        IrType::List(inner) => *inner.clone(),
+                        _ => IrType::Scalar(DType::I64),
+                    };
+                    return self.lower_list_fold(base_val, elem_ty, &args[1..], span);
+                }
+                "list_any" => {
+                    // list_any(list, closure)
+                    if args.len() != 2 {
+                        return Err(LowerError::Unsupported {
+                            detail: "list_any() requires 2 arguments: (list, closure)".into(),
+                            span,
+                        });
+                    }
+                    let (base_val, base_ty) = self.lower_expr(&args[0])?;
+                    let elem_ty = match &base_ty {
+                        IrType::List(inner) => *inner.clone(),
+                        _ => IrType::Scalar(DType::I64),
+                    };
+                    return self.lower_list_any(base_val, elem_ty, &args[1..], span);
+                }
+                "list_all" => {
+                    // list_all(list, closure)
+                    if args.len() != 2 {
+                        return Err(LowerError::Unsupported {
+                            detail: "list_all() requires 2 arguments: (list, closure)".into(),
+                            span,
+                        });
+                    }
+                    let (base_val, base_ty) = self.lower_expr(&args[0])?;
+                    let elem_ty = match &base_ty {
+                        IrType::List(inner) => *inner.clone(),
+                        _ => IrType::Scalar(DType::I64),
+                    };
+                    return self.lower_list_all(base_val, elem_ty, &args[1..], span);
+                }
+                _ => unreachable!(),
+            }
+        }
+
         // ── Phase 104: New runtime builtins (HTTP, JSON, Regex, DateTime, OS, etc.) ──
         // NOTE: set_*, json_parse, path_exists are NOT here — they are stdlib .iris functions.
         {
@@ -3658,6 +3913,27 @@ impl<'m> Lowerer<'m> {
                     "list_drop",
                     IrType::List(Box::new(IrType::Scalar(DType::I64))),
                 )),
+
+                // ── Terminal / Interactive Input ──
+                "read_key"        => Some(("read_key",        IrType::Scalar(DType::I64))),
+                "read_password"   => Some(("read_password",   IrType::Str)),
+                "term_clear"      => Some(("term_clear",      IrType::Scalar(DType::I64))),
+                "term_cursor"     => Some(("term_cursor",     IrType::Scalar(DType::I64))),
+                "term_show_cursor"=> Some(("term_show_cursor",IrType::Scalar(DType::I64))),
+                "term_set_color"  => Some(("term_set_color",  IrType::Scalar(DType::I64))),
+                "term_reset"      => Some(("term_reset",      IrType::Scalar(DType::I64))),
+                "term_rows"       => Some(("term_rows",       IrType::Scalar(DType::I64))),
+                "term_cols"       => Some(("term_cols",       IrType::Scalar(DType::I64))),
+
+                // ── UDP Networking ──
+                "udp_open"  => Some(("udp_open",  IrType::Scalar(DType::I64))),
+                "udp_send"  => Some(("udp_send",  IrType::Scalar(DType::I64))),
+                "udp_recv"  => Some(("udp_recv",  IrType::Str)),
+                "udp_close" => Some(("udp_close", IrType::Scalar(DType::I64))),
+
+                // ── HTTP extended ──
+                "http_request" => Some(("http_request", IrType::Str)),
+                "http_post_json" => Some(("http_post_json", IrType::Str)),
 
                 _ => None,
             };
@@ -5447,7 +5723,7 @@ impl<'m> Lowerer<'m> {
         let loop_var_names: Vec<String> = loop_vars.iter().map(|(n, _, _)| n.clone()).collect();
         self.loop_stack
             .push((header_bb, merge_bb, loop_var_names.clone()));
-        self.lower_block_stmts(body)?;
+        let _ = self.lower_block(body)?;
         self.loop_stack.pop();
 
         // Emit back-edge Br if the body wasn't terminated by break/continue.
@@ -5580,7 +5856,9 @@ impl<'m> Lowerer<'m> {
         self.builder.set_current_block(body_bb);
         let loop_var_names: Vec<String> = loop_vars.iter().map(|(n, _, _)| n.clone()).collect();
         self.loop_stack.push((header_bb, merge_bb, loop_var_names));
-        self.lower_block_stmts(body)?;
+        // Use lower_block (not lower_block_stmts) so tail expressions like `print(x)` without `;`
+        // are also evaluated as side-effecting statements.
+        self.lower_block(body)?;
         self.loop_stack.pop();
 
         // 10. Emit increment and back-edge (if body not terminated by break/continue).
@@ -5798,7 +6076,7 @@ impl<'m> Lowerer<'m> {
         let loop_var_names: Vec<String> = loop_vars.iter().map(|(n, _, _)| n.clone()).collect();
         self.loop_stack
             .push((header_bb, merge_bb, loop_var_names.clone()));
-        self.lower_block_stmts(body)?;
+        let _ = self.lower_block(body)?;
         self.loop_stack.pop();
 
         // Emit back-edge Br if body was not terminated.
@@ -10544,7 +10822,7 @@ impl<'m> Lowerer<'m> {
 
         self.builder.set_current_block(loop_bb);
         self.loop_stack.push((loop_bb, merge_bb, vec![]));
-        self.lower_block_stmts(body)?;
+        let _ = self.lower_block(body)?;
         self.loop_stack.pop();
 
         if !self.builder.is_current_block_terminated() {
@@ -10660,8 +10938,14 @@ impl<'m> Lowerer<'m> {
             self.builder.set_span_byte(byte);
         }
         match stmt {
-            AstStmt::Let { name, init, .. } => {
+            AstStmt::Let { name, ty: ann_ty, init, .. } => {
+                // Set binding_ty from the annotation so constructors like list() can
+                // infer their element type (e.g. `val xs: list<f64> = list()`).
+                if let Some(ast_ty) = ann_ty {
+                    self.binding_ty = Some(crate::lower::lower_type(ast_ty));
+                }
                 let (val, ty) = self.lower_expr(init)?;
+                self.binding_ty = None;
                 self.scope.insert(name.name.clone(), (val, ty));
                 Ok(())
             }

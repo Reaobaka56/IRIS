@@ -16,7 +16,7 @@ use std::fmt::Write;
 use crate::error::CodegenError;
 use crate::ir::block::BlockId;
 use crate::ir::function::IrFunction;
-use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp};
+use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp, TensorOp};
 use crate::ir::module::IrModule;
 use crate::ir::types::{DType, IrType};
 use crate::ir::value::ValueId;
@@ -230,6 +230,68 @@ fn emit_llvm_ir_impl(
         )?;
     }
 
+    // ── Spawn trampolines ─────────────────────────────────────────────────
+    // For each __spawn_N function with parameters (captures), generate a
+    // trampoline wrapper that takes a single `ptr` (array of boxed captures),
+    // unpacks them, and calls the real spawn body function.
+    for func in module.functions() {
+        if !func.name.starts_with("__spawn_") || func.params.is_empty() {
+            continue;
+        }
+        let tramp_name = format!("{}_trampoline", func.name);
+        writeln!(out, "define ptr @{}(ptr %arg) {{", tramp_name)?;
+        writeln!(out, "entry:")?;
+        for (i, p) in func.params.iter().enumerate() {
+            let slot = format!("%slot{}", i);
+            writeln!(
+                out,
+                "  {} = getelementptr ptr, ptr %arg, i64 {}",
+                slot, i
+            )?;
+            let raw = format!("%raw{}", i);
+            writeln!(out, "  {} = load ptr, ptr {}", raw, slot)?;
+            // Unbox to the expected parameter type.
+            let param_llvm_ty = llvm_type_complete(&p.ty).unwrap_or_else(|_| "ptr".to_owned());
+            if param_llvm_ty == "i64" {
+                writeln!(out, "  %p{} = call i64 @iris_unbox_i64(ptr {})", i, raw)?;
+            } else if param_llvm_ty == "i32" {
+                writeln!(out, "  %p{} = call i64 @iris_unbox_i64(ptr {})", i, raw)?;
+                writeln!(out, "  %p{}t = trunc i64 %p{} to i32", i, i)?;
+            } else if param_llvm_ty == "double" {
+                writeln!(out, "  %p{} = call double @iris_unbox_f64(ptr {})", i, raw)?;
+            } else if param_llvm_ty == "i1" {
+                writeln!(out, "  %p{}i = call i32 @iris_unbox_bool(ptr {})", i, raw)?;
+                writeln!(out, "  %p{} = trunc i32 %p{}i to i1", i, i)?;
+            } else {
+                // ptr types (channels, structs, closures, etc.) — already ptr.
+                writeln!(out, "  %p{} = bitcast ptr {} to ptr", i, raw)?;
+            }
+        }
+        // Build call args.
+        let call_args: Vec<String> = func
+            .params
+            .iter()
+            .enumerate()
+            .map(|(i, p)| {
+                let ty_s = llvm_type_complete(&p.ty).unwrap_or_else(|_| "ptr".to_owned());
+                if ty_s == "i32" {
+                    format!("i32 %p{}t", i)
+                } else {
+                    format!("{} %p{}", ty_s, i)
+                }
+            })
+            .collect();
+        writeln!(
+            out,
+            "  call i64 @{}({})",
+            func.name,
+            call_args.join(", ")
+        )?;
+        writeln!(out, "  call void @free(ptr %arg)")?;
+        writeln!(out, "  ret ptr null")?;
+        writeln!(out, "}}\n")?;
+    }
+
     if entry_llvm_name.is_some() {
         writeln!(out, "define i32 @main(i32 %argc, ptr %argv) {{")?;
         writeln!(out, "  call void @iris_set_argv(i32 %argc, ptr %argv)")?;
@@ -337,9 +399,22 @@ fn emit_function_body(
         }
     }
 
+    // Pre-compute blocks that contain a Panic instruction — these end with
+    // `unreachable` in LLVM IR and must not appear as phi predecessors.
+    let panic_blocks: HashSet<BlockId> = func
+        .blocks()
+        .iter()
+        .filter(|b| b.instrs.iter().any(|i| matches!(i, IrInstr::Panic { .. })))
+        .map(|b| b.id)
+        .collect();
+
     // Sub-pass B: phi sources for block-param SSA → LLVM phi conversion.
+    // Skip phi contributions from panic blocks (they branch nowhere reachable).
     let mut phi_src: HashMap<(BlockId, usize), Vec<(BlockId, ValueId)>> = HashMap::new();
     for block in func.blocks() {
+        if panic_blocks.contains(&block.id) {
+            continue; // this block ends with unreachable — skip all branch args
+        }
         for instr in &block.instrs {
             match instr {
                 IrInstr::Br { target, args } => {
@@ -467,11 +542,21 @@ fn emit_function_body(
                 | IrInstr::MakeSome { result, .. }
                 | IrInstr::MakeNone { result, .. }
                 | IrInstr::MakeOk { result, .. }
-                | IrInstr::MakeErr { result, .. }
-                | IrInstr::OptionUnwrap { result, .. }
-                | IrInstr::ResultUnwrap { result, .. }
-                | IrInstr::ResultUnwrapErr { result, .. } => {
+                | IrInstr::MakeErr { result, .. } => {
                     emitted_types.insert(*result, "ptr".to_owned());
+                }
+                IrInstr::OptionUnwrap { result, result_ty, .. }
+                | IrInstr::ResultUnwrap { result, result_ty, .. }
+                | IrInstr::ResultUnwrapErr { result, result_ty, .. } => {
+                    let s = match result_ty {
+                        IrType::Scalar(DType::I64) | IrType::Scalar(DType::I32) => "i64".to_owned(),
+                        IrType::Scalar(DType::F64) => "double".to_owned(),
+                        IrType::Scalar(DType::F32) => "float".to_owned(),
+                        IrType::Scalar(DType::Bool) => "i1".to_owned(),
+                        IrType::Str => "ptr".to_owned(),
+                        _ => "ptr".to_owned(),
+                    };
+                    emitted_types.insert(*result, s);
                 }
                 // CallClosure: inline indirect call returns the native type.
                 IrInstr::CallClosure {
@@ -483,12 +568,15 @@ fn emit_function_body(
                         .unwrap_or_else(|_| "ptr".to_owned());
                     emitted_types.insert(*result, s);
                 }
-                // ListGet/ListPop/MapGet: runtime returns boxed IrisVal*, we unbox
-                // to the element type, so emitted type matches the element type.
+                // ListGet/ListPop/MapGet/ChanRecv: runtime returns boxed IrisVal*,
+                // we unbox to the element type, so emitted type matches the elem type.
                 IrInstr::ListGet {
                     result, elem_ty, ..
                 }
                 | IrInstr::ListPop {
+                    result, elem_ty, ..
+                }
+                | IrInstr::ChanRecv {
                     result, elem_ty, ..
                 } => {
                     let s = match elem_ty {
@@ -607,6 +695,21 @@ fn emit_function_body(
                                     format!(
                                         "  {} = zext {} {} to {}",
                                         cast_name, actual_ty, vstr, expected_ty
+                                    )
+                                }
+                            } else if (actual_ty == "float" || actual_ty == "double")
+                                && (expected_ty == "float" || expected_ty == "double")
+                            {
+                                // Float widening/narrowing — use proper LLVM FP casts.
+                                if actual_ty == "float" && expected_ty == "double" {
+                                    format!(
+                                        "  {} = fpext float {} to double",
+                                        cast_name, vstr
+                                    )
+                                } else {
+                                    format!(
+                                        "  {} = fptrunc double {} to float",
+                                        cast_name, vstr
                                     )
                                 }
                             } else {
@@ -748,7 +851,12 @@ fn emit_function_body(
             }
         }
 
+        let mut panic_emitted = false; // track if we've already emitted unreachable via Panic
         for instr in &block.instrs {
+            // Skip branch/return terminators after Panic (which already emitted `unreachable`).
+            if panic_emitted && matches!(instr, IrInstr::Br { .. } | IrInstr::CondBr { .. } | IrInstr::Return { .. }) {
+                continue;
+            }
             // Emit phi coercion casts right before block terminators.
             if matches!(instr, IrInstr::Br { .. } | IrInstr::CondBr { .. }) {
                 if let Some(casts) = phi_cast_instrs.get(&block.id) {
@@ -756,6 +864,9 @@ fn emit_function_body(
                         writeln!(out, "{}", cast_instr)?;
                     }
                 }
+            }
+            if matches!(instr, IrInstr::Panic { .. }) {
+                panic_emitted = true;
             }
             emit_instr_ir(
                 instr,
@@ -846,6 +957,46 @@ fn box_to_ptr(
     }
 }
 
+/// Unbox a raw `IrisVal*` ptr into the result register `%v{result_id}`.
+/// For non-scalar types (or when no unbox function exists), keeps it as ptr.
+fn unbox_ptr_to_result(
+    out: &mut String,
+    raw: String,       // e.g. "%raw_ouw0"
+    result_id: u32,
+    result_ty: &IrType,
+    counter: &mut u32,
+) -> Result<(), CodegenError> {
+    match result_ty {
+        IrType::Scalar(DType::I64) | IrType::Scalar(DType::I32) => {
+            writeln!(out, "  %v{} = call i64 @iris_unbox_i64(ptr {})", result_id, raw)?;
+        }
+        IrType::Scalar(DType::F64) => {
+            writeln!(out, "  %v{} = call double @iris_unbox_f64(ptr {})", result_id, raw)?;
+        }
+        IrType::Scalar(DType::F32) => {
+            // No iris_unbox_f32 — unbox as f64 then truncate.
+            let tmp = format!("%unbox_f64_for_f32_{}", counter);
+            *counter += 1;
+            writeln!(out, "  {} = call double @iris_unbox_f64(ptr {})", tmp, raw)?;
+            writeln!(out, "  %v{} = fptrunc double {} to float", result_id, tmp)?;
+        }
+        IrType::Scalar(DType::Bool) => {
+            let tmp = format!("%unbox_bool{}", counter);
+            *counter += 1;
+            writeln!(out, "  {} = call i32 @iris_unbox_bool(ptr {})", tmp, raw)?;
+            writeln!(out, "  %v{} = trunc i32 {} to i1", result_id, tmp)?;
+        }
+        IrType::Str => {
+            writeln!(out, "  %v{} = call ptr @iris_unbox_str(ptr {})", result_id, raw)?;
+        }
+        _ => {
+            // Non-scalar — already a ptr, use a zero-offset GEP to name it.
+            writeln!(out, "  %v{} = getelementptr i8, ptr {}, i32 0", result_id, raw)?;
+        }
+    }
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // Type coercion helper — emit ptrtoint / inttoptr / trunc / zext as needed
 // ---------------------------------------------------------------------------
@@ -901,6 +1052,30 @@ fn coerce_to_type(
 // ---------------------------------------------------------------------------
 // Instruction emission
 // ---------------------------------------------------------------------------
+
+/// Check if an einsum notation represents a standard matmul pattern.
+/// Matches: "mk,kn->mn", "ij,jk->ik", or any 2-char,2-char->2-char where
+/// the inner index is contracted.
+pub(crate) fn is_matmul_notation(notation: &str) -> bool {
+    let parts: Vec<&str> = notation.split("->").collect();
+    if parts.len() != 2 {
+        return false;
+    }
+    let inputs: Vec<&str> = parts[0].split(',').collect();
+    if inputs.len() != 2 {
+        return false;
+    }
+    let lhs: Vec<char> = inputs[0].chars().collect();
+    let rhs: Vec<char> = inputs[1].chars().collect();
+    let out: Vec<char> = parts[1].chars().collect();
+    // Standard matmul: lhs=[a,b], rhs=[b,c], out=[a,c]
+    lhs.len() == 2
+        && rhs.len() == 2
+        && out.len() == 2
+        && lhs[1] == rhs[0]
+        && out[0] == lhs[0]
+        && out[1] == rhs[1]
+}
 
 #[allow(clippy::too_many_arguments)]
 fn emit_instr_ir(
@@ -1666,8 +1841,158 @@ fn emit_instr_ir(
         }
 
         // ── Memory / Tensor ops ────────────────────────────────────────────
-        IrInstr::TensorOp { result, .. } => {
-            writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+        IrInstr::TensorOp { result, op, inputs, .. } => {
+            match op {
+                TensorOp::Einsum { notation } => {
+                    // Dispatch known einsum patterns to C runtime functions.
+                    // "mk,kn->mn" and similar 2-input contraction → matmul
+                    if inputs.len() == 2 && is_matmul_notation(notation) {
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @iris_tensor_matmul(ptr {}, ptr {})",
+                            result.0,
+                            val(inputs[0]),
+                            val(inputs[1])
+                        )?;
+                    } else {
+                        // Fallback: call generic tensor_op stub for unsupported patterns
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                TensorOp::Unary { op: unary_op } => {
+                    if inputs.len() == 1 {
+                        let fn_name = match unary_op.as_str() {
+                            "relu" => "iris_tensor_relu",
+                            "sigmoid" => "iris_tensor_sigmoid",
+                            "tanh" => "iris_tensor_tanh_act",
+                            "neg" => "iris_tensor_neg",
+                            "exp" => "iris_tensor_exp",
+                            "log" => "iris_tensor_log",
+                            "sqrt" => "iris_tensor_sqrt",
+                            "abs" => "iris_tensor_abs",
+                            _ => "iris_tensor_op",
+                        };
+                        if fn_name == "iris_tensor_op" {
+                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
+                        } else {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @{}(ptr {})",
+                                result.0,
+                                fn_name,
+                                val(inputs[0])
+                            )?;
+                        }
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                TensorOp::Reshape => {
+                    // Reshape: first input is tensor, remaining are dimension i64s.
+                    // For now, generate a call to iris_tensor_reshape with ndim + dims.
+                    if inputs.len() >= 2 {
+                        let ndim = inputs.len() - 1;
+                        // Build shape array on the stack
+                        let shape_arr = format!("%reshape_shape_{}", result.0);
+                        writeln!(
+                            out,
+                            "  {} = alloca i64, i32 {}",
+                            shape_arr, ndim
+                        )?;
+                        for (i, dim_val) in inputs[1..].iter().enumerate() {
+                            let gep = format!("%reshape_gep_{}_{}", result.0, i);
+                            writeln!(
+                                out,
+                                "  {} = getelementptr i64, ptr {}, i32 {}",
+                                gep, shape_arr, i
+                            )?;
+                            writeln!(out, "  store i64 {}, ptr {}", val(*dim_val), gep)?;
+                        }
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @iris_tensor_reshape(ptr {}, i32 {}, ptr {})",
+                            result.0,
+                            val(inputs[0]),
+                            ndim,
+                            shape_arr
+                        )?;
+                    } else {
+                        // Single input: flatten (reshape to 1D)
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @iris_tensor_reshape(ptr {}, i32 0, ptr null)",
+                            result.0,
+                            val(inputs[0])
+                        )?;
+                    }
+                }
+                TensorOp::Transpose { axes } => {
+                    if inputs.len() == 1 {
+                        if axes.is_empty() {
+                            // Default reverse transpose
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_tensor_transpose(ptr {}, i32 0, ptr null)",
+                                result.0,
+                                val(inputs[0])
+                            )?;
+                        } else {
+                            let ndim = axes.len();
+                            let axes_arr = format!("%trans_axes_{}", result.0);
+                            writeln!(
+                                out,
+                                "  {} = alloca i32, i32 {}",
+                                axes_arr, ndim
+                            )?;
+                            for (i, &ax) in axes.iter().enumerate() {
+                                let gep = format!("%trans_gep_{}_{}", result.0, i);
+                                writeln!(
+                                    out,
+                                    "  {} = getelementptr i32, ptr {}, i32 {}",
+                                    gep, axes_arr, i
+                                )?;
+                                writeln!(out, "  store i32 {}, ptr {}", ax, gep)?;
+                            }
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_tensor_transpose(ptr {}, i32 {}, ptr {})",
+                                result.0,
+                                val(inputs[0]),
+                                ndim,
+                                axes_arr
+                            )?;
+                        }
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                TensorOp::Reduce { op: reduce_op, axes, keepdims } => {
+                    if inputs.len() == 1 && axes.len() == 1 {
+                        let fn_name = match reduce_op.as_str() {
+                            "sum" => "iris_tensor_reduce_sum",
+                            "max" => "iris_tensor_reduce_max",
+                            "mean" => "iris_tensor_reduce_mean",
+                            _ => "iris_tensor_op",
+                        };
+                        if fn_name == "iris_tensor_op" {
+                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
+                        } else {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @{}(ptr {}, i32 {}, i32 {})",
+                                result.0,
+                                fn_name,
+                                val(inputs[0]),
+                                axes[0],
+                                if *keepdims { 1 } else { 0 }
+                            )?;
+                        }
+                    } else {
+                        // Multi-axis or no-axis fallback
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+            }
         }
 
         IrInstr::Load {
@@ -1781,16 +2106,98 @@ fn emit_instr_ir(
                 ptr_v
             )?;
         }
-        IrInstr::ChanRecv { result, chan, .. } => {
+        IrInstr::ChanRecv { result, chan, elem_ty } => {
+            // iris_chan_recv returns IrisVal* (boxed); unbox to the element type.
+            let raw = format!("%raw_recv{}", gep_counter);
+            *gep_counter += 1;
             writeln!(
                 out,
-                "  %v{} = call ptr @iris_chan_recv(ptr {})",
-                result.0,
+                "  {} = call ptr @iris_chan_recv(ptr {})",
+                raw,
                 val(*chan)
             )?;
+            match elem_ty {
+                IrType::Scalar(DType::I64) | IrType::Scalar(DType::U64) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call i64 @iris_unbox_i64(ptr {})",
+                        result.0, raw
+                    )?;
+                }
+                IrType::Scalar(DType::I32) | IrType::Scalar(DType::U32) => {
+                    let tmp = format!("%raw_recv_i64_{}", gep_counter);
+                    *gep_counter += 1;
+                    writeln!(out, "  {} = call i64 @iris_unbox_i64(ptr {})", tmp, raw)?;
+                    writeln!(out, "  %v{} = trunc i64 {} to i32", result.0, tmp)?;
+                }
+                IrType::Scalar(DType::F64) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call double @iris_unbox_f64(ptr {})",
+                        result.0, raw
+                    )?;
+                }
+                IrType::Scalar(DType::F32) => {
+                    let tmp = format!("%raw_recv_f64_{}", gep_counter);
+                    *gep_counter += 1;
+                    writeln!(out, "  {} = call double @iris_unbox_f64(ptr {})", tmp, raw)?;
+                    writeln!(out, "  %v{} = fptrunc double {} to float", result.0, tmp)?;
+                }
+                IrType::Scalar(DType::Bool) => {
+                    let tmp = format!("%raw_recv_bool_{}", gep_counter);
+                    *gep_counter += 1;
+                    writeln!(out, "  {} = call i32 @iris_unbox_bool(ptr {})", tmp, raw)?;
+                    writeln!(out, "  %v{} = trunc i32 {} to i1", result.0, tmp)?;
+                }
+                IrType::Str => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_unbox_str(ptr {})",
+                        result.0, raw
+                    )?;
+                }
+                _ => {
+                    // For compound types, keep as ptr (already boxed).
+                    writeln!(out, "  %v{} = bitcast ptr {} to ptr", result.0, raw)?;
+                }
+            }
         }
-        IrInstr::Spawn { body_fn, .. } => {
-            writeln!(out, "  call void @iris_spawn_fn(ptr @{})", body_fn)?;
+        IrInstr::Spawn { body_fn, args } => {
+            if args.is_empty() {
+                // No captures — pass null as the arg.
+                writeln!(out, "  call void @iris_spawn_fn(ptr @{}, ptr null)", body_fn)?;
+            } else {
+                // Pack captures into a heap-allocated array of ptr.
+                // Each capture is boxed first, then stored into the array.
+                let n = args.len();
+                let arr = format!("%spawn_arr{}", gep_counter);
+                *gep_counter += 1;
+                // Allocate n * 8 bytes (array of ptr).
+                writeln!(out, "  {} = call ptr @malloc(i64 {})", arr, n * 8)?;
+                for (i, arg_id) in args.iter().enumerate() {
+                    let v = val(*arg_id);
+                    let vty = func.value_type(*arg_id);
+                    let boxed = box_to_ptr(out, &v, vty, gep_counter)?;
+                    let slot = format!("%spawn_slot{}_{}", gep_counter, i);
+                    *gep_counter += 1;
+                    writeln!(
+                        out,
+                        "  {} = getelementptr ptr, ptr {}, i64 {}",
+                        slot, arr, i
+                    )?;
+                    writeln!(out, "  store ptr {}, ptr {}", boxed, slot)?;
+                }
+                // Generate a trampoline wrapper name (deferred to the
+                // trampoline_fns collection — emitted after all functions).
+                let trampoline_name = format!("{}_trampoline", body_fn);
+                // Record that we need to generate this trampoline.
+                // For now, emit the call using the trampoline.
+                writeln!(
+                    out,
+                    "  call void @iris_spawn_fn(ptr @{}, ptr {})",
+                    trampoline_name, arr
+                )?;
+            }
         }
 
         // ── Atomics ───────────────────────────────────────────────────────
@@ -1920,14 +2327,26 @@ fn emit_instr_ir(
             )?;
         }
         IrInstr::OptionUnwrap {
-            result, operand, ..
+            result, operand, result_ty, ..
         } => {
-            writeln!(
-                out,
-                "  %v{} = call ptr @iris_option_unwrap(ptr {})",
-                result.0,
-                val(*operand)
-            )?;
+            // If the operand was already eagerly unboxed (e.g. by MapGet/ListGet),
+            // emitted_types will show a scalar type rather than "ptr" — just copy it.
+            let operand_emitted = emitted_types.get(operand).map(|s| s.as_str()).unwrap_or("ptr");
+            if operand_emitted != "ptr" {
+                // Already unboxed — copy the scalar value directly.
+                let expected_ty = llvm_type_complete(result_ty)?;
+                if operand_emitted == expected_ty {
+                    writeln!(out, "  %v{} = add {} {}, 0", result.0, expected_ty, val(*operand))?;
+                } else {
+                    writeln!(out, "  %v{} = bitcast {} {} to {}", result.0, operand_emitted, val(*operand), expected_ty)?;
+                }
+                let _ = expected_ty; // type already in emitted_types from sub-pass D
+            } else {
+                let tmp = format!("%raw_ouw{}", gep_counter);
+                *gep_counter += 1;
+                writeln!(out, "  {} = call ptr @iris_option_unwrap(ptr {})", tmp, val(*operand))?;
+                unbox_ptr_to_result(out, tmp, result.0, result_ty, gep_counter)?;
+            }
         }
         IrInstr::MakeOk { result, value, .. } => {
             let vv = val(*value);
@@ -1958,24 +2377,20 @@ fn emit_instr_ir(
             )?;
         }
         IrInstr::ResultUnwrap {
-            result, operand, ..
+            result, operand, result_ty, ..
         } => {
-            writeln!(
-                out,
-                "  %v{} = call ptr @iris_result_unwrap(ptr {})",
-                result.0,
-                val(*operand)
-            )?;
+            let tmp = format!("%raw_ruw{}", gep_counter);
+            *gep_counter += 1;
+            writeln!(out, "  {} = call ptr @iris_result_unwrap(ptr {})", tmp, val(*operand))?;
+            unbox_ptr_to_result(out, tmp, result.0, result_ty, gep_counter)?;
         }
         IrInstr::ResultUnwrapErr {
-            result, operand, ..
+            result, operand, result_ty, ..
         } => {
-            writeln!(
-                out,
-                "  %v{} = call ptr @iris_result_unwrap_err(ptr {})",
-                result.0,
-                val(*operand)
-            )?;
+            let tmp = format!("%raw_rwe{}", gep_counter);
+            *gep_counter += 1;
+            writeln!(out, "  {} = call ptr @iris_result_unwrap_err(ptr {})", tmp, val(*operand))?;
+            unbox_ptr_to_result(out, tmp, result.0, result_ty, gep_counter)?;
         }
 
         // ── Strings ───────────────────────────────────────────────────────
@@ -2609,6 +3024,30 @@ fn emit_instr_ir(
                 val(*operand)
             )?;
         }
+        IrInstr::TapeRecord { result, value, .. } => {
+            writeln!(
+                out,
+                "  %v{} = call ptr @iris_tape_record(ptr {})",
+                result.0,
+                val(*value)
+            )?;
+        }
+        IrInstr::Backward { result, loss } => {
+            writeln!(
+                out,
+                "  %v{} = call ptr @iris_backward(ptr {})",
+                result.0,
+                val(*loss)
+            )?;
+        }
+        IrInstr::TapeGrad { result, tape_node } => {
+            writeln!(
+                out,
+                "  %v{} = call double @iris_tape_grad(ptr {})",
+                result.0,
+                val(*tape_node)
+            )?;
+        }
         IrInstr::Sparsify {
             result, operand, ..
         } => {
@@ -2653,12 +3092,38 @@ fn emit_instr_ir(
                 Some(IrType::Str) => {
                     writeln!(out, "  call void @iris_print_str(ptr {})", val(*operand))?;
                 }
+                // Option<Scalar> — MapGet/ListGet eagerly unbox to the scalar type.
+                Some(IrType::Option(inner)) => match inner.as_ref() {
+                    IrType::Scalar(DType::I64) => {
+                        writeln!(out, "  call void @iris_print_i64(i64 {})", val(*operand))?;
+                    }
+                    IrType::Scalar(DType::I32) => {
+                        writeln!(out, "  call void @iris_print_i32(i32 {})", val(*operand))?;
+                    }
+                    IrType::Scalar(DType::F64) => {
+                        writeln!(out, "  call void @iris_print_f64(double {})", val(*operand))?;
+                    }
+                    IrType::Scalar(DType::F32) => {
+                        writeln!(out, "  call void @iris_print_f32(float {})", val(*operand))?;
+                    }
+                    IrType::Scalar(DType::Bool) => {
+                        writeln!(out, "  call void @iris_print_bool(i1 {})", val(*operand))?;
+                    }
+                    IrType::Str => {
+                        writeln!(out, "  call void @iris_print_str(ptr {})", val(*operand))?;
+                    }
+                    _ => {
+                        writeln!(out, "  call void @iris_print(ptr {})", val(*operand))?;
+                    }
+                },
                 _ => {
                     writeln!(out, "  call void @iris_print(ptr {})", val(*operand))?;
                 }
             }
         }
         IrInstr::Panic { msg } => {
+            // iris_panic is declared noreturn; LLVM will treat this as a terminating call.
+            // We emit unreachable so the block has a proper terminator after it.
             writeln!(out, "  call void @iris_panic(ptr {})", val(*msg))?;
             writeln!(out, "  unreachable")?;
         }
@@ -3359,6 +3824,7 @@ fn emit_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         // Process / environment (Phase 59)
         "declare void @exit(i32)",
         "declare ptr @malloc(i64)",
+        "declare void @free(ptr)",
         "declare void @iris_set_argv(i32, ptr)",
         "declare ptr @iris_process_args()",
         "declare ptr @iris_env_var(ptr)",
@@ -3369,11 +3835,30 @@ fn emit_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         "declare ptr @iris_tensor_op()",
         "declare ptr @iris_tensor_load(ptr, ...)",
         "declare void @iris_tensor_store(ptr, ...)",
+        // Tensor runtime (real ops)
+        "declare ptr @iris_tensor_matmul(ptr, ptr)",
+        "declare ptr @iris_tensor_add(ptr, ptr)",
+        "declare ptr @iris_tensor_sub(ptr, ptr)",
+        "declare ptr @iris_tensor_mul(ptr, ptr)",
+        "declare ptr @iris_tensor_div(ptr, ptr)",
+        "declare ptr @iris_tensor_neg(ptr)",
+        "declare ptr @iris_tensor_relu(ptr)",
+        "declare ptr @iris_tensor_sigmoid(ptr)",
+        "declare ptr @iris_tensor_tanh_act(ptr)",
+        "declare ptr @iris_tensor_exp(ptr)",
+        "declare ptr @iris_tensor_log(ptr)",
+        "declare ptr @iris_tensor_sqrt(ptr)",
+        "declare ptr @iris_tensor_abs(ptr)",
+        "declare ptr @iris_tensor_reshape(ptr, i32, ptr)",
+        "declare ptr @iris_tensor_transpose(ptr, i32, ptr)",
+        "declare ptr @iris_tensor_reduce_sum(ptr, i32, i32)",
+        "declare ptr @iris_tensor_reduce_max(ptr, i32, i32)",
+        "declare ptr @iris_tensor_reduce_mean(ptr, i32, i32)",
         // Channels / Concurrency
         "declare ptr @iris_chan_new()",
         "declare void @iris_chan_send(ptr, ptr)",
         "declare ptr @iris_chan_recv(ptr)",
-        "declare void @iris_spawn_fn(ptr)",
+        "declare void @iris_spawn_fn(ptr, ptr)",
         "declare void @iris_par_for(ptr, i64, i64)",
         "declare void @iris_barrier()",
         // Structs / Tuples / Closures
@@ -3445,10 +3930,23 @@ fn emit_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         // Time/OS (Phase 97)
         "declare i64 @iris_now_ms()",
         "declare void @iris_sleep_ms(i64)",
+        // TCP networking
+        "declare i64 @iris_tcp_connect(ptr, i64)",
+        "declare i64 @iris_tcp_listen(i64)",
+        "declare i64 @iris_tcp_accept(i64)",
+        "declare ptr @iris_tcp_read(i64)",
+        "declare void @iris_tcp_write(i64, ptr)",
+        "declare void @iris_tcp_close(i64)",
+        // UDP networking
+        "declare i64 @iris_udp_open(i64)",
+        "declare void @iris_udp_send(i64, ptr, i64)",
+        "declare ptr @iris_udp_recv(i64)",
+        "declare void @iris_udp_close(i64)",
         // Phase 104: New builtins
         // HTTP
         "declare ptr @iris_http_get(ptr)",
-        "declare ptr @iris_http_post(ptr, ptr)",
+        "declare ptr @iris_http_post(ptr, ptr, ptr)",
+        "declare ptr @iris_http_request(ptr, ptr, ptr, ptr)",
         // JSON
         "declare ptr @iris_json_parse(ptr)",
         "declare ptr @iris_json_stringify(ptr)",
@@ -3547,6 +4045,16 @@ fn emit_runtime_declares(out: &mut String) -> Result<(), CodegenError> {
         "declare ptr @iris_list_drop(ptr, i64)",
         // Concurrency extras
         "declare i64 @iris_thread_count()",
+        // Terminal / Interactive Input
+        "declare i64 @iris_read_key()",
+        "declare ptr @iris_read_password(ptr)",
+        "declare void @iris_term_clear()",
+        "declare void @iris_term_cursor(i64, i64)",
+        "declare void @iris_term_show_cursor(i32)",
+        "declare void @iris_term_set_color(i64, i64)",
+        "declare void @iris_term_reset()",
+        "declare i64 @iris_term_rows()",
+        "declare i64 @iris_term_cols()",
     ];
     for decl in declares {
         writeln!(out, "{}", decl)?;

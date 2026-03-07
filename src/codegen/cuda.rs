@@ -34,6 +34,7 @@ use crate::error::CodegenError;
 use crate::ir::block::BlockId;
 use crate::ir::function::IrFunction;
 use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp};
+use super::llvm_ir::is_matmul_notation;
 use crate::ir::module::IrModule;
 use crate::ir::types::{DType, IrType};
 use crate::ir::value::ValueId;
@@ -793,8 +794,51 @@ fn emit_cuda_instr(
             writeln!(out, " ]")?;
         }
 
-        IrInstr::TensorOp { result, .. } => {
-            writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+        IrInstr::TensorOp { result, op, inputs, .. } => {
+            match op {
+                crate::ir::instr::TensorOp::Einsum { notation } => {
+                    if inputs.len() == 2 && is_matmul_notation(notation) {
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @iris_tensor_matmul(ptr {}, ptr {})",
+                            result.0,
+                            val(inputs[0]),
+                            val(inputs[1])
+                        )?;
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                crate::ir::instr::TensorOp::Unary { op: unary_op } => {
+                    if inputs.len() == 1 {
+                        let fn_name = match unary_op.as_str() {
+                            "relu" => "iris_tensor_relu",
+                            "sigmoid" => "iris_tensor_sigmoid",
+                            "tanh" => "iris_tensor_tanh_act",
+                            "neg" => "iris_tensor_neg",
+                            "exp" => "iris_tensor_exp",
+                            "log" => "iris_tensor_log",
+                            "sqrt" => "iris_tensor_sqrt",
+                            "abs" => "iris_tensor_abs",
+                            _ => "iris_tensor_op",
+                        };
+                        if fn_name == "iris_tensor_op" {
+                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
+                        } else {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @{}(ptr {})",
+                                result.0, fn_name, val(inputs[0])
+                            )?;
+                        }
+                    } else {
+                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    }
+                }
+                _ => {
+                    writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                }
+            }
         }
 
         IrInstr::Call {

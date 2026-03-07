@@ -892,6 +892,31 @@ impl Writer {
                 self.vid(*operand);
                 self.ty(ty);
             }
+            IrInstr::TapeRecord {
+                result,
+                value,
+                op,
+                parents,
+            } => {
+                self.u8(0xF5);
+                self.vid(*result);
+                self.vid(*value);
+                self.str(op);
+                self.u32(parents.len() as u32);
+                for p in parents {
+                    self.vid(*p);
+                }
+            }
+            IrInstr::Backward { result, loss } => {
+                self.u8(0xF6);
+                self.vid(*result);
+                self.vid(*loss);
+            }
+            IrInstr::TapeGrad { result, tape_node } => {
+                self.u8(0xF7);
+                self.vid(*result);
+                self.vid(*tape_node);
+            }
             IrInstr::Sparsify {
                 result,
                 operand,
@@ -2571,6 +2596,32 @@ impl<'a> Reader<'a> {
                     args,
                     result_ty,
                 }
+            }
+            0xF5 => {
+                let result = self.vid()?;
+                let value = self.vid()?;
+                let op = self.str()?;
+                let count = self.u32()? as usize;
+                let mut parents = Vec::with_capacity(count);
+                for _ in 0..count {
+                    parents.push(self.vid()?);
+                }
+                IrInstr::TapeRecord {
+                    result,
+                    value,
+                    op,
+                    parents,
+                }
+            }
+            0xF6 => {
+                let result = self.vid()?;
+                let loss = self.vid()?;
+                IrInstr::Backward { result, loss }
+            }
+            0xF7 => {
+                let result = self.vid()?;
+                let tape_node = self.vid()?;
+                IrInstr::TapeGrad { result, tape_node }
             }
             t => return Err(format!("unknown opcode 0x{:02x}", t)),
         })

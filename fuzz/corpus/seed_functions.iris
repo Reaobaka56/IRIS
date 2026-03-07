@@ -3,5 +3,6 @@ def main() -> i64 {
     val x = 10;
     var y = 20;
     y = y + 1;
-    add(x, y)
+    print(add(x, y));
+    0
 }

@@ -1,9 +1,37 @@
 // src/stdlib/time.iris -- IRIS standard time library
 
+/// Returns current time in milliseconds since epoch.
 pub def now_ms() -> i64 { time_now_ms() }
 
+/// Returns current time in seconds since epoch.
 pub def now_s() -> i64 { time_now_ms() / 1000 }
 
+/// Sleep for the given number of milliseconds.
 pub def sleep(ms: i64) -> i64 { sleep_ms(ms) }
 
+/// Elapsed milliseconds since a recorded start time.
 pub def elapsed_ms(start: i64) -> i64 { time_now_ms() - start }
+
+/// Start a stopwatch — returns the start timestamp.
+pub def stopwatch_start() -> i64 { time_now_ms() }
+
+/// Stop a stopwatch — returns elapsed milliseconds.
+pub def stopwatch_stop(start: i64) -> i64 { time_now_ms() - start }
+
+/// Format a duration in ms as a human-readable string (e.g. "1.23s", "450ms").
+pub def format_duration(ms: i64) -> str {
+    if ms >= 60000 {
+        val mins = ms / 60000;
+        val secs = (ms - mins * 60000) / 1000;
+        concat(concat(to_str(mins), "m"), concat(to_str(secs), "s"))
+    } else {
+        if ms >= 1000 {
+            val secs  = ms / 1000;
+            val frac  = (ms - secs * 1000) / 10;
+            concat(concat(to_str(secs), "."), concat(to_str(frac), "s"))
+        } else {
+            concat(to_str(ms), "ms")
+        }
+    }
+}
+

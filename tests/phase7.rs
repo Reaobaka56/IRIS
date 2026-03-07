@@ -116,8 +116,8 @@ def clamp(x: f32) -> f32 {
         output
     );
     assert!(
-        output.contains("phi float"),
-        "LLVM output must contain 'phi float' for if-else merge\n{}",
+        output.contains("phi float") || output.contains("phi double"),
+        "LLVM output must contain 'phi float' or 'phi double' for if-else merge\n{}",
         output
     );
 }

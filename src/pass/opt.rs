@@ -487,6 +487,18 @@ pub(crate) fn apply_replacements(instr: &mut IrInstr, reps: &HashMap<ValueId, Va
         IrInstr::GradTangent { operand, .. } => {
             replace(operand);
         }
+        IrInstr::TapeRecord { value, parents, .. } => {
+            replace(value);
+            for p in parents.iter_mut() {
+                replace(p);
+            }
+        }
+        IrInstr::Backward { loss, .. } => {
+            replace(loss);
+        }
+        IrInstr::TapeGrad { tape_node, .. } => {
+            replace(tape_node);
+        }
         IrInstr::StrContains {
             haystack, needle, ..
         } => {

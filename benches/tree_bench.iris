@@ -1,0 +1,34 @@
+// Benchmark: Tree operations (build + traversal)
+// Tests recursive data structure manipulation with heavy allocation.
+
+def tree_sum(depth: i64) -> i64 {
+    if depth <= 0 {
+        1
+    } else {
+        val left = tree_sum(depth - 1);
+        val right = tree_sum(depth - 1);
+        left + right + 1
+    }
+}
+
+def tree_depth_sum(depth: i64, acc: i64) -> i64 {
+    if depth <= 0 {
+        acc + 1
+    } else {
+        val left = tree_depth_sum(depth - 1, acc + depth);
+        val right = tree_depth_sum(depth - 1, acc + depth);
+        left + right
+    }
+}
+
+def main() -> i64 {
+    var total = 0;
+    var d = 1;
+    while d <= 14 {
+        total = total + tree_sum(d);
+        d = d + 1
+    }
+    val depth_total = tree_depth_sum(10, 0);
+    print(total + depth_total);
+    0
+}

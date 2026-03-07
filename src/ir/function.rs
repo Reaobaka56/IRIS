@@ -103,3 +103,137 @@ impl IrFunction {
         id
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::block::BlockId;
+    use crate::ir::types::{DType, IrType};
+
+    // -- SpanTable ------------------------------------------------------------
+
+    #[test]
+    fn span_table_empty() {
+        let st = SpanTable::default();
+        assert!(st.is_empty());
+        assert_eq!(st.len(), 0);
+    }
+
+    #[test]
+    fn span_table_insert_and_get() {
+        let mut st = SpanTable::default();
+        st.entries.insert((0, 0), 42);
+        assert!(!st.is_empty());
+        assert_eq!(st.len(), 1);
+        assert_eq!(st.get(0, 0), Some(42));
+    }
+
+    #[test]
+    fn span_table_get_missing() {
+        let st = SpanTable::default();
+        assert_eq!(st.get(0, 0), None);
+    }
+
+    #[test]
+    fn span_table_multiple_entries() {
+        let mut st = SpanTable::default();
+        st.entries.insert((0, 0), 10);
+        st.entries.insert((0, 1), 20);
+        st.entries.insert((1, 0), 30);
+        assert_eq!(st.len(), 3);
+        assert_eq!(st.get(0, 0), Some(10));
+        assert_eq!(st.get(0, 1), Some(20));
+        assert_eq!(st.get(1, 0), Some(30));
+    }
+
+    // -- FunctionId -----------------------------------------------------------
+
+    #[test]
+    fn function_id_equality() {
+        assert_eq!(FunctionId(0), FunctionId(0));
+        assert_ne!(FunctionId(0), FunctionId(1));
+    }
+
+    #[test]
+    fn function_id_ordering() {
+        assert!(FunctionId(0) < FunctionId(1));
+    }
+
+    // -- IrFunction -----------------------------------------------------------
+
+    fn make_test_func() -> IrFunction {
+        use crate::ir::module::IrFunctionBuilder;
+        let params = vec![Param {
+            name: "x".into(),
+            ty: IrType::Scalar(DType::I64),
+        }];
+        let mut builder = IrFunctionBuilder::new("test_fn", params, IrType::Scalar(DType::I64));
+        let entry = builder.create_block(Some("entry"));
+        builder.set_current_block(entry);
+        let _param_v = builder.add_block_param(entry, Some("x"), IrType::Scalar(DType::I64));
+        let const_v = builder.fresh_value();
+        builder.push_instr(
+            crate::ir::instr::IrInstr::ConstInt {
+                result: const_v,
+                value: 42,
+                ty: IrType::Scalar(DType::I64),
+            },
+            Some(IrType::Scalar(DType::I64)),
+        );
+        builder.push_instr(
+            crate::ir::instr::IrInstr::Return {
+                values: vec![const_v],
+            },
+            None,
+        );
+        builder.build()
+    }
+
+    #[test]
+    fn function_entry_block() {
+        let f = make_test_func();
+        assert_eq!(f.entry_block().id, BlockId(0));
+    }
+
+    #[test]
+    fn function_block_by_id() {
+        let f = make_test_func();
+        assert!(f.block(BlockId(0)).is_some());
+        assert!(f.block(BlockId(99)).is_none());
+    }
+
+    #[test]
+    fn function_blocks_count() {
+        let f = make_test_func();
+        assert_eq!(f.blocks().len(), 1);
+    }
+
+    #[test]
+    fn function_value_type() {
+        let f = make_test_func();
+        // The block param and const should have types
+        let has_typed = f.value_types.values().any(|t| {
+            matches!(t, IrType::Scalar(DType::I64))
+        });
+        assert!(has_typed);
+    }
+
+    #[test]
+    fn function_fresh_value_increments() {
+        let mut f = make_test_func();
+        let before = f.next_value;
+        let v = f.fresh_value();
+        assert_eq!(v.0, before);
+        assert_eq!(f.next_value, before + 1);
+    }
+
+    #[test]
+    fn function_capture_count_default() {
+        let f = make_test_func();
+        assert_eq!(f.capture_count, 0);
+    }
+}

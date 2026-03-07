@@ -470,10 +470,73 @@ impl LspState {
         let ident = ident_at_byte(source, byte)?;
 
         let ast = parse_source(source)?;
-        let def_byte = definition_byte_of(&ast, ident)?;
-        let (start_line, start_char) = byte_to_lsp_pos(source, def_byte);
-        let end_char = start_char + ident.len() as u32;
-        Some((uri.to_owned(), start_line, start_char, start_line, end_char))
+
+        // 1. Search current file first.
+        if let Some(def_byte) = definition_byte_of(&ast, ident) {
+            let (start_line, start_char) = byte_to_lsp_pos(source, def_byte);
+            let end_char = start_char + ident.len() as u32;
+            return Some((uri.to_owned(), start_line, start_char, start_line, end_char));
+        }
+
+        // 2. Search each brought file.
+        let base_path = uri_to_fs_path(uri);
+        let base_dir = base_path
+            .as_deref()
+            .and_then(|p| std::path::Path::new(p).parent())
+            .map(|p| p.to_path_buf());
+
+        for bring in &ast.brings {
+            let (brought_uri, brought_source_owned) = match &bring.path {
+                crate::parser::ast::BringPath::File(rel) => {
+                    // Resolve path relative to the base directory.
+                    let abs = base_dir.as_ref().map(|d| d.join(rel));
+                    let abs_str = abs
+                        .as_ref()
+                        .and_then(|p| p.canonicalize().ok())
+                        .and_then(|p| p.to_str().map(|s| s.to_owned()));
+                    let brought_uri = abs_str
+                        .as_deref()
+                        .map(fs_path_to_uri)
+                        .unwrap_or_default();
+                    // Prefer open document; fall back to disk.
+                    let src = if let Some(s) = self.documents.get(&brought_uri) {
+                        s.clone()
+                    } else {
+                        abs.as_ref()
+                            .and_then(|p| std::fs::read_to_string(p).ok())
+                            .unwrap_or_default()
+                    };
+                    (brought_uri, src)
+                }
+                crate::parser::ast::BringPath::Stdlib(name) => {
+                    // For stdlib brings, search the embedded stdlib source.
+                    let src = crate::stdlib::stdlib_source(name)
+                        .unwrap_or("")
+                        .to_owned();
+                    let brought_uri = format!("iris-stdlib:{}", name);
+                    (brought_uri, src)
+                }
+            };
+            if brought_source_owned.is_empty() {
+                continue;
+            }
+            if let Some(brought_ast) = parse_source(&brought_source_owned) {
+                if let Some(def_byte) = definition_byte_of(&brought_ast, ident) {
+                    let (start_line, start_char) =
+                        byte_to_lsp_pos(&brought_source_owned, def_byte);
+                    let end_char = start_char + ident.len() as u32;
+                    return Some((
+                        brought_uri,
+                        start_line,
+                        start_char,
+                        start_line,
+                        end_char,
+                    ));
+                }
+            }
+        }
+
+        None
     }
 
     /// Returns document symbols (outline) for the given document.
@@ -1086,6 +1149,49 @@ impl LspState {
 // AST helpers
 // ---------------------------------------------------------------------------
 
+/// Convert a `file://` URI to a filesystem path string.
+fn uri_to_fs_path(uri: &str) -> Option<String> {
+    let path = uri.strip_prefix("file://")?;
+    // On Windows URIs look like file:///C:/foo; strip the leading slash.
+    #[cfg(windows)]
+    let path = path.trim_start_matches('/');
+    // Percent-decode %20 etc.
+    let decoded = percent_decode(path);
+    Some(decoded)
+}
+
+/// Convert a filesystem path to a `file://` URI.
+fn fs_path_to_uri(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        // Normalise backslashes and produce file:///C:/foo style.
+        let forward = path.replace('\\', "/");
+        format!("file:///{}", forward.trim_start_matches('/'))
+    }
+    #[cfg(not(windows))]
+    {
+        format!("file://{}", path)
+    }
+}
+
+/// Minimal percent-decoder (handles %XX sequences in URIs).
+fn percent_decode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut bytes = s.bytes().peekable();
+    while let Some(b) = bytes.next() {
+        if b == b'%' {
+            let h1 = bytes.next().and_then(|c| (c as char).to_digit(16));
+            let h2 = bytes.next().and_then(|c| (c as char).to_digit(16));
+            if let (Some(h1), Some(h2)) = (h1, h2) {
+                out.push((h1 * 16 + h2) as u8 as char);
+            }
+        } else {
+            out.push(b as char);
+        }
+    }
+    out
+}
+
 fn parse_source(source: &str) -> Option<crate::parser::ast::AstModule> {
     use crate::parser::lexer::Lexer;
     use crate::parser::parse::Parser;
@@ -1584,6 +1690,7 @@ fn format_iris(source: &str) -> String {
     let mut at_line_start = true;
     let mut prev_was_newline = false;
     let mut blank_lines = 0usize;
+    let mut prev_tok_was_pub = false;
 
     // Helper: emit current indentation.
     let indent_str = |depth: usize| "    ".repeat(depth);
@@ -1604,6 +1711,21 @@ fn format_iris(source: &str) -> String {
         )
     };
 
+    // Keywords that begin a new statement inside a block body.
+    let is_stmt_kw = |t: &Token| {
+        matches!(
+            t,
+            Token::Val
+                | Token::Var
+                | Token::For
+                | Token::While
+                | Token::Loop
+                | Token::Return
+                | Token::Break
+                | Token::Continue
+        )
+    };
+
     for (idx, spanned) in spanned_tokens.iter().enumerate() {
         let tok = &spanned.node;
         let tok_str = token_to_str(tok, source);
@@ -1611,15 +1733,24 @@ fn format_iris(source: &str) -> String {
             continue;
         }
 
-        // Emit blank line before top-level keywords (except at very start).
+        // Emit blank line before top-level keywords (except at very start,
+        // and never between `pub` and `def`).
         if is_top_level_kw(tok)
             && indent == 0
             && !out.is_empty()
             && blank_lines == 0
             && !at_line_start
+            && !(matches!(tok, Token::Def) && prev_tok_was_pub)
         {
             out.push('\n');
             blank_lines = 1;
+        }
+
+        // Inside a block body, force a new line before statement-starting keywords
+        // so that `val a = expr val b = expr2` is emitted as two separate lines.
+        if indent > 0 && !at_line_start && is_stmt_kw(tok) {
+            out.push('\n');
+            at_line_start = true;
         }
 
         // Newlines and indentation.
@@ -1730,6 +1861,7 @@ fn format_iris(source: &str) -> String {
         let _ = (idx, prev_was_newline, spanned.span); // suppress unused warnings
         prev_was_newline = false;
         blank_lines = 0;
+        prev_tok_was_pub = matches!(tok, Token::Pub);
     }
 
     if !out.ends_with('\n') {
@@ -2262,27 +2394,6 @@ fn uri_to_file_path(uri: &str) -> Option<std::path::PathBuf> {
     } else {
         None
     }
-}
-
-/// Minimal %-decode (covers the most common LSP URI escapes).
-fn percent_decode(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) =
-                u8::from_str_radix(std::str::from_utf8(&bytes[i + 1..i + 3]).unwrap_or(""), 16)
-            {
-                out.push(byte as char);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i] as char);
-        i += 1;
-    }
-    out
 }
 
 fn line_col_to_byte(source: &str, line: u32, character: u32) -> u32 {

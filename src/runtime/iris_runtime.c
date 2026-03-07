@@ -24,6 +24,7 @@
   #include <winhttp.h>
   #include <direct.h>
   #include <io.h>
+  #include <conio.h>        /* _getch() for read_key */
   #pragma comment(lib, "ws2_32.lib")
   #pragma comment(lib, "winhttp.lib")
 #else
@@ -34,6 +35,8 @@
   #include <unistd.h>
   #include <dirent.h>
   #include <sys/stat.h>
+  #include <sys/ioctl.h>    /* TIOCGWINSZ for term_rows/cols */
+  #include <termios.h>      /* tcgetattr/tcsetattr for read_key */
   #include <dlfcn.h>
 #endif
 
@@ -98,6 +101,11 @@ IrisVal* iris_box_bool(int v) {
 IrisVal* iris_box_str(const char* s) {
     IrisVal* r = xmalloc(sizeof(IrisVal));
     r->tag = IRIS_TAG_STR;  r->str = xstrdup(s);
+    return r;
+}
+IrisVal* iris_box_option(IrisOption* opt) {
+    IrisVal* r = xmalloc(sizeof(IrisVal));
+    r->tag = IRIS_TAG_OPTION; r->ptr = opt;
     return r;
 }
 
@@ -950,11 +958,11 @@ IrisVal* iris_chan_recv(IrisChannel* c) {
     pthread_mutex_unlock(&c->mu);
     return val;
 }
-void iris_spawn_fn(void* fn) {
+void iris_spawn_fn(void* fn, void* arg) {
     pthread_t t;
-    /* IRIS spawn functions return i64 but we run them on a detached thread
-       and discard the return value — compatible on all LP64 platforms. */
-    pthread_create(&t, NULL, (void*(*)(void*))fn, NULL);
+    /* The spawned trampoline takes a single void* arg (packed captures)
+       and returns void*. The detached thread discards the return value. */
+    pthread_create(&t, NULL, (void*(*)(void*))fn, arg);
     pthread_detach(t);
 }
 
@@ -1089,6 +1097,74 @@ IrisList* iris_densify(IrisSparse* sparse) {
 }
 
 // ---------------------------------------------------------------------------
+// Sparse tensor operations
+// ---------------------------------------------------------------------------
+
+IrisSparse* iris_tensor_sparsify(IrisTensor* t) {
+    IrisSparse* sp = xcalloc(1, sizeof(IrisSparse));
+    sp->cap     = 8;
+    sp->indices = xmalloc(sizeof(size_t)    * sp->cap);
+    sp->values  = xmalloc(sizeof(IrisVal*)  * sp->cap);
+    for (int64_t i = 0; i < t->numel; i++) {
+        if (t->data[i] != 0.0f) {
+            if (sp->len == sp->cap) {
+                sp->cap *= 2;
+                sp->indices = xrealloc(sp->indices, sizeof(size_t)   * sp->cap);
+                sp->values  = xrealloc(sp->values,  sizeof(IrisVal*) * sp->cap);
+            }
+            sp->indices[sp->len] = (size_t)i;
+            sp->values [sp->len] = iris_box_f64((double)t->data[i]);
+            sp->len++;
+        }
+    }
+    return sp;
+}
+
+IrisTensor* iris_sparse_to_tensor(IrisSparse* sp, int64_t size) {
+    IrisTensor* t = xcalloc(1, sizeof(IrisTensor));
+    t->ndim  = 1;
+    t->numel = size;
+    t->shape = xmalloc(sizeof(int64_t));
+    t->shape[0] = size;
+    t->data  = xcalloc((size_t)size, sizeof(float));
+    for (size_t i = 0; i < sp->len; i++) {
+        size_t idx = sp->indices[i];
+        if ((int64_t)idx < size && sp->values[i]) {
+            if (sp->values[i]->tag == IRIS_TAG_F64)
+                t->data[idx] = (float)sp->values[i]->f64;
+            else if (sp->values[i]->tag == IRIS_TAG_I64)
+                t->data[idx] = (float)sp->values[i]->i64;
+        }
+    }
+    return t;
+}
+
+double iris_sparse_dot(IrisSparse* sp, IrisTensor* dense) {
+    double sum = 0.0;
+    for (size_t i = 0; i < sp->len; i++) {
+        size_t idx = sp->indices[i];
+        if ((int64_t)idx < dense->numel && sp->values[i]) {
+            double sv = 0.0;
+            if (sp->values[i]->tag == IRIS_TAG_F64) sv = sp->values[i]->f64;
+            else if (sp->values[i]->tag == IRIS_TAG_I64) sv = (double)sp->values[i]->i64;
+            sum += sv * (double)dense->data[idx];
+        }
+    }
+    return sum;
+}
+
+int64_t iris_sparse_nnz(IrisSparse* sp) {
+    return (int64_t)sp->len;
+}
+
+// ---------------------------------------------------------------------------
+// Reverse-mode AD runtime stubs (tape managed by interpreter/codegen)
+// ---------------------------------------------------------------------------
+void* iris_tape_record(void* value) { return value; }
+void* iris_backward(void* loss)     { (void)loss; return NULL; }
+double iris_tape_grad(void* node)   { (void)node; return 0.0; }
+
+// ---------------------------------------------------------------------------
 // Non-scalar array fallback (for complex / mixed-type arrays)
 // ---------------------------------------------------------------------------
 
@@ -1097,12 +1173,277 @@ IrisVal*   iris_array_load(IrisList* arr, int64_t idx) { return iris_list_get(ar
 void       iris_array_store(IrisList* arr, int64_t idx, IrisVal* val) { iris_list_set(arr, idx, val); }
 
 // ---------------------------------------------------------------------------
-// Tensor ops (shape-tracking stubs — not a real tensor kernel)
+// Tensor ops — real compute (replacing shape-tracking stubs)
 // ---------------------------------------------------------------------------
 
+// Legacy stubs (kept for backward compat)
 void* iris_tensor_op(void)                { return NULL; }
 void* iris_tensor_load(void* t, ...)      { (void)t; return NULL; }
 void  iris_tensor_store(void* t, ...)     { (void)t; }
+
+// --- Allocation / lifecycle ------------------------------------------------
+
+IrisTensor* iris_tensor_alloc(int32_t ndim, const int64_t* shape) {
+    IrisTensor* t = xmalloc(sizeof(IrisTensor));
+    t->ndim = ndim;
+    t->shape = xmalloc(ndim * sizeof(int64_t));
+    t->numel = 1;
+    for (int32_t i = 0; i < ndim; i++) {
+        t->shape[i] = shape[i];
+        t->numel *= shape[i];
+    }
+    t->data = xmalloc(t->numel * sizeof(float));
+    return t;
+}
+
+void iris_tensor_free(IrisTensor* t) {
+    if (!t) return;
+    free(t->data);
+    free(t->shape);
+    free(t);
+}
+
+IrisTensor* iris_tensor_zeros(int32_t ndim, const int64_t* shape) {
+    IrisTensor* t = iris_tensor_alloc(ndim, shape);
+    memset(t->data, 0, t->numel * sizeof(float));
+    return t;
+}
+
+IrisTensor* iris_tensor_fill(int32_t ndim, const int64_t* shape, float val) {
+    IrisTensor* t = iris_tensor_alloc(ndim, shape);
+    for (int64_t i = 0; i < t->numel; i++) t->data[i] = val;
+    return t;
+}
+
+// --- Element access --------------------------------------------------------
+
+float iris_tensor_get(IrisTensor* t, int64_t flat_idx) {
+    if (!t || flat_idx < 0 || flat_idx >= t->numel) return 0.0f;
+    return t->data[flat_idx];
+}
+
+void iris_tensor_set(IrisTensor* t, int64_t flat_idx, float val) {
+    if (!t || flat_idx < 0 || flat_idx >= t->numel) return;
+    t->data[flat_idx] = val;
+}
+
+// --- Matrix multiplication -------------------------------------------------
+// Supports 2D matmul: (M,K) @ (K,N) -> (M,N)
+
+IrisTensor* iris_tensor_matmul(IrisTensor* a, IrisTensor* b) {
+    if (!a || !b || a->ndim < 2 || b->ndim < 2) return NULL;
+    int64_t m = a->shape[a->ndim - 2];
+    int64_t k = a->shape[a->ndim - 1];
+    int64_t n = b->shape[b->ndim - 1];
+    if (b->shape[b->ndim - 2] != k) return NULL;
+
+    int64_t out_shape[2] = { m, n };
+    IrisTensor* out = iris_tensor_zeros(2, out_shape);
+
+    for (int64_t i = 0; i < m; i++) {
+        for (int64_t l = 0; l < k; l++) {
+            float a_il = a->data[i * k + l];
+            for (int64_t j = 0; j < n; j++) {
+                out->data[i * n + j] += a_il * b->data[l * n + j];
+            }
+        }
+    }
+    return out;
+}
+
+// --- Element-wise binary ops -----------------------------------------------
+
+static IrisTensor* tensor_binop(IrisTensor* a, IrisTensor* b, int op) {
+    if (!a || !b || a->numel != b->numel) return NULL;
+    IrisTensor* out = iris_tensor_alloc(a->ndim, a->shape);
+    for (int64_t i = 0; i < a->numel; i++) {
+        float x = a->data[i], y = b->data[i];
+        switch (op) {
+            case 0: out->data[i] = x + y; break;
+            case 1: out->data[i] = x - y; break;
+            case 2: out->data[i] = x * y; break;
+            case 3: out->data[i] = (y != 0.0f) ? x / y : 0.0f; break;
+            default: out->data[i] = 0.0f; break;
+        }
+    }
+    return out;
+}
+
+IrisTensor* iris_tensor_add(IrisTensor* a, IrisTensor* b) { return tensor_binop(a, b, 0); }
+IrisTensor* iris_tensor_sub(IrisTensor* a, IrisTensor* b) { return tensor_binop(a, b, 1); }
+IrisTensor* iris_tensor_mul(IrisTensor* a, IrisTensor* b) { return tensor_binop(a, b, 2); }
+IrisTensor* iris_tensor_div(IrisTensor* a, IrisTensor* b) { return tensor_binop(a, b, 3); }
+
+// --- Element-wise unary ops ------------------------------------------------
+
+static IrisTensor* tensor_unary(IrisTensor* t, int op) {
+    if (!t) return NULL;
+    IrisTensor* out = iris_tensor_alloc(t->ndim, t->shape);
+    for (int64_t i = 0; i < t->numel; i++) {
+        float x = t->data[i];
+        switch (op) {
+            case 0: out->data[i] = -x; break;                             // neg
+            case 1: out->data[i] = x > 0.0f ? x : 0.0f; break;          // relu
+            case 2: out->data[i] = 1.0f / (1.0f + expf(-x)); break;     // sigmoid
+            case 3: out->data[i] = tanhf(x); break;                       // tanh
+            case 4: out->data[i] = expf(x); break;                        // exp
+            case 5: out->data[i] = (x > 0.0f) ? logf(x) : -INFINITY; break; // log
+            case 6: out->data[i] = (x >= 0.0f) ? sqrtf(x) : 0.0f; break;// sqrt
+            case 7: out->data[i] = fabsf(x); break;                       // abs
+            default: out->data[i] = x; break;
+        }
+    }
+    return out;
+}
+
+IrisTensor* iris_tensor_neg(IrisTensor* t)      { return tensor_unary(t, 0); }
+IrisTensor* iris_tensor_relu(IrisTensor* t)     { return tensor_unary(t, 1); }
+IrisTensor* iris_tensor_sigmoid(IrisTensor* t)  { return tensor_unary(t, 2); }
+IrisTensor* iris_tensor_tanh_act(IrisTensor* t) { return tensor_unary(t, 3); }
+IrisTensor* iris_tensor_exp(IrisTensor* t)      { return tensor_unary(t, 4); }
+IrisTensor* iris_tensor_log(IrisTensor* t)      { return tensor_unary(t, 5); }
+IrisTensor* iris_tensor_sqrt(IrisTensor* t)     { return tensor_unary(t, 6); }
+IrisTensor* iris_tensor_abs(IrisTensor* t)      { return tensor_unary(t, 7); }
+
+// --- Reshape ---------------------------------------------------------------
+
+IrisTensor* iris_tensor_reshape(IrisTensor* t, int32_t new_ndim, const int64_t* new_shape) {
+    if (!t) return NULL;
+    int64_t new_numel = 1;
+    for (int32_t i = 0; i < new_ndim; i++) new_numel *= new_shape[i];
+    if (new_numel != t->numel) return NULL;
+
+    IrisTensor* out = xmalloc(sizeof(IrisTensor));
+    out->ndim = new_ndim;
+    out->numel = new_numel;
+    out->shape = xmalloc(new_ndim * sizeof(int64_t));
+    memcpy(out->shape, new_shape, new_ndim * sizeof(int64_t));
+    // Share a copy of the data (reshape is zero-copy semantically, but we copy for safety)
+    out->data = xmalloc(out->numel * sizeof(float));
+    memcpy(out->data, t->data, out->numel * sizeof(float));
+    return out;
+}
+
+// --- Transpose -------------------------------------------------------------
+// General N-dim transpose with explicit axis permutation.
+
+IrisTensor* iris_tensor_transpose(IrisTensor* t, const int32_t* axes) {
+    if (!t) return NULL;
+    int32_t ndim = t->ndim;
+
+    // Compute new shape
+    int64_t* new_shape = xmalloc(ndim * sizeof(int64_t));
+    for (int32_t i = 0; i < ndim; i++) new_shape[i] = t->shape[axes[i]];
+
+    IrisTensor* out = iris_tensor_alloc(ndim, new_shape);
+
+    // Compute strides for source tensor
+    int64_t* src_strides = xmalloc(ndim * sizeof(int64_t));
+    src_strides[ndim - 1] = 1;
+    for (int32_t i = ndim - 2; i >= 0; i--)
+        src_strides[i] = src_strides[i + 1] * t->shape[i + 1];
+
+    // Compute strides for destination tensor
+    int64_t* dst_strides = xmalloc(ndim * sizeof(int64_t));
+    dst_strides[ndim - 1] = 1;
+    for (int32_t i = ndim - 2; i >= 0; i--)
+        dst_strides[i] = dst_strides[i + 1] * new_shape[i + 1];
+
+    // Iterate over all elements using N-digit counter
+    int64_t* coords = xcalloc(ndim, sizeof(int64_t));
+    for (int64_t flat = 0; flat < t->numel; flat++) {
+        // Compute source multi-index
+        int64_t rem = flat;
+        for (int32_t d = 0; d < ndim; d++) {
+            coords[d] = rem / src_strides[d];
+            rem %= src_strides[d];
+        }
+        // Compute destination flat index by permuting coords
+        int64_t dst_flat = 0;
+        for (int32_t d = 0; d < ndim; d++) {
+            dst_flat += coords[axes[d]] * dst_strides[d];
+        }
+        out->data[dst_flat] = t->data[flat];
+    }
+
+    free(coords);
+    free(src_strides);
+    free(dst_strides);
+    free(new_shape);
+    return out;
+}
+
+// --- Reductions ------------------------------------------------------------
+// Reduce along a single axis with sum/max/mean.
+
+static IrisTensor* tensor_reduce(IrisTensor* t, int32_t axis, int keepdims, int op) {
+    if (!t || axis < 0 || axis >= t->ndim) return NULL;
+
+    int32_t ndim = t->ndim;
+    int64_t axis_len = t->shape[axis];
+    if (axis_len == 0) return NULL;
+
+    // Compute output shape
+    int32_t out_ndim = keepdims ? ndim : ndim - 1;
+    if (out_ndim == 0) out_ndim = 1; // scalar result as 1D [1]
+    int64_t* out_shape = xmalloc(out_ndim * sizeof(int64_t));
+    int32_t j = 0;
+    for (int32_t i = 0; i < ndim; i++) {
+        if (i == axis) {
+            if (keepdims) out_shape[j++] = 1;
+        } else {
+            out_shape[j++] = t->shape[i];
+        }
+    }
+    if (j == 0) { out_shape[0] = 1; j = 1; }
+
+    IrisTensor* out = iris_tensor_zeros(out_ndim, out_shape);
+
+    // Compute strides
+    int64_t* strides = xmalloc(ndim * sizeof(int64_t));
+    strides[ndim - 1] = 1;
+    for (int32_t i = ndim - 2; i >= 0; i--)
+        strides[i] = strides[i + 1] * t->shape[i + 1];
+
+    int64_t outer_size = 1, inner_size = 1;
+    for (int32_t i = 0; i < axis; i++) outer_size *= t->shape[i];
+    for (int32_t i = axis + 1; i < ndim; i++) inner_size *= t->shape[i];
+
+    // Initialize max to -inf if needed
+    if (op == 1) { // max
+        for (int64_t i = 0; i < out->numel; i++) out->data[i] = -INFINITY;
+    }
+
+    for (int64_t o = 0; o < outer_size; o++) {
+        for (int64_t a = 0; a < axis_len; a++) {
+            for (int64_t inn = 0; inn < inner_size; inn++) {
+                int64_t src_idx = o * (axis_len * inner_size) + a * inner_size + inn;
+                int64_t dst_idx = o * inner_size + inn;
+                float v = t->data[src_idx];
+                switch (op) {
+                    case 0: out->data[dst_idx] += v; break;          // sum
+                    case 1: if (v > out->data[dst_idx]) out->data[dst_idx] = v; break; // max
+                    case 2: out->data[dst_idx] += v; break;          // mean (sum first, divide later)
+                    default: break;
+                }
+            }
+        }
+    }
+
+    // For mean, divide by axis length
+    if (op == 2) {
+        for (int64_t i = 0; i < out->numel; i++)
+            out->data[i] /= (float)axis_len;
+    }
+
+    free(strides);
+    free(out_shape);
+    return out;
+}
+
+IrisTensor* iris_tensor_reduce_sum(IrisTensor* t, int32_t axis, int keepdims)  { return tensor_reduce(t, axis, keepdims, 0); }
+IrisTensor* iris_tensor_reduce_max(IrisTensor* t, int32_t axis, int keepdims)  { return tensor_reduce(t, axis, keepdims, 1); }
+IrisTensor* iris_tensor_reduce_mean(IrisTensor* t, int32_t axis, int keepdims) { return tensor_reduce(t, axis, keepdims, 2); }
 
 // ---------------------------------------------------------------------------
 // Time / OS (Phase 97)
@@ -1239,6 +1580,248 @@ int iris_closure_ncaptures(IrisVal* closure) {
 
 IrisVal* iris_closure_get_capture(IrisVal* closure, int idx) {
     return ((IrisClosure*)closure->ptr)->captures->data[idx];
+}
+
+/* ======================================================================== */
+/*  Terminal / Interactive Input                                            */
+/* ======================================================================== */
+
+int64_t iris_read_key(void) {
+#ifdef _WIN32
+    /* Windows: use _getch() — no echo, no Enter needed */
+    int c = _getch();
+    /* Extended keys (arrows, F-keys) produce 0 or 224 prefix */
+    if (c == 0 || c == 224) {
+        int ext = _getch();
+        /* Encode as -(ext) to distinguish from regular keys */
+        return -(int64_t)ext;
+    }
+    return (int64_t)c;
+#else
+    /* POSIX: switch tty to raw mode, read one byte, restore */
+    struct termios old, raw;
+    tcgetattr(STDIN_FILENO, &old);
+    raw = old;
+    raw.c_lflag &= ~(ICANON | ECHO);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &raw);
+    int c = getchar();
+    tcsetattr(STDIN_FILENO, TCSANOW, &old);
+    return (int64_t)c;
+#endif
+}
+
+char* iris_read_password(const char* prompt) {
+    if (prompt && *prompt) fputs(prompt, stdout);
+    fflush(stdout);
+
+    size_t cap = 256, len = 0;
+    char* buf = (char*)xmalloc(cap);
+
+#ifdef _WIN32
+    int c;
+    while ((c = _getch()) != '\r' && c != '\n' && c != EOF) {
+        if (c == '\b' && len > 0) { len--; continue; }
+        if (c == '\b') continue;
+        if (len + 1 >= cap) { cap *= 2; buf = (char*)realloc(buf, cap); }
+        buf[len++] = (char)c;
+    }
+#else
+    struct termios old, noecho;
+    tcgetattr(STDIN_FILENO, &old);
+    noecho = old;
+    noecho.c_lflag &= ~ECHO;
+    tcsetattr(STDIN_FILENO, TCSANOW, &noecho);
+    int c;
+    while ((c = getchar()) != '\n' && c != EOF) {
+        if (c == 127 && len > 0) { len--; continue; }
+        if (len + 1 >= cap) { cap *= 2; buf = (char*)realloc(buf, cap); }
+        buf[len++] = (char)c;
+    }
+    tcsetattr(STDIN_FILENO, TCSANOW, &old);
+#endif
+    buf[len] = '\0';
+    putchar('\n');
+    return buf;
+}
+
+void iris_term_clear(void) {
+#ifdef _WIN32
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(h, &csbi);
+    DWORD cells = csbi.dwSize.X * csbi.dwSize.Y, written;
+    COORD origin = {0, 0};
+    FillConsoleOutputCharacter(h, ' ', cells, origin, &written);
+    FillConsoleOutputAttribute(h, csbi.wAttributes, cells, origin, &written);
+    SetConsoleCursorPosition(h, origin);
+#else
+    fputs("\033[2J\033[H", stdout);
+    fflush(stdout);
+#endif
+}
+
+void iris_term_cursor(int64_t row, int64_t col) {
+#ifdef _WIN32
+    COORD pos = {(SHORT)(col - 1), (SHORT)(row - 1)};
+    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), pos);
+#else
+    printf("\033[%lld;%lldH", (long long)row, (long long)col);
+    fflush(stdout);
+#endif
+}
+
+void iris_term_show_cursor(int show) {
+#ifdef _WIN32
+    CONSOLE_CURSOR_INFO ci;
+    GetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &ci);
+    ci.bVisible = show ? TRUE : FALSE;
+    SetConsoleCursorInfo(GetStdHandle(STD_OUTPUT_HANDLE), &ci);
+#else
+    fputs(show ? "\033[?25h" : "\033[?25l", stdout);
+    fflush(stdout);
+#endif
+}
+
+void iris_term_set_color(int64_t fg, int64_t bg) {
+    /* ANSI 256-color: foreground=38;5;N, background=48;5;N */
+    if (fg >= 0) printf("\033[38;5;%lldm", (long long)fg);
+    if (bg >= 0) printf("\033[48;5;%lldm", (long long)bg);
+    fflush(stdout);
+}
+
+void iris_term_reset(void) {
+    fputs("\033[0m", stdout);
+    fflush(stdout);
+}
+
+int64_t iris_term_rows(void) {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    return csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
+#else
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return (int64_t)w.ws_row;
+#endif
+}
+
+int64_t iris_term_cols(void) {
+#ifdef _WIN32
+    CONSOLE_SCREEN_BUFFER_INFO csbi;
+    GetConsoleScreenBufferInfo(GetStdHandle(STD_OUTPUT_HANDLE), &csbi);
+    return csbi.srWindow.Right - csbi.srWindow.Left + 1;
+#else
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w);
+    return (int64_t)w.ws_col;
+#endif
+}
+
+/* ======================================================================== */
+/*  UDP / TCP Networking                                                     */
+/* ======================================================================== */
+
+/* Forward declaration — defined in TCP section below. */
+#ifdef _WIN32
+static void ensure_wsa(void);
+#endif
+
+int64_t iris_udp_open(int64_t port) {
+#ifdef _WIN32
+    ensure_wsa();
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) return -1;
+    if (port > 0) {
+        struct sockaddr_in addr = {0};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((uint16_t)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+            closesocket(s); return -1;
+        }
+    }
+    return (int64_t)s;
+#else
+    int s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s < 0) return -1;
+    if (port > 0) {
+        struct sockaddr_in addr = {0};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons((uint16_t)port);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        if (bind(s, (struct sockaddr*)&addr, sizeof(addr)) != 0) {
+            close(s); return -1;
+        }
+    }
+    return (int64_t)s;
+#endif
+}
+
+void iris_udp_send(int64_t fd, const char* addr_port, int64_t data_len) {
+    /* addr_port format: "host:port:data" — data starts after second colon */
+    char host[256] = {0}; uint16_t port = 0;
+    char* p = strdup(addr_port);
+    char* colon = strrchr(p, ':');
+    if (!colon) { free(p); return; }
+    char* data = colon + 1;
+    *colon = '\0';
+    char* port_colon = strrchr(p, ':');
+    if (port_colon) { port = (uint16_t)atoi(port_colon + 1); *port_colon = '\0'; strncpy(host, p, sizeof(host)-1); }
+    else { strncpy(host, p, sizeof(host)-1); }
+    free(p);
+    struct sockaddr_in dst = {0};
+    dst.sin_family = AF_INET;
+    dst.sin_port = htons(port);
+    dst.sin_addr.s_addr = inet_addr(host);
+    size_t dlen = data_len > 0 ? (size_t)data_len : strlen(data);
+#ifdef _WIN32
+    sendto((SOCKET)fd, data, (int)dlen, 0, (struct sockaddr*)&dst, sizeof(dst));
+#else
+    sendto((int)fd, data, dlen, 0, (struct sockaddr*)&dst, sizeof(dst));
+#endif
+}
+
+char* iris_udp_recv(int64_t fd) {
+    char buf[65536];
+    struct sockaddr_in src;
+#ifdef _WIN32
+    int slen = sizeof(src);
+    int n = recvfrom((SOCKET)fd, buf, sizeof(buf)-1, 0, (struct sockaddr*)&src, &slen);
+#else
+    socklen_t slen = sizeof(src);
+    int n = recvfrom((int)fd, buf, sizeof(buf)-1, 0, (struct sockaddr*)&src, &slen);
+#endif
+    if (n < 0) { char* e = (char*)xmalloc(1); *e = '\0'; return e; }
+    buf[n] = '\0';
+    char* ip = inet_ntoa(src.sin_addr);
+    uint16_t port = ntohs(src.sin_port);
+    size_t needed = strlen(ip) + 6 + n + 2;
+    char* result = (char*)xmalloc(needed);
+    snprintf(result, needed, "%s:%d:%s", ip, port, buf);
+    return result;
+}
+
+void iris_udp_close(int64_t fd) {
+#ifdef _WIN32
+    closesocket((SOCKET)fd);
+#else
+    close((int)fd);
+#endif
+}
+
+/* ======================================================================== */
+/*  HTTP (extended)                                                          */
+/* ======================================================================== */
+
+char* iris_http_request(const char* method, const char* url,
+                        const char* body, const char* content_type) {
+    /* Delegate to GET or POST based on method */
+    if (!method || strcmp(method, "GET") == 0) return iris_http_get(url);
+    return iris_http_post(url, body ? body : "",
+                         content_type ? content_type : "application/json");
 }
 
 /* ======================================================================== */
@@ -1594,7 +2177,7 @@ static IrisVal* json_parse_value(const char** p) {
     if (**p == '[') return json_parse_array(p);
     if (**p == 't' && strncmp(*p, "true", 4) == 0)  { *p += 4; return iris_box_bool(1); }
     if (**p == 'f' && strncmp(*p, "false", 5) == 0)  { *p += 5; return iris_box_bool(0); }
-    if (**p == 'n' && strncmp(*p, "null", 4) == 0)   { *p += 4; return iris_make_none(); }
+    if (**p == 'n' && strncmp(*p, "null", 4) == 0)   { *p += 4; return iris_box_option(iris_make_none()); }
     if (**p == '-' || (**p >= '0' && **p <= '9')) return json_parse_number(p);
     return iris_box_str(""); /* parse error fallback */
 }
@@ -2754,4 +3337,244 @@ int64_t iris_thread_count(void) {
 #else
     return 1;
 #endif
+}
+
+/* ====================================================================
+ * Reference-Counting Garbage Collector
+ * ====================================================================
+ * Side-table approach: a hash map from pointer → refcount. This avoids
+ * modifying the IrisVal layout while providing real reference counting.
+ */
+
+#define RC_TABLE_BUCKETS 4096
+
+typedef struct RcEntry {
+    void*          ptr;
+    int64_t        count;
+    struct RcEntry* next;
+} RcEntry;
+
+static RcEntry* rc_table[RC_TABLE_BUCKETS];
+static int64_t  gc_total_allocated = 0;
+static int64_t  gc_total_freed = 0;
+
+static size_t rc_hash(void* ptr) {
+    uintptr_t v = (uintptr_t)ptr;
+    v = (v >> 4) ^ (v >> 16);
+    return (size_t)(v % RC_TABLE_BUCKETS);
+}
+
+static RcEntry* rc_find(void* ptr) {
+    size_t h = rc_hash(ptr);
+    RcEntry* e = rc_table[h];
+    while (e) {
+        if (e->ptr == ptr) return e;
+        e = e->next;
+    }
+    return NULL;
+}
+
+static RcEntry* rc_insert(void* ptr) {
+    size_t h = rc_hash(ptr);
+    RcEntry* e = xmalloc(sizeof(RcEntry));
+    e->ptr = ptr;
+    e->count = 1;
+    e->next = rc_table[h];
+    rc_table[h] = e;
+    gc_total_allocated++;
+    return e;
+}
+
+void iris_retain(void* ptr) {
+    if (!ptr) return;
+    RcEntry* e = rc_find(ptr);
+    if (e) {
+        e->count++;
+    } else {
+        rc_insert(ptr);
+    }
+}
+
+static void rc_deep_free(IrisVal* val);
+
+void iris_release(void* ptr) {
+    if (!ptr) return;
+    RcEntry* e = rc_find(ptr);
+    if (!e) return;
+    e->count--;
+    if (e->count <= 0) {
+        /* Free the value deeply. */
+        rc_deep_free((IrisVal*)ptr);
+        gc_total_freed++;
+        /* Remove from table. */
+        size_t h = rc_hash(ptr);
+        RcEntry** pp = &rc_table[h];
+        while (*pp) {
+            if ((*pp)->ptr == ptr) {
+                RcEntry* tmp = *pp;
+                *pp = tmp->next;
+                free(tmp);
+                return;
+            }
+            pp = &((*pp)->next);
+        }
+    }
+}
+
+static void rc_deep_free(IrisVal* val) {
+    if (!val) return;
+    switch (val->tag) {
+        case IRIS_TAG_STR:
+            free(val->str);
+            break;
+        case IRIS_TAG_LIST: {
+            IrisList* list = (IrisList*)val->ptr;
+            if (list) {
+                for (size_t i = 0; i < list->len; i++) {
+                    iris_release(list->data[i]);
+                }
+                free(list->data);
+                free(list);
+            }
+            break;
+        }
+        case IRIS_TAG_MAP: {
+            IrisMap* m = (IrisMap*)val->ptr;
+            if (m) {
+                for (size_t i = 0; i < m->n_buckets; i++) {
+                    IrisMapEntry* e = m->buckets[i];
+                    while (e) {
+                        IrisMapEntry* next = e->next;
+                        free(e->key);
+                        iris_release(e->val);
+                        free(e);
+                        e = next;
+                    }
+                }
+                free(m->buckets);
+                free(m);
+            }
+            break;
+        }
+        case IRIS_TAG_OPTION: {
+            IrisOption* opt = (IrisOption*)val->ptr;
+            if (opt) {
+                if (opt->has_value) iris_release(opt->value);
+                free(opt);
+            }
+            break;
+        }
+        case IRIS_TAG_RESULT: {
+            IrisResult* res = (IrisResult*)val->ptr;
+            if (res) {
+                iris_release(res->value);
+                free(res);
+            }
+            break;
+        }
+        default:
+            break;
+    }
+    free(val);
+}
+
+int64_t iris_refcount(void* ptr) {
+    if (!ptr) return 0;
+    RcEntry* e = rc_find(ptr);
+    return e ? e->count : 0;
+}
+
+void iris_gc_collect(void) {
+    /* Sweep: free all entries with count <= 0. */
+    for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
+        RcEntry** pp = &rc_table[h];
+        while (*pp) {
+            if ((*pp)->count <= 0) {
+                RcEntry* tmp = *pp;
+                *pp = tmp->next;
+                rc_deep_free((IrisVal*)tmp->ptr);
+                gc_total_freed++;
+                free(tmp);
+            } else {
+                pp = &((*pp)->next);
+            }
+        }
+    }
+}
+
+int64_t iris_gc_stats_allocated(void) {
+    return gc_total_allocated;
+}
+
+int64_t iris_gc_stats_freed(void) {
+    return gc_total_freed;
+}
+
+/* iris_runtime_cleanup — frees all GC-tracked live objects at program exit.
+ * Also frees the RC side-table itself.  Registered via atexit() in the
+ * constructor below so that sanitizers (ASAN/Valgrind) report a clean heap. */
+static void iris_runtime_cleanup(void) {
+    for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
+        RcEntry* e = rc_table[h];
+        while (e) {
+            RcEntry* next = e->next;
+            /* Only free the pointed-to value if we own it (count > 0).
+             * We skip the deep-free here to avoid double-free on shared data;
+             * a shallow free of the IrisVal* box is sufficient for ASAN. */
+            free(e->ptr);
+            gc_total_freed++;
+            free(e);
+            e = next;
+        }
+        rc_table[h] = NULL;
+    }
+}
+
+#ifdef _MSC_VER
+/* MSVC: use a pragma section-based init instead of __attribute__((constructor)). */
+static int _iris_runtime_init(void) { atexit(iris_runtime_cleanup); return 0; }
+#pragma section(".CRT$XCU", read)
+__declspec(allocate(".CRT$XCU")) static int (*_iris_init_ptr)(void) = _iris_runtime_init;
+#else
+__attribute__((constructor))
+static void iris_runtime_init(void) {
+    atexit(iris_runtime_cleanup);
+}
+#endif
+
+/* ====================================================================
+ * Sandbox / Security Policy (C runtime side)
+ * ====================================================================
+ * Simple global flags. The Rust-side SecurityPolicy is the authoritative
+ * source; this C-side mirror is for native-compiled IRIS programs.
+ */
+
+static int sandbox_allow_fs = 1;
+static int sandbox_allow_net = 1;
+static int sandbox_allow_ffi = 1;
+
+void iris_sandbox_set_policy(int allow_fs, int allow_net, int allow_ffi) {
+    sandbox_allow_fs  = allow_fs;
+    sandbox_allow_net = allow_net;
+    sandbox_allow_ffi = allow_ffi;
+}
+
+int iris_sandbox_check_fs_read(const char* path) {
+    (void)path;
+    return sandbox_allow_fs ? 0 : 1;
+}
+
+int iris_sandbox_check_fs_write(const char* path) {
+    (void)path;
+    return sandbox_allow_fs ? 0 : 1;
+}
+
+int iris_sandbox_check_network(const char* host) {
+    (void)host;
+    return sandbox_allow_net ? 0 : 1;
+}
+
+int iris_sandbox_check_ffi(const char* lib_path) {
+    (void)lib_path;
+    return sandbox_allow_ffi ? 0 : 1;
 }

@@ -1,0 +1,321 @@
+// src/stdlib/nn.iris -- IRIS Neural Network Library
+//
+// Multi-layer perceptron (MLP) with backpropagation, batch training,
+// and multiple optimizers. Suitable for classification and regression.
+//
+// Usage:  bring nn
+
+bring ml
+
+// ---------------------------------------------------------------------------
+// Network architecture: a network is represented as flat lists of
+// weights and biases per layer.
+//
+// Layer shapes: list of (n_in, n_out) pairs encoded as (n_in * 1000000 + n_out)
+// so a single i64 encodes both dimensions.
+// ---------------------------------------------------------------------------
+
+pub def encode_shape(n_in: i64, n_out: i64) -> i64 {
+    n_in * 1000000 + n_out
+}
+
+pub def shape_n_in(code: i64) -> i64 {
+    code / 1000000
+}
+
+pub def shape_n_out(code: i64) -> i64 {
+    code - (code / 1000000) * 1000000
+}
+
+// Create a new MLP: layer_sizes is [input_dim, hidden1, hidden2, ..., output_dim].
+// Returns (all_weights, all_biases, shapes).
+// all_weights[l] and all_biases[l] are flattened per layer.
+// We store them interleaved: even indices = weights, odd = biases.
+pub def mlp_create(layer_sizes: list<i64>) -> (list<f64>, list<f64>, list<i64>) {
+    val n_layers = list_len(layer_sizes) - 1
+    val all_weights: list<f64> = list()
+    val all_biases: list<f64> = list()
+    val shapes: list<i64> = list()
+    for l in 0..n_layers {
+        val n_in = list_get(layer_sizes, l)
+        val n_out = list_get(layer_sizes, l + 1)
+        list_push(shapes, encode_shape(n_in, n_out))
+        val w = xavier_init(n_in, n_out)
+        val b = zero_bias(n_out)
+        val wn = list_len(w)
+        val bn = list_len(b)
+        for i in 0..wn { list_push(all_weights, list_get(w, i)) }
+        for i in 0..bn { list_push(all_biases, list_get(b, i)) }
+    }
+    (all_weights, all_biases, shapes)
+}
+
+// Get weight slice offset for layer l.
+pub def layer_weight_offset(shapes: list<i64>, l: i64) -> i64 {
+    var off = 0
+    for i in 0..l {
+        val s = list_get(shapes, i)
+        off = off + shape_n_in(s) * shape_n_out(s)
+    }
+    off
+}
+
+// Get bias slice offset for layer l.
+pub def layer_bias_offset(shapes: list<i64>, l: i64) -> i64 {
+    var off = 0
+    for i in 0..l {
+        off = off + shape_n_out(list_get(shapes, i))
+    }
+    off
+}
+
+// ---------------------------------------------------------------------------
+// Forward pass — returns list of activations (one per layer including input).
+// activations[0] = input, activations[l+1] = output of layer l.
+// ---------------------------------------------------------------------------
+
+pub def mlp_forward(
+    all_weights: list<f64>,
+    all_biases: list<f64>,
+    shapes: list<i64>,
+    input: list<f64>,
+    use_relu: i64    // 1=relu hidden layers, 0=sigmoid; last layer always sigmoid
+) -> list<list<f64>> {
+    val n_layers = list_len(shapes)
+    val activations: list<list<f64>> = list()
+    list_push(activations, input)
+    var current = input
+    for l in 0..n_layers {
+        val s = list_get(shapes, l)
+        val n_in = shape_n_in(s)
+        val n_out = shape_n_out(s)
+        val w_off = layer_weight_offset(shapes, l)
+        val b_off = layer_bias_offset(shapes, l)
+        // Extract this layer's weights and biases
+        val w: list<f64> = list()
+        for i in 0..(n_in * n_out) {
+            list_push(w, list_get(all_weights, w_off + i))
+        }
+        val b: list<f64> = list()
+        for i in 0..n_out {
+            list_push(b, list_get(all_biases, b_off + i))
+        }
+        val z = dense_forward(w, b, current, n_in, n_out)
+        val is_last = if l == n_layers - 1 { 1 } else { 0 }
+        val a = if is_last == 1 {
+            apply_sigmoid(z)
+        } else {
+            if use_relu == 1 { apply_relu(z) } else { apply_sigmoid(z) }
+        }
+        list_push(activations, a)
+        current = a
+    }
+    activations
+}
+
+// ---------------------------------------------------------------------------
+// Backpropagation — compute gradients for all weights and biases.
+// Returns (weight_grads, bias_grads) in same layout as all_weights/all_biases.
+// ---------------------------------------------------------------------------
+
+pub def mlp_backward(
+    all_weights: list<f64>,
+    shapes: list<i64>,
+    activations: list<list<f64>>,
+    targets: list<f64>,
+    use_relu: i64
+) -> (list<f64>, list<f64>) {
+    val n_layers = list_len(shapes)
+    // Initialize gradient accumulators to 0
+    val wg: list<f64> = list()
+    val bg: list<f64> = list()
+    val total_w = list_len(all_weights)
+    for i in 0..total_w {
+        list_push(wg, 0.0)
+    }
+    val total_b_len = list_len(shapes)
+    var total_b = 0
+    for l in 0..n_layers {
+        total_b = total_b + shape_n_out(list_get(shapes, l))
+    }
+    for i in 0..total_b {
+        list_push(bg, 0.0)
+    }
+
+    // Output layer delta = (pred - target) * sigmoid_deriv(z)
+    // For sigmoid output with MSE: delta = pred - target (simplified)
+    val pred = list_get(activations, n_layers)
+    val n_out_last = list_len(pred)
+    var delta: list<f64> = list()
+    for i in 0..n_out_last {
+        val p = list_get(pred, i)
+        val t = if i < list_len(targets) { list_get(targets, i) } else { 0.0 }
+        // delta = (pred - target) * sigmoid_deriv for last layer
+        list_push(delta, (p - t) * sigmoid_deriv(p))
+    }
+
+    // Backpropagate through layers (last to first)
+    for rev in 0..n_layers {
+        val l = n_layers - 1 - rev
+        val s = list_get(shapes, l)
+        val n_in = shape_n_in(s)
+        val n_out = shape_n_out(s)
+        val w_off = layer_weight_offset(shapes, l)
+        val b_off = layer_bias_offset(shapes, l)
+        val a_in = list_get(activations, l)  // input to this layer
+
+        // Accumulate weight gradients: wg[o*n_in+i] += delta[o] * a_in[i]
+        for o in 0..n_out {
+            val d = list_get(delta, o)
+            for i in 0..n_in {
+                val idx = w_off + o * n_in + i
+                list_set(wg, idx, list_get(wg, idx) + d * list_get(a_in, i))
+            }
+            // Bias gradient
+            val bidx = b_off + o
+            list_set(bg, bidx, list_get(bg, bidx) + d)
+        }
+
+        // Compute delta for previous layer (if not input layer)
+        if l > 0 {
+            val prev_s = list_get(shapes, l - 1)
+            val prev_n_out = shape_n_out(prev_s)
+            val a_prev = list_get(activations, l)
+            val w_off_l = layer_weight_offset(shapes, l)
+            val new_delta: list<f64> = list()
+            for i in 0..n_in {
+                var s2 = 0.0
+                for o in 0..n_out {
+                    s2 = s2 + list_get(all_weights, w_off_l + o * n_in + i) * list_get(delta, o)
+                }
+                // Activation derivative
+                val ai = list_get(a_in, i)
+                val d2 = if use_relu == 1 { relu_deriv(ai) } else { sigmoid_deriv(ai) }
+                list_push(new_delta, s2 * d2)
+            }
+            delta = new_delta
+        }
+    }
+    (wg, bg)
+}
+
+// ---------------------------------------------------------------------------
+// Training step: forward + backward + SGD update.
+// Returns updated (all_weights, all_biases).
+// ---------------------------------------------------------------------------
+
+pub def mlp_train_step(
+    all_weights: list<f64>,
+    all_biases: list<f64>,
+    shapes: list<i64>,
+    x: list<f64>,
+    y: list<f64>,
+    lr: f64,
+    use_relu: i64
+) -> (list<f64>, list<f64>) {
+    val activations = mlp_forward(all_weights, all_biases, shapes, x, use_relu)
+    val grads = mlp_backward(all_weights, shapes, activations, y, use_relu)
+    val wg = grads.0
+    val bg = grads.1
+    val new_w = sgd_update(all_weights, wg, lr)
+    val new_b = sgd_update(all_biases, bg, lr)
+    (new_w, new_b)
+}
+
+// Batch training over a dataset for multiple epochs.
+// X_flat: row-major n_samples x n_in, y_flat: n_samples x n_out.
+// Returns trained (all_weights, all_biases).
+pub def mlp_train(
+    all_weights: list<f64>,
+    all_biases: list<f64>,
+    shapes: list<i64>,
+    X_flat: list<f64>,
+    y_flat: list<f64>,
+    n_samples: i64,
+    n_in: i64,
+    n_out: i64,
+    lr: f64,
+    epochs: i64,
+    use_relu: i64
+) -> (list<f64>, list<f64>) {
+    var W = all_weights
+    var B = all_biases
+    for epoch in 0..epochs {
+        for i in 0..n_samples {
+            val x: list<f64> = list()
+            for j in 0..n_in {
+                list_push(x, list_get(X_flat, i * n_in + j))
+            }
+            val y: list<f64> = list()
+            for j in 0..n_out {
+                list_push(y, list_get(y_flat, i * n_out + j))
+            }
+            val updated = mlp_train_step(W, B, shapes, x, y, lr, use_relu)
+            W = updated.0
+            B = updated.1
+        }
+    }
+    (W, B)
+}
+
+// Predict output for a single sample.
+pub def mlp_predict(
+    all_weights: list<f64>,
+    all_biases: list<f64>,
+    shapes: list<i64>,
+    x: list<f64>,
+    use_relu: i64
+) -> list<f64> {
+    val activations = mlp_forward(all_weights, all_biases, shapes, x, use_relu)
+    list_get(activations, list_len(activations) - 1)
+}
+
+// Predict class (argmax of output).
+pub def mlp_predict_class(
+    all_weights: list<f64>,
+    all_biases: list<f64>,
+    shapes: list<i64>,
+    x: list<f64>,
+    use_relu: i64
+) -> i64 {
+    val out = mlp_predict(all_weights, all_biases, shapes, x, use_relu)
+    val n = list_len(out)
+    var best = 0
+    var best_val = list_get(out, 0)
+    for i in 1..n {
+        val v = list_get(out, i)
+        if v > best_val {
+            best_val = v
+            best = i
+        }
+    }
+    best
+}
+
+// Compute MSE loss over dataset.
+pub def mlp_eval_loss(
+    all_weights: list<f64>,
+    all_biases: list<f64>,
+    shapes: list<i64>,
+    X_flat: list<f64>,
+    y_flat: list<f64>,
+    n_samples: i64,
+    n_in: i64,
+    n_out: i64,
+    use_relu: i64
+) -> f64 {
+    var total_loss = 0.0
+    for i in 0..n_samples {
+        val x: list<f64> = list()
+        for j in 0..n_in {
+            list_push(x, list_get(X_flat, i * n_in + j))
+        }
+        val y: list<f64> = list()
+        for j in 0..n_out {
+            list_push(y, list_get(y_flat, i * n_out + j))
+        }
+        val pred = mlp_predict(all_weights, all_biases, shapes, x, use_relu)
+        total_loss = total_loss + mse(pred, y)
+    }
+    total_loss / (n_samples to f64)
+}

@@ -1,0 +1,286 @@
+//! Loop-Invariant Code Motion (LICM) pass for `IrModule`.
+//!
+//! Moves instructions that compute the same value on every loop iteration
+//! out of the loop body into the loop preheader. An instruction is loop-
+//! invariant if all its operands are either:
+//! - Defined outside the loop, or
+//! - Loop-invariant themselves (transitively).
+//!
+//! Only pure (non-side-effecting) instructions are candidates for hoisting.
+
+use std::collections::{HashMap, HashSet};
+
+use crate::error::PassError;
+use crate::ir::block::BlockId;
+use crate::ir::function::IrFunction;
+use crate::ir::instr::IrInstr;
+use crate::ir::module::IrModule;
+use crate::ir::value::ValueId;
+use crate::pass::Pass;
+
+pub struct LicmPass;
+
+impl Pass for LicmPass {
+    fn name(&self) -> &'static str {
+        "licm"
+    }
+
+    fn run(&mut self, module: &mut IrModule) -> Result<(), PassError> {
+        for func in &mut module.functions {
+            licm_func(func);
+        }
+        Ok(())
+    }
+}
+
+/// Detect natural loops and hoist invariant instructions.
+fn licm_func(func: &mut IrFunction) {
+    if func.blocks.len() < 2 {
+        return;
+    }
+
+    // Build CFG: map block index → set of successor block indices.
+    let num_blocks = func.blocks.len();
+    let mut successors: Vec<HashSet<usize>> = vec![HashSet::new(); num_blocks];
+    let mut predecessors: Vec<HashSet<usize>> = vec![HashSet::new(); num_blocks];
+
+    for (i, block) in func.blocks.iter().enumerate() {
+        if let Some(last) = block.instrs.last() {
+            match last {
+                IrInstr::Br { target, .. } => {
+                    if let Some(idx) = block_index(func, *target) {
+                        successors[i].insert(idx);
+                        predecessors[idx].insert(i);
+                    }
+                }
+                IrInstr::CondBr {
+                    then_block,
+                    else_block,
+                    ..
+                } => {
+                    if let Some(idx) = block_index(func, *then_block) {
+                        successors[i].insert(idx);
+                        predecessors[idx].insert(i);
+                    }
+                    if let Some(idx) = block_index(func, *else_block) {
+                        successors[i].insert(idx);
+                        predecessors[idx].insert(i);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Find back edges (target dominates source) → natural loops.
+    // Simple dominator computation: iterative dataflow.
+    let mut dom: Vec<HashSet<usize>> = vec![HashSet::new(); num_blocks];
+    dom[0].insert(0);
+    for i in 1..num_blocks {
+        dom[i] = (0..num_blocks).collect();
+    }
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+        for i in 1..num_blocks {
+            let new_dom: HashSet<usize> = if predecessors[i].is_empty() {
+                let mut s = HashSet::new();
+                s.insert(i);
+                s
+            } else {
+                let mut new = (0..num_blocks).collect::<HashSet<usize>>();
+                for &pred in &predecessors[i] {
+                    new = new.intersection(&dom[pred]).copied().collect();
+                }
+                new.insert(i);
+                new
+            };
+            if new_dom != dom[i] {
+                dom[i] = new_dom;
+                changed = true;
+            }
+        }
+    }
+
+    // Find back edges: edge (src → tgt) where tgt dominates src.
+    let mut loops: Vec<(usize, HashSet<usize>)> = Vec::new(); // (header, body blocks)
+    for src in 0..num_blocks {
+        for &tgt in &successors[src] {
+            if dom[src].contains(&tgt) {
+                // Back edge found: tgt is loop header.
+                // Compute loop body: all blocks that can reach src without going through tgt.
+                let mut body: HashSet<usize> = HashSet::new();
+                body.insert(tgt);
+                if src != tgt {
+                    body.insert(src);
+                    let mut worklist = vec![src];
+                    while let Some(n) = worklist.pop() {
+                        for &pred in &predecessors[n] {
+                            if body.insert(pred) {
+                                worklist.push(pred);
+                            }
+                        }
+                    }
+                }
+                loops.push((tgt, body));
+            }
+        }
+    }
+
+    if loops.is_empty() {
+        return;
+    }
+
+    // For each loop, identify loop-invariant instructions and hoist them.
+    // Collect all definitions: ValueId → (block_index, instr_index).
+    let mut def_block: HashMap<ValueId, usize> = HashMap::new();
+    for (bi, block) in func.blocks.iter().enumerate() {
+        for param in &block.params {
+            def_block.insert(param.id, bi);
+        }
+        for instr in &block.instrs {
+            if let Some(result) = instr.result() {
+                def_block.insert(result, bi);
+            }
+        }
+    }
+
+    for (header, body) in &loops {
+        // Find preheader: a predecessor of header that's not in the loop body.
+        let preheader = predecessors[*header]
+            .iter()
+            .find(|p| !body.contains(p))
+            .copied();
+        let preheader = match preheader {
+            Some(p) => p,
+            None => continue, // No preheader available — skip.
+        };
+
+        // Identify loop-invariant instructions.
+        let mut invariant: HashSet<ValueId> = HashSet::new();
+        let mut changed = true;
+        while changed {
+            changed = false;
+            for &bi in body {
+                for instr in &func.blocks[bi].instrs {
+                    if let Some(result) = instr.result() {
+                        if invariant.contains(&result) {
+                            continue;
+                        }
+                        if is_side_effecting_for_licm(instr) {
+                            continue;
+                        }
+                        // All operands must be either defined outside loop or invariant.
+                        let operands = instr.operands();
+                        let all_invariant = operands.iter().all(|op| {
+                            if let Some(&def_bi) = def_block.get(op) {
+                                !body.contains(&def_bi) || invariant.contains(op)
+                            } else {
+                                true // Unknown def = parameter, treat as outside.
+                            }
+                        });
+                        if all_invariant {
+                            invariant.insert(result);
+                            changed = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if invariant.is_empty() {
+            continue;
+        }
+
+        // Hoist: move invariant instructions from loop body to preheader.
+        // Insert before the terminator of the preheader block.
+        // Sort body blocks by index so dependent instructions are hoisted in
+        // definition order (block 2 before block 5, etc.), preventing
+        // "undefined value" errors from non-deterministic HashSet iteration.
+        let mut body_sorted: Vec<usize> = body.iter().copied().collect();
+        body_sorted.sort();
+        let mut hoisted: Vec<IrInstr> = Vec::new();
+        for &bi in &body_sorted {
+            let block = &mut func.blocks[bi];
+            let mut remaining = Vec::new();
+            for instr in block.instrs.drain(..) {
+                if let Some(result) = instr.result() {
+                    if invariant.contains(&result) {
+                        hoisted.push(instr);
+                        continue;
+                    }
+                }
+                remaining.push(instr);
+            }
+            block.instrs = remaining;
+        }
+
+        // Insert hoisted instructions before the terminator of the preheader.
+        let pre_block = &mut func.blocks[preheader];
+        let term_pos = pre_block
+            .instrs
+            .iter()
+            .position(|i| i.is_terminator())
+            .unwrap_or(pre_block.instrs.len());
+        for (i, instr) in hoisted.into_iter().enumerate() {
+            pre_block.instrs.insert(term_pos + i, instr);
+        }
+    }
+}
+
+fn block_index(func: &IrFunction, bid: BlockId) -> Option<usize> {
+    func.blocks.iter().position(|b| b.id == bid)
+}
+
+fn is_side_effecting_for_licm(instr: &IrInstr) -> bool {
+    matches!(
+        instr,
+        IrInstr::Store { .. }
+            | IrInstr::Br { .. }
+            | IrInstr::CondBr { .. }
+            | IrInstr::Return { .. }
+            | IrInstr::Call { .. }
+            | IrInstr::SwitchVariant { .. }
+            | IrInstr::Print { .. }
+            | IrInstr::Panic { .. }
+            | IrInstr::ArrayStore { .. }
+            | IrInstr::ArrayLoad { .. }
+            | IrInstr::ChanSend { .. }
+            | IrInstr::ChanRecv { .. }
+            | IrInstr::Spawn { .. }
+            | IrInstr::ParFor { .. }
+            | IrInstr::AtomicStore { .. }
+            | IrInstr::AtomicAdd { .. }
+            | IrInstr::AtomicLoad { .. }
+            | IrInstr::Load { .. }
+            | IrInstr::Retain { .. }
+            | IrInstr::Release { .. }
+            | IrInstr::TapeRecord { .. }
+            | IrInstr::Backward { .. }
+            // Mutable collection reads — must not be hoisted past writes.
+            | IrInstr::ListGet { .. }
+            | IrInstr::ListPop { .. }
+            | IrInstr::ListLen { .. }
+            | IrInstr::ListPush { .. }
+            | IrInstr::ListSet { .. }
+            | IrInstr::MapGet { .. }
+            | IrInstr::MapContains { .. }
+            | IrInstr::MapSet { .. }
+            | IrInstr::MapKeys { .. }
+            | IrInstr::MapValues { .. }
+            | IrInstr::MapLen { .. }
+            | IrInstr::MapRemove { .. }
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_licm_pass_name() {
+        let pass = LicmPass;
+        assert_eq!(pass.name(), "licm");
+    }
+}

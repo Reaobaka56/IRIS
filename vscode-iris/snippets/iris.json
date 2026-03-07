@@ -201,5 +201,171 @@
     "prefix": "///",
     "body": ["/// ${1:Description of the function}"],
     "description": "Documentation comment"
+  },
+  "Bring ML stdlib": {
+    "prefix": "bring ml",
+    "body": ["bring ml"],
+    "description": "Import the IRIS ML standard library"
+  },
+  "MLP create and train": {
+    "prefix": "mlp",
+    "body": [
+      "// Create MLP: [n_in, hidden, n_out]",
+      "val ${1:model} = mlp_create(${2:2}, [${3:8}], ${4:1})",
+      "val ${5:trained} = mlp_train(${1:model}, ${6:x_train}, ${7:y_train}, ${8:100}, ${9:0.01})",
+      "val ${10:pred} = mlp_predict(${5:trained}, ${11:x_test})"
+    ],
+    "description": "Create, train, and use a multi-layer perceptron"
+  },
+  "Linear regression": {
+    "prefix": "linreg",
+    "body": [
+      "val ${1:model} = linreg_train(${2:x_train}, ${3:y_train}, ${4:0.01}, ${5:100})",
+      "val ${6:pred} = linreg_predict(${1:model}, ${7:x_test})",
+      "val ${8:score} = r2_score(${3:y_train}, ${6:pred})",
+      "print(concat(\"R2: \", to_str(${8:score})));"
+    ],
+    "description": "Train and evaluate a linear regression model"
+  },
+  "Logistic regression": {
+    "prefix": "logreg",
+    "body": [
+      "val ${1:model} = logreg_train(${2:x_train}, ${3:y_train}, ${4:0.01}, ${5:100})",
+      "val ${6:pred} = logreg_predict(${1:model}, ${7:x_test})",
+      "val ${8:acc} = accuracy(${3:y_train}, ${6:pred})",
+      "print(concat(\"Accuracy: \", to_str(${8:acc})));"
+    ],
+    "description": "Train and evaluate a logistic regression model"
+  },
+  "KNN predict": {
+    "prefix": "knn",
+    "body": [
+      "val ${1:label} = knn_predict(${2:x_train}, ${3:y_train}, ${4:x_test}, ${5:3})"
+    ],
+    "description": "K-nearest neighbors prediction"
+  },
+  "K-means clustering": {
+    "prefix": "kmeans",
+    "body": [
+      "val ${1:centroids} = kmeans_train(${2:data}, ${3:k}, ${4:100})"
+    ],
+    "description": "Train a K-means clustering model"
+  },
+  "Confusion matrix": {
+    "prefix": "confusion",
+    "body": [
+      "val ${1:cm} = confusion_matrix_binary(${2:y_true}, ${3:y_pred})",
+      "val ${4:p} = precision(${2:y_true}, ${3:y_pred})",
+      "val ${5:r} = recall(${2:y_true}, ${3:y_pred})",
+      "val ${6:f1} = f1_score(${2:y_true}, ${3:y_pred})",
+      "print(concat(\"F1: \", to_str(${6:f1})));"
+    ],
+    "description": "Compute classification metrics"
+  },
+  "SGD update": {
+    "prefix": "sgd",
+    "body": [
+      "val ${1:new_weights} = sgd_update(${2:weights}, ${3:grads}, ${4:0.01})"
+    ],
+    "description": "Stochastic gradient descent weight update"
+  },
+  "Adam update": {
+    "prefix": "adam",
+    "body": [
+      "val ${1:result} = adam_update(${2:weights}, ${3:grads}, ${4:m1}, ${5:m2}, ${6:t}, ${7:0.001})"
+    ],
+    "description": "Adam optimizer weight update"
+  },
+  "Dense forward pass": {
+    "prefix": "dense",
+    "body": [
+      "val ${1:out} = dense_forward(${2:input}, ${3:weights}, ${4:bias})"
+    ],
+    "description": "Dense (fully-connected) layer forward pass"
+  },
+  "Train/test split": {
+    "prefix": "ttsplit",
+    "body": [
+      "val ${1:split} = train_test_split(${2:data}, ${3:labels}, ${4:0.8})",
+      "val ${5:x_train} = list_get(${1:split}, 0)",
+      "val ${6:x_test}  = list_get(${1:split}, 1)",
+      "val ${7:y_train} = list_get(${1:split}, 2)",
+      "val ${8:y_test}  = list_get(${1:split}, 3)"
+    ],
+    "description": "Split data into train and test sets"
+  },
+  "Normalize data": {
+    "prefix": "normalize",
+    "body": [
+      "val ${1:normed} = min_max_normalize(${2:data})"
+    ],
+    "description": "Min-max normalize a list of values"
+  },
+  "TCP connect": {
+    "prefix": "tcpconn",
+    "body": [
+      "val ${1:conn} = tcp_connect(\"${2:127.0.0.1}\", ${3:8080})",
+      "tcp_write(${1:conn}, \"${4:hello}\");",
+      "val ${5:resp} = tcp_read(${1:conn})",
+      "tcp_close(${1:conn});"
+    ],
+    "description": "Connect to a TCP server, send, and receive"
+  },
+  "TCP server": {
+    "prefix": "tcpserv",
+    "body": [
+      "val ${1:server} = tcp_listen(${2:8080})",
+      "loop {",
+      "\tval ${3:conn} = tcp_accept(${1:server})",
+      "\tspawn {",
+      "\t\tval ${4:msg} = tcp_read(${3:conn})",
+      "\t\ttcp_write(${3:conn}, ${4:msg});",
+      "\t\ttcp_close(${3:conn});",
+      "\t}",
+      "}"
+    ],
+    "description": "TCP server that accepts and handles connections"
+  },
+  "HTTP POST JSON": {
+    "prefix": "httppost",
+    "body": [
+      "bring std.http",
+      "val ${1:body} = json_stringify(${2:data})",
+      "val ${3:resp} = http_post_json(\"${4:https://api.example.com/endpoint}\", ${1:body})",
+      "print(${3:resp});"
+    ],
+    "description": "POST JSON to an HTTP endpoint"
+  },
+  "Par for loop": {
+    "prefix": "parfor",
+    "body": [
+      "par for ${1:i} in ${2:0}..${3:n} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Parallel for loop"
+  },
+  "Async function": {
+    "prefix": "async def",
+    "body": [
+      "async def ${1:name}(${2:params}) -> ${3:type} {",
+      "\t$0",
+      "}"
+    ],
+    "description": "Define an async function"
+  },
+  "Closure": {
+    "prefix": "closure",
+    "body": ["|${1:x}: ${2:i64}| { ${3:x * 2} }"],
+    "description": "Lambda / closure expression"
+  },
+  "Tuple destructure": {
+    "prefix": "tuple",
+    "body": [
+      "val ${1:t} = (${2:a}, ${3:b})",
+      "val ${4:x} = ${1:t}.0",
+      "val ${5:y} = ${1:t}.1"
+    ],
+    "description": "Create and destructure a tuple"
   }
 }

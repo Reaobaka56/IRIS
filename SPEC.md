@@ -1,7 +1,7 @@
 # IRIS Language Specification
 
-**Version 0.2.0 — Draft**
-**Last updated: 2026-03-04**
+**Version 0.3.0**
+**Last updated: 2025-06-03**
 
 > This document defines the syntax, semantics, and type system of the IRIS
 > programming language. It serves as the authoritative reference for compiler
@@ -144,6 +144,15 @@ val greeting = f"Hello, {name}!"  // "Hello, IRIS!"
 
 Each `{ident}` is replaced by `to_str(ident)` at compile time, and
 adjacent segments are joined with `concat`.
+
+> **Note:** Only simple identifiers are allowed inside `{}` — field access
+> expressions like `{point.x}` are not supported. Extract to a local
+> binding first:
+>
+> ```iris
+> val x = point.x
+> val msg = f"x = {x}"
+> ```
 
 ### 2.6 Operators and Punctuation
 
@@ -615,6 +624,21 @@ val y: f64 = x to f64
 
 ### 5.11 If Expression
 
+> **Note:** IRIS does not have a dedicated `else if` construct. Chained
+> conditions are expressed by nesting an `if` inside the `else` block:
+>
+> ```iris
+> if x > 0 {
+>     "positive"
+> } else {
+>     if x < 0 {
+>         "negative"
+>     } else {
+>         "zero"
+>     }
+> }
+> ```
+
 ```
 if COND BLOCK [else BLOCK]
 ```
@@ -626,6 +650,18 @@ val abs_x = if x < 0 { -x } else { x }
 ```
 
 If without `else` returns `i64` (value 0) or can be used as a statement.
+
+> **Caveat:** Using `if` without `else` inside loop bodies for mutable
+> variable updates may produce unexpected results. Always provide an `else`
+> branch when the `if` guards a mutation:
+>
+> ```iris
+> // Correct: always assign from both branches
+> var total = 0
+> for x in xs {
+>     total = if x > 0 { total + x } else { total }
+> }
+> ```
 
 ### 5.12 Block Expression
 
@@ -907,6 +943,10 @@ when x {
     _ => "zero",
 }
 ```
+
+> **Implementation note (v0.3.0):** Guard expressions are parsed but have
+> limited runtime support. Use `if`/`else` chains as a workaround until
+> guard evaluation is fully implemented in a future release.
 
 ### 7.3 Exhaustiveness
 
@@ -1642,7 +1682,7 @@ type        ::= scalar_type
               | "map" "<" type "," type ">"
               | "[" type ";" INT_LIT "]"
               | "(" type { "," type } ")"
-              | "fn" "(" [ type { "," type } ] ")" "->" type
+              | "(" [ type { "," type } ] ")" "->" type
               | IDENT  (* named struct/enum/alias *)
 
 scalar_type ::= "i8" | "u8" | "i32" | "u32" | "i64" | "u64" | "usize"

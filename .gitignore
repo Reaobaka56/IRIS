@@ -35,3 +35,13 @@ vscode-iris/*.vsix
 # ── Misc temp files ──
 *.log
 test_output*.txt
+
+# ── Stale build / debug artifacts in repo root ──
+/*.exe
+/*.tmp
+/*.o
+/*.obj
+
+# Test output
+test_results.txt
+tests/_all_tests.txt

@@ -1,0 +1,9 @@
+def main() -> i64 {
+    val ch = channel()
+    spawn {
+        send(ch, 42)
+    }
+    val v = recv(ch)
+    print(v);
+    0
+}

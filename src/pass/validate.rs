@@ -137,3 +137,215 @@ impl Pass for ValidatePass {
         Ok(())
     }
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::instr::{BinOp, IrInstr};
+    use crate::ir::module::{IrFunctionBuilder, IrModule};
+    use crate::ir::types::{DType, IrType};
+
+    fn i64_ty() -> IrType {
+        IrType::Scalar(DType::I64)
+    }
+
+    /// Build a valid "return 42" function with a single block.
+    fn valid_module() -> IrModule {
+        let mut m = IrModule::new("test");
+        let mut builder = IrFunctionBuilder::new("main", vec![], i64_ty());
+        let entry = builder.create_block(Some("entry"));
+        builder.set_current_block(entry);
+        let c = builder.fresh_value();
+        builder.push_instr(
+            IrInstr::ConstInt {
+                result: c,
+                value: 42,
+                ty: i64_ty(),
+            },
+            Some(i64_ty()),
+        );
+        builder.push_instr(IrInstr::Return { values: vec![c] }, None);
+        m.add_function(builder.build()).unwrap();
+        m
+    }
+
+    #[test]
+    fn validate_valid_module() {
+        let mut m = valid_module();
+        let mut pass = ValidatePass;
+        assert!(pass.run(&mut m).is_ok());
+    }
+
+    #[test]
+    fn validate_empty_module() {
+        let mut m = IrModule::new("empty");
+        let mut pass = ValidatePass;
+        assert!(pass.run(&mut m).is_ok());
+    }
+
+    #[test]
+    fn validate_use_before_def() {
+        let mut m = IrModule::new("test");
+        let mut builder = IrFunctionBuilder::new("main", vec![], i64_ty());
+        let entry = builder.create_block(Some("entry"));
+        builder.set_current_block(entry);
+        // Use ValueId(99) which is never defined
+        let result = builder.fresh_value();
+        builder.push_instr(
+            IrInstr::BinOp {
+                result,
+                op: BinOp::Add,
+                lhs: crate::ir::value::ValueId(99),
+                rhs: crate::ir::value::ValueId(98),
+                ty: i64_ty(),
+            },
+            Some(i64_ty()),
+        );
+        builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+        m.add_function(builder.build()).unwrap();
+
+        let mut pass = ValidatePass;
+        let err = pass.run(&mut m);
+        assert!(err.is_err());
+        let msg = format!("{}", err.unwrap_err());
+        assert!(msg.contains("used before"));
+    }
+
+    #[test]
+    fn validate_missing_terminator() {
+        let mut m = IrModule::new("test");
+        let mut builder = IrFunctionBuilder::new("main", vec![], i64_ty());
+        let entry = builder.create_block(Some("entry"));
+        builder.set_current_block(entry);
+        let c = builder.fresh_value();
+        builder.push_instr(
+            IrInstr::ConstInt {
+                result: c,
+                value: 1,
+                ty: i64_ty(),
+            },
+            Some(i64_ty()),
+        );
+        // Don't add a terminator — seal manually to bypass debug check
+        builder.seal_unterminated_blocks();
+        // Actually we need to test without terminator. The seal adds Return.
+        // Instead, build a function that has an empty block via direct construction.
+        drop(builder);
+
+        // Construct directly with an unsealed block
+        let func = crate::ir::function::IrFunction {
+            id: crate::ir::function::FunctionId(0),
+            name: "broken".into(),
+            params: vec![],
+            return_ty: i64_ty(),
+            blocks: vec![crate::ir::block::IrBlock::new(
+                crate::ir::block::BlockId(0),
+                Some("entry".into()),
+            )],
+            value_defs: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            next_value: 0,
+            attrs: vec![],
+            span_table: crate::ir::function::SpanTable::default(),
+            capture_count: 0,
+        };
+        m.add_function(func).unwrap();
+
+        let mut pass = ValidatePass;
+        let err = pass.run(&mut m);
+        assert!(err.is_err());
+        let msg = format!("{}", err.unwrap_err());
+        assert!(msg.contains("does not end with"));
+    }
+
+    #[test]
+    fn validate_unresolved_infer() {
+        let mut m = IrModule::new("test");
+        let mut builder = IrFunctionBuilder::new("main", vec![], i64_ty());
+        let entry = builder.create_block(Some("entry"));
+        builder.set_current_block(entry);
+        let c = builder.fresh_value();
+        // Push a const with Infer type
+        builder.push_instr(
+            IrInstr::ConstInt {
+                result: c,
+                value: 1,
+                ty: IrType::Infer,
+            },
+            Some(IrType::Infer),
+        );
+        builder.push_instr(IrInstr::Return { values: vec![c] }, None);
+        m.add_function(builder.build()).unwrap();
+
+        let mut pass = ValidatePass;
+        let err = pass.run(&mut m);
+        assert!(err.is_err());
+        let msg = format!("{}", err.unwrap_err());
+        assert!(msg.contains("type"));
+    }
+
+    #[test]
+    fn validate_pass_name() {
+        let pass = ValidatePass;
+        assert_eq!(pass.name(), "validate");
+    }
+
+    #[test]
+    fn contains_infer_basic_types() {
+        assert!(contains_infer(&IrType::Infer));
+        assert!(!contains_infer(&IrType::Str));
+        assert!(!contains_infer(&i64_ty()));
+    }
+
+    #[test]
+    fn contains_infer_compound_types() {
+        assert!(contains_infer(&IrType::Tuple(vec![i64_ty(), IrType::Infer])));
+        assert!(!contains_infer(&IrType::Tuple(vec![i64_ty(), IrType::Str])));
+        assert!(contains_infer(&IrType::List(Box::new(IrType::Infer))));
+        assert!(!contains_infer(&IrType::List(Box::new(i64_ty()))));
+    }
+
+    #[test]
+    fn contains_infer_deferred_types_are_ok() {
+        // Option, Result, Chan, Atomic, Mutex with Infer inside should be OK
+        assert!(!contains_infer(&IrType::Option(Box::new(IrType::Infer))));
+        assert!(!contains_infer(&IrType::Chan(Box::new(IrType::Infer))));
+        assert!(!contains_infer(&IrType::Atomic(Box::new(IrType::Infer))));
+        assert!(!contains_infer(&IrType::Mutex(Box::new(IrType::Infer))));
+    }
+
+    #[test]
+    fn contains_infer_fn_type() {
+        let fn_with_infer = IrType::Fn {
+            params: vec![IrType::Infer],
+            ret: Box::new(i64_ty()),
+        };
+        assert!(contains_infer(&fn_with_infer));
+
+        let fn_ok = IrType::Fn {
+            params: vec![i64_ty()],
+            ret: Box::new(i64_ty()),
+        };
+        assert!(!contains_infer(&fn_ok));
+    }
+
+    #[test]
+    fn contains_infer_map() {
+        assert!(contains_infer(&IrType::Map(
+            Box::new(IrType::Infer),
+            Box::new(i64_ty())
+        )));
+        assert!(contains_infer(&IrType::Map(
+            Box::new(IrType::Str),
+            Box::new(IrType::Infer)
+        )));
+        assert!(!contains_infer(&IrType::Map(
+            Box::new(IrType::Str),
+            Box::new(i64_ty())
+        )));
+    }
+}

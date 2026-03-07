@@ -1,0 +1,14 @@
+def main() -> i64 {
+    val xs = [5, 3, 1, 4, 2];
+    list_sort(xs);
+    val _first = list_get(xs, 0);
+    val _last = list_get(xs, 4);
+    push(xs, 6);
+    val _n = len(xs);
+    val _popped = list_pop(xs);
+    val _mapped = list_map(xs, |x: i64| x * 10);
+    val _filtered = list_filter(xs, |x: i64| x > 2);
+    val total = list_reduce(xs, 0, |acc: i64, x: i64| acc + x);
+    print(total);
+    0
+}

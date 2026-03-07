@@ -1,0 +1,13 @@
+def main() -> i64 {
+    val _xs = zeros(9);
+    val _ys = ones(4);
+    val _a = linspace(0.0, 1.0, 5);
+    val _b = list_dot([1.0, 2.0, 3.0], [4.0, 5.0, 6.0]);
+    val _c = list_add([1.0, 2.0], [3.0, 4.0]);
+    val _d = list_scale([1.0, 2.0, 3.0], 2.0);
+    val _s = list_sum([1.0, 2.0, 3.0]);
+    val _m = list_mean([1.0, 2.0, 3.0, 4.0]);
+    val _relu = list_relu([-1.0, 0.0, 1.0]);
+    val _sig = list_sigmoid([0.0, 1.0, -1.0]);
+    0
+}

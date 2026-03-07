@@ -32,6 +32,9 @@ pub fn stdlib_source(name: &str) -> Option<&'static str> {
         "async" => Some(include_str!("async.iris")),
         "testing" => Some(include_str!("testing.iris")),
         "log" => Some(include_str!("log.iris")),
+        // ML / AI modules
+        "ml"  => Some(include_str!("ml.iris")),
+        "nn"  => Some(include_str!("nn.iris")),
         _ => None,
     }
 }

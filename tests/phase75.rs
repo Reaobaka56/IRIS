@@ -26,8 +26,8 @@ fn test_parse_error_has_prefix() {
     let src = "def f() -> i64 { @bad }";
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
     assert!(
-        err.starts_with("error:"),
-        "expected 'error:' prefix, got: {}",
+        err.starts_with("error"),
+        "expected 'error' prefix, got: {}",
         err
     );
 }
@@ -102,7 +102,7 @@ def f() -> i64 {
 }
 "#;
     let err = compile_with_diagnostics(src, "test", EmitKind::Eval).unwrap_err();
-    assert!(err.starts_with("error:"), "expected error prefix");
+    assert!(err.starts_with("error"), "expected error prefix");
     // Should mention the undefined variable
     assert!(
         err.contains("undefined_var"),

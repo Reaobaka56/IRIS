@@ -42,6 +42,10 @@ pub enum ParseArgsResult {
     Pkg,
     /// `bench` subcommand: run performance benchmarks.
     Bench,
+    /// `profile` subcommand: run with profiling.
+    Profile,
+    /// `test` subcommand: discover and run test_ functions.
+    Test,
 }
 
 /// Parses command-line arguments (the full `std::env::args()` slice including `argv[0]`).
@@ -72,6 +76,8 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
             "dap" => return Ok(ParseArgsResult::Dap),
             "pkg" => return Ok(ParseArgsResult::Pkg),
             "bench" => return Ok(ParseArgsResult::Bench),
+            "profile" => return Ok(ParseArgsResult::Profile),
+            "test" => return Ok(ParseArgsResult::Test),
             _ => {}
         }
     }
@@ -238,6 +244,7 @@ pub fn help_text() -> &'static str {
      Subcommands:\n\
        build                 Build native binary (same as --emit binary)\n\
        run                   Build and run the binary\n\
+       test [file.iris]      Discover and run test_ functions (--filter <substr> --no-color)\n\
        repl                  Start an interactive REPL session\n\
        lsp                   Start the LSP server (JSON-RPC on stdin/stdout)\n\
        dap                   Start the DAP debug adapter (JSON-RPC on stdin/stdout)\n\

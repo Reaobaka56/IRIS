@@ -57,6 +57,12 @@ pub enum IrValue {
     },
     /// A sparse representation: stores (index, value) pairs.
     Sparse(Vec<(usize, IrValue)>),
+    /// A tape node for reverse-mode AD: primal value, op name, parent refs.
+    TapeNode {
+        primal: Box<IrValue>,
+        op: String,
+        parents: Vec<ValueId>,
+    },
     /// A dynamic growable list (shared mutable).
     List(std::rc::Rc<std::cell::RefCell<Vec<IrValue>>>),
     /// A hash map (shared mutable). Keys are displayed as strings for comparison.
@@ -135,6 +141,7 @@ impl fmt::Display for IrValue {
             IrValue::Unit => write!(f, "()"),
             IrValue::Grad { value, tangent } => write!(f, "grad({}, {})", value, tangent),
             IrValue::Sparse(pairs) => write!(f, "sparse({} nonzeros)", pairs.len()),
+            IrValue::TapeNode { op, .. } => write!(f, "tape_node({})", op),
             IrValue::List(elems) => write!(f, "list({} items)", elems.borrow().len()),
             IrValue::Map(entries) => write!(f, "map({} entries)", entries.borrow().len()),
         }
@@ -286,6 +293,8 @@ struct Interpreter<'m> {
     trace_func: String,
     /// Source text for byte-offset → line/col conversion.
     trace_source: String,
+    /// Gradient accumulator for reverse-mode AD (populated by Backward).
+    tape_grads: HashMap<ValueId, f64>,
 }
 
 impl<'m> Interpreter<'m> {
@@ -298,6 +307,7 @@ impl<'m> Interpreter<'m> {
             trace_out: None,
             trace_func: String::new(),
             trace_source: String::new(),
+            tape_grads: HashMap::new(),
         }
     }
 
@@ -498,7 +508,7 @@ impl<'m> Interpreter<'m> {
                             }
                         }
                         TensorOp::Einsum { notation } => {
-                            if notation == "mk,kn->mn" && inputs.len() == 2 {
+                            if inputs.len() == 2 {
                                 let a = self.get(inputs[0])?;
                                 let b = self.get(inputs[1])?;
                                 if let (
@@ -506,41 +516,158 @@ impl<'m> Interpreter<'m> {
                                     IrValue::Tensor(b_data, b_shape),
                                 ) = (a, b)
                                 {
-                                    if a_shape.len() < 2
-                                        || b_shape.len() < 2
-                                        || a_shape[1] != b_shape[0]
-                                    {
-                                        return Err(InterpError::TypeError {
-                                            detail: "einsum dimension mismatch".into(),
-                                        });
-                                    }
-                                    let (m, k, n) = (a_shape[0], a_shape[1], b_shape[1]);
-                                    let mut out = vec![0.0f32; m * n];
-                                    for i in 0..m {
-                                        for j in 0..n {
-                                            for l in 0..k {
-                                                out[i * n + j] +=
-                                                    a_data[i * k + l] * b_data[l * n + j];
-                                            }
-                                        }
-                                    }
-                                    self.values
-                                        .insert(*result, IrValue::Tensor(out, vec![m, n]));
+                                    let result_val = eval_einsum(notation, &a_data, &a_shape, &b_data, &b_shape)?;
+                                    self.values.insert(*result, result_val);
                                 } else {
                                     return Err(InterpError::TypeError {
                                         detail: "einsum inputs must be tensors".into(),
                                     });
                                 }
+                            } else if inputs.len() == 1 {
+                                // Trace/diagonal einsum on single tensor
+                                let a = self.get(inputs[0])?;
+                                if let IrValue::Tensor(data, shape) = a {
+                                    let result_val = eval_einsum_single(notation, &data, &shape)?;
+                                    self.values.insert(*result, result_val);
+                                } else {
+                                    return Err(InterpError::TypeError {
+                                        detail: "einsum input must be a tensor".into(),
+                                    });
+                                }
                             } else {
                                 return Err(InterpError::Unsupported {
-                                    detail: format!("einsum notation '{}' not supported", notation),
+                                    detail: format!("einsum with {} inputs not supported", inputs.len()),
                                 });
                             }
                         }
-                        _ => {
-                            return Err(InterpError::Unsupported {
-                                detail: format!("TensorOp {:?}", op),
-                            });
+                        TensorOp::Reshape => {
+                            // Reshape: takes the tensor input and the result_ty
+                            // to determine the new shape
+                            if inputs.len() >= 1 {
+                                let tv = self.get(inputs[0])?;
+                                if let IrValue::Tensor(data, old_shape) = tv {
+                                    // Extract new shape from result_ty or from
+                                    // additional shape inputs
+                                    let new_shape = if inputs.len() > 1 {
+                                        // Shape provided as additional i64 inputs
+                                        let mut s = Vec::new();
+                                        for i in 1..inputs.len() {
+                                            match self.get(inputs[i])? {
+                                                IrValue::I64(n) => s.push(n as usize),
+                                                IrValue::I32(n) => s.push(n as usize),
+                                                _ => return Err(InterpError::TypeError {
+                                                    detail: "reshape dimension must be integer".into(),
+                                                }),
+                                            }
+                                        }
+                                        s
+                                    } else {
+                                        // Infer: flatten to 1D
+                                        let total: usize = old_shape.iter().product();
+                                        vec![total]
+                                    };
+                                    let new_numel: usize = new_shape.iter().product();
+                                    let old_numel: usize = old_shape.iter().product();
+                                    if new_numel != old_numel {
+                                        return Err(InterpError::TypeError {
+                                            detail: format!(
+                                                "reshape: new shape {:?} has {} elements, but tensor has {}",
+                                                new_shape, new_numel, old_numel
+                                            ),
+                                        });
+                                    }
+                                    self.values.insert(*result, IrValue::Tensor(data, new_shape));
+                                } else {
+                                    return Err(InterpError::TypeError {
+                                        detail: "reshape on non-tensor".into(),
+                                    });
+                                }
+                            } else {
+                                return Err(InterpError::Unsupported {
+                                    detail: "reshape requires at least 1 input".into(),
+                                });
+                            }
+                        }
+                        TensorOp::Transpose { axes } => {
+                            if inputs.len() == 1 {
+                                let tv = self.get(inputs[0])?;
+                                if let IrValue::Tensor(data, shape) = tv {
+                                    let ndim = shape.len();
+                                    let perm = if axes.is_empty() {
+                                        // Default: reverse axes
+                                        (0..ndim).rev().collect::<Vec<_>>()
+                                    } else {
+                                        axes.clone()
+                                    };
+                                    if perm.len() != ndim {
+                                        return Err(InterpError::TypeError {
+                                            detail: format!(
+                                                "transpose: axes {:?} has {} elements, tensor has {} dims",
+                                                perm, perm.len(), ndim
+                                            ),
+                                        });
+                                    }
+
+                                    // Compute new shape
+                                    let new_shape: Vec<usize> = perm.iter().map(|&a| shape[a]).collect();
+                                    let numel: usize = shape.iter().product();
+                                    let mut new_data = vec![0.0f32; numel];
+
+                                    // Compute source strides
+                                    let mut src_strides = vec![1usize; ndim];
+                                    for i in (0..ndim.saturating_sub(1)).rev() {
+                                        src_strides[i] = src_strides[i + 1] * shape[i + 1];
+                                    }
+                                    // Compute dest strides
+                                    let mut dst_strides = vec![1usize; ndim];
+                                    for i in (0..ndim.saturating_sub(1)).rev() {
+                                        dst_strides[i] = dst_strides[i + 1] * new_shape[i + 1];
+                                    }
+
+                                    let mut coords = vec![0usize; ndim];
+                                    for flat in 0..numel {
+                                        // Decompose flat index into coords using source strides
+                                        let mut rem = flat;
+                                        for d in 0..ndim {
+                                            coords[d] = rem / src_strides[d];
+                                            rem %= src_strides[d];
+                                        }
+                                        // Compute destination flat index
+                                        let mut dst_flat = 0;
+                                        for d in 0..ndim {
+                                            dst_flat += coords[perm[d]] * dst_strides[d];
+                                        }
+                                        new_data[dst_flat] = data[flat];
+                                    }
+
+                                    self.values.insert(*result, IrValue::Tensor(new_data, new_shape));
+                                } else {
+                                    return Err(InterpError::TypeError {
+                                        detail: "transpose on non-tensor".into(),
+                                    });
+                                }
+                            } else {
+                                return Err(InterpError::Unsupported {
+                                    detail: "transpose requires exactly 1 input".into(),
+                                });
+                            }
+                        }
+                        TensorOp::Reduce { op: reduce_op, axes: reduce_axes, keepdims } => {
+                            if inputs.len() == 1 {
+                                let tv = self.get(inputs[0])?;
+                                if let IrValue::Tensor(data, shape) = tv {
+                                    let result_val = eval_reduce(&data, &shape, reduce_op, reduce_axes, *keepdims)?;
+                                    self.values.insert(*result, result_val);
+                                } else {
+                                    return Err(InterpError::TypeError {
+                                        detail: "reduce on non-tensor".into(),
+                                    });
+                                }
+                            } else {
+                                return Err(InterpError::Unsupported {
+                                    detail: "reduce requires exactly 1 input".into(),
+                                });
+                            }
                         }
                     },
 
@@ -1204,7 +1331,8 @@ impl<'m> Interpreter<'m> {
                     IrInstr::Sparsify {
                         result, operand, ..
                     } => {
-                        // Convert an Array to sparse (index, value) pairs of non-zero elements.
+                        // Convert an Array or Tensor to sparse (index, value) pairs.
+                        // Only non-zero elements are stored.
                         let v = self.get(*operand)?;
                         let pairs = match v {
                             IrValue::Array(elems) => elems
@@ -1218,6 +1346,12 @@ impl<'m> Interpreter<'m> {
                                 })
                                 .map(|(i, e)| (i, e.clone()))
                                 .collect(),
+                            IrValue::Tensor(data, _shape) => data
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, &val)| val != 0.0)
+                                .map(|(i, &val)| (i, IrValue::F32(val)))
+                                .collect(),
                             other => vec![(0, other)],
                         };
                         self.values.insert(*result, IrValue::Sparse(pairs));
@@ -1226,14 +1360,18 @@ impl<'m> Interpreter<'m> {
                     IrInstr::Densify {
                         result, operand, ..
                     } => {
-                        // Convert sparse back to an i64 count of non-zero elements (simplified).
+                        // Densify returns the number of non-zero elements (nnz) as
+                        // an i64. The lowerer emits Densify with result type i64,
+                        // matching the IRIS builtin signature `densify(s) -> i64`.
+                        // Native codegen uses iris_sparse_to_tensor for the full
+                        // dense reconstruction; the interpreter uses nnz for
+                        // lightweight testing.
                         let v = self.get(*operand)?;
-                        let count = match v {
-                            IrValue::Sparse(pairs) => pairs.len() as i64,
-                            IrValue::Array(elems) => elems.len() as i64,
-                            _ => 0,
+                        let nnz = match v {
+                            IrValue::Sparse(pairs) => IrValue::I64(pairs.len() as i64),
+                            other => other,
                         };
-                        self.values.insert(*result, IrValue::I64(count));
+                        self.values.insert(*result, nnz);
                     }
 
                     IrInstr::Barrier => {
@@ -1315,6 +1453,192 @@ impl<'m> Interpreter<'m> {
                                 })
                             }
                         }
+                    }
+
+                    // ── Reverse-mode AD (tape-based backpropagation) ──
+                    IrInstr::TapeRecord {
+                        result,
+                        value,
+                        op,
+                        parents,
+                    } => {
+                        let primal = self.get(*value)?;
+                        let parent_ids: Vec<ValueId> = parents.clone();
+                        // Store as a TapeNode containing primal, op, and parent refs
+                        self.values.insert(
+                            *result,
+                            IrValue::TapeNode {
+                                primal: Box::new(primal),
+                                op: op.clone(),
+                                parents: parent_ids,
+                            },
+                        );
+                    }
+
+                    IrInstr::Backward { result, loss } => {
+                        // Reverse-mode backpropagation from a loss scalar
+                        let mut grads: std::collections::HashMap<ValueId, f64> =
+                            std::collections::HashMap::new();
+                        // Seed: dL/dL = 1.0
+                        grads.insert(*loss, 1.0);
+
+                        // Topological order: collect all tape nodes reachable from loss
+                        let mut topo: Vec<ValueId> = Vec::new();
+                        let mut visited: std::collections::HashSet<ValueId> =
+                            std::collections::HashSet::new();
+                        fn topo_sort(
+                            vid: ValueId,
+                            values: &std::collections::HashMap<ValueId, IrValue>,
+                            visited: &mut std::collections::HashSet<ValueId>,
+                            topo: &mut Vec<ValueId>,
+                        ) {
+                            if !visited.insert(vid) {
+                                return;
+                            }
+                            if let Some(IrValue::TapeNode { parents, .. }) = values.get(&vid) {
+                                for &p in parents {
+                                    topo_sort(p, values, visited, topo);
+                                }
+                            }
+                            topo.push(vid);
+                        }
+                        topo_sort(*loss, &self.values, &mut visited, &mut topo);
+                        topo.reverse(); // reverse post-order
+
+                        // Propagate gradients in reverse topological order
+                        for vid in &topo {
+                            let grad = *grads.get(vid).unwrap_or(&0.0);
+                            if let Some(IrValue::TapeNode {
+                                op, parents, primal: _primal, ..
+                            }) = self.values.get(vid).cloned()
+                            {
+                                match op.as_str() {
+                                    "add" => {
+                                        // d(a+b)/da = 1, d(a+b)/db = 1
+                                        for p in &parents {
+                                            *grads.entry(*p).or_insert(0.0) += grad;
+                                        }
+                                    }
+                                    "sub" => {
+                                        if parents.len() >= 2 {
+                                            *grads.entry(parents[0]).or_insert(0.0) += grad;
+                                            *grads.entry(parents[1]).or_insert(0.0) -= grad;
+                                        }
+                                    }
+                                    "mul" => {
+                                        if parents.len() >= 2 {
+                                            let a_val = self.get_f64(parents[0]).unwrap_or(0.0);
+                                            let b_val = self.get_f64(parents[1]).unwrap_or(0.0);
+                                            *grads.entry(parents[0]).or_insert(0.0) +=
+                                                grad * b_val;
+                                            *grads.entry(parents[1]).or_insert(0.0) +=
+                                                grad * a_val;
+                                        }
+                                    }
+                                    "div" => {
+                                        if parents.len() >= 2 {
+                                            let a_val = self.get_f64(parents[0]).unwrap_or(0.0);
+                                            let b_val = self.get_f64(parents[1]).unwrap_or(1.0);
+                                            *grads.entry(parents[0]).or_insert(0.0) +=
+                                                grad / b_val;
+                                            *grads.entry(parents[1]).or_insert(0.0) -=
+                                                grad * a_val / (b_val * b_val);
+                                        }
+                                    }
+                                    "neg" => {
+                                        if let Some(&p) = parents.first() {
+                                            *grads.entry(p).or_insert(0.0) -= grad;
+                                        }
+                                    }
+                                    "sin" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            *grads.entry(p).or_insert(0.0) += grad * x.cos();
+                                        }
+                                    }
+                                    "cos" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            *grads.entry(p).or_insert(0.0) -= grad * x.sin();
+                                        }
+                                    }
+                                    "exp" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            *grads.entry(p).or_insert(0.0) += grad * x.exp();
+                                        }
+                                    }
+                                    "log" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(1.0);
+                                            *grads.entry(p).or_insert(0.0) += grad / x;
+                                        }
+                                    }
+                                    "sqrt" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(1.0);
+                                            *grads.entry(p).or_insert(0.0) +=
+                                                grad / (2.0 * x.sqrt());
+                                        }
+                                    }
+                                    "relu" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            *grads.entry(p).or_insert(0.0) +=
+                                                if x > 0.0 { grad } else { 0.0 };
+                                        }
+                                    }
+                                    "sigmoid" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            let s = 1.0 / (1.0 + (-x).exp());
+                                            *grads.entry(p).or_insert(0.0) +=
+                                                grad * s * (1.0 - s);
+                                        }
+                                    }
+                                    "tanh" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            let t = x.tanh();
+                                            *grads.entry(p).or_insert(0.0) +=
+                                                grad * (1.0 - t * t);
+                                        }
+                                    }
+                                    "pow" => {
+                                        if parents.len() >= 2 {
+                                            let base = self.get_f64(parents[0]).unwrap_or(1.0);
+                                            let exp = self.get_f64(parents[1]).unwrap_or(1.0);
+                                            // d/dbase = exp * base^(exp-1)
+                                            *grads.entry(parents[0]).or_insert(0.0) +=
+                                                grad * exp * base.powf(exp - 1.0);
+                                            // d/dexp = base^exp * ln(base)
+                                            *grads.entry(parents[1]).or_insert(0.0) +=
+                                                grad * base.powf(exp) * base.ln();
+                                        }
+                                    }
+                                    "abs" => {
+                                        if let Some(&p) = parents.first() {
+                                            let x = self.get_f64(p).unwrap_or(0.0);
+                                            *grads.entry(p).or_insert(0.0) +=
+                                                grad * if x >= 0.0 { 1.0 } else { -1.0 };
+                                        }
+                                    }
+                                    _ => {
+                                        // Unknown op: gradients stay 0 for parents
+                                    }
+                                }
+                            }
+                        }
+
+                        // Store the gradient map as an opaque unit value
+                        // The actual gradients are extracted via TapeGrad
+                        self.tape_grads = grads;
+                        self.values.insert(*result, IrValue::Unit);
+                    }
+
+                    IrInstr::TapeGrad { result, tape_node } => {
+                        let grad_val = self.tape_grads.get(tape_node).copied().unwrap_or(0.0);
+                        self.values.insert(*result, IrValue::F64(grad_val));
                     }
 
                     IrInstr::MakeSome { result, value, .. } => {
@@ -2257,21 +2581,67 @@ impl<'m> Interpreter<'m> {
                             self.values.insert(*r, ret);
                         }
                     }
-                    // Phase 88: TCP network I/O — interpreter stubs (return sentinel values)
-                    IrInstr::TcpConnect { result, .. } => {
-                        self.values.insert(*result, IrValue::I64(-1));
+                    // Phase 88: TCP network I/O — wire to real TCP via tcp_store
+                    IrInstr::TcpConnect { result, host, port } => {
+                        let h = match self.get(*host)? {
+                            IrValue::Str(s) => s,
+                            _ => String::new(),
+                        };
+                        let p = match self.get(*port)? {
+                            IrValue::I64(n) => n,
+                            _ => 0,
+                        };
+                        let id = match std::net::TcpStream::connect(format!("{}:{}", h, p)) {
+                            Ok(stream) => tcp_store::store_stream(stream),
+                            Err(_) => -1,
+                        };
+                        self.values.insert(*result, IrValue::I64(id));
                     }
-                    IrInstr::TcpListen { result, .. } => {
-                        self.values.insert(*result, IrValue::I64(-1));
+                    IrInstr::TcpListen { result, port } => {
+                        let p = match self.get(*port)? {
+                            IrValue::I64(n) => n,
+                            _ => 0,
+                        };
+                        let id = match std::net::TcpListener::bind(format!("0.0.0.0:{}", p)) {
+                            Ok(listener) => tcp_store::store_listener(listener),
+                            Err(_) => -1,
+                        };
+                        self.values.insert(*result, IrValue::I64(id));
                     }
-                    IrInstr::TcpAccept { result, .. } => {
-                        self.values.insert(*result, IrValue::I64(-1));
+                    IrInstr::TcpAccept { result, listener } => {
+                        let id = match self.get(*listener)? {
+                            IrValue::I64(n) => n,
+                            _ => -1,
+                        };
+                        let conn = tcp_store::accept_listener(id).unwrap_or(-1);
+                        self.values.insert(*result, IrValue::I64(conn));
                     }
-                    IrInstr::TcpRead { result, .. } => {
-                        self.values.insert(*result, IrValue::Str("".to_owned()));
+                    IrInstr::TcpRead { result, conn } => {
+                        let id = match self.get(*conn)? {
+                            IrValue::I64(n) => n,
+                            _ => -1,
+                        };
+                        let data = tcp_store::read_stream(id).unwrap_or_default();
+                        self.values.insert(*result, IrValue::Str(data));
                     }
-                    IrInstr::TcpWrite { .. } => {}
-                    IrInstr::TcpClose { .. } => {}
+                    IrInstr::TcpWrite { conn, data } => {
+                        let id = match self.get(*conn)? {
+                            IrValue::I64(n) => n,
+                            _ => -1,
+                        };
+                        let s = match self.get(*data)? {
+                            IrValue::Str(s) => s,
+                            _ => String::new(),
+                        };
+                        tcp_store::write_stream(id, &s);
+                    }
+                    IrInstr::TcpClose { conn } => {
+                        let id = match self.get(*conn)? {
+                            IrValue::I64(n) => n,
+                            _ => -1,
+                        };
+                        tcp_store::close(id);
+                    }
                     IrInstr::StrSplit {
                         result,
                         str_val,
@@ -2389,6 +2759,25 @@ impl<'m> Interpreter<'m> {
             .get(&id)
             .cloned()
             .ok_or(InterpError::UndefinedValue { id: id.0 })
+    }
+
+    /// Extract an f64 from a value (for reverse-mode AD gradient computation).
+    /// Works on F64, F32, TapeNode (extracts primal), I64, I32.
+    fn get_f64(&self, id: ValueId) -> Option<f64> {
+        match self.values.get(&id)? {
+            IrValue::F64(v) => Some(*v),
+            IrValue::F32(v) => Some(*v as f64),
+            IrValue::I64(v) => Some(*v as f64),
+            IrValue::I32(v) => Some(*v as f64),
+            IrValue::TapeNode { primal, .. } => match primal.as_ref() {
+                IrValue::F64(v) => Some(*v),
+                IrValue::F32(v) => Some(*v as f64),
+                IrValue::I64(v) => Some(*v as f64),
+                IrValue::I32(v) => Some(*v as f64),
+                _ => None,
+            },
+            _ => None,
+        }
     }
 
     /// Binds a target block's parameters to the provided argument values.
@@ -2663,6 +3052,386 @@ fn to_f32_val(v: &IrValue) -> Result<f32, InterpError> {
         _ => Err(InterpError::TypeError {
             detail: "expected numeric value for store".into(),
         }),
+    }
+}
+
+/// Parse einsum notation like "mk,kn->mn" into (lhs_indices, rhs_indices, out_indices).
+fn parse_einsum_notation(notation: &str) -> Option<(Vec<char>, Vec<char>, Vec<char>)> {
+    let parts: Vec<&str> = notation.split("->").collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let output = parts[1].chars().collect::<Vec<_>>();
+    let inputs: Vec<&str> = parts[0].split(',').collect();
+    if inputs.len() != 2 {
+        return None;
+    }
+    let lhs = inputs[0].chars().collect::<Vec<_>>();
+    let rhs = inputs[1].chars().collect::<Vec<_>>();
+    Some((lhs, rhs, output))
+}
+
+/// Parse single-input einsum notation like "ii->" (trace) or "ij->ji" (transpose).
+fn parse_einsum_single_notation(notation: &str) -> Option<(Vec<char>, Vec<char>)> {
+    let parts: Vec<&str> = notation.split("->").collect();
+    if parts.len() != 2 {
+        return None;
+    }
+    let input = parts[0].chars().collect::<Vec<_>>();
+    let output = parts[1].chars().collect::<Vec<_>>();
+    Some((input, output))
+}
+
+/// Evaluate 2-input einsum.
+fn eval_einsum(
+    notation: &str,
+    a_data: &[f32],
+    a_shape: &[usize],
+    b_data: &[f32],
+    b_shape: &[usize],
+) -> Result<IrValue, InterpError> {
+    let (lhs_idx, rhs_idx, out_idx) = parse_einsum_notation(notation).ok_or_else(|| {
+        InterpError::Unsupported {
+            detail: format!("cannot parse einsum notation '{}'", notation),
+        }
+    })?;
+
+    // Build dimension map: index char -> size
+    let mut dim_map: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+    for (i, &c) in lhs_idx.iter().enumerate() {
+        if i < a_shape.len() {
+            dim_map.insert(c, a_shape[i]);
+        }
+    }
+    for (i, &c) in rhs_idx.iter().enumerate() {
+        if i < b_shape.len() {
+            if let Some(&existing) = dim_map.get(&c) {
+                if existing != b_shape[i] {
+                    return Err(InterpError::TypeError {
+                        detail: format!(
+                            "einsum dimension mismatch for '{}': {} vs {}",
+                            c, existing, b_shape[i]
+                        ),
+                    });
+                }
+            } else {
+                dim_map.insert(c, b_shape[i]);
+            }
+        }
+    }
+
+    // Find contracted indices (in inputs but not in output)
+    let mut all_indices: Vec<char> = Vec::new();
+    for &c in &lhs_idx {
+        if !all_indices.contains(&c) {
+            all_indices.push(c);
+        }
+    }
+    for &c in &rhs_idx {
+        if !all_indices.contains(&c) {
+            all_indices.push(c);
+        }
+    }
+    let contracted: Vec<char> = all_indices
+        .iter()
+        .filter(|c| !out_idx.contains(c))
+        .copied()
+        .collect();
+
+    // Compute output shape
+    let out_shape: Vec<usize> = out_idx
+        .iter()
+        .map(|c| dim_map.get(c).copied().unwrap_or(1))
+        .collect();
+    let out_numel: usize = out_shape.iter().product::<usize>().max(1);
+
+    // Compute strides for a and b
+    let a_strides = compute_strides(a_shape);
+    let b_strides = compute_strides(b_shape);
+    let out_strides = compute_strides(&out_shape);
+
+    let contracted_sizes: Vec<usize> = contracted
+        .iter()
+        .map(|c| dim_map.get(c).copied().unwrap_or(1))
+        .collect();
+    let contracted_total: usize = contracted_sizes.iter().product::<usize>().max(1);
+
+    let mut result = vec![0.0f32; out_numel];
+
+    // Iterate over all output positions
+    for out_flat in 0..out_numel {
+        // Decompose output flat index into per-dimension coords
+        let mut out_coords: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+        let mut rem = out_flat;
+        for (d, &c) in out_idx.iter().enumerate() {
+            if d < out_strides.len() {
+                out_coords.insert(c, rem / out_strides[d]);
+                rem %= out_strides[d];
+            }
+        }
+
+        // Sum over contracted indices
+        let mut sum = 0.0f32;
+        for c_flat in 0..contracted_total {
+            let mut c_coords = out_coords.clone();
+            let mut c_rem = c_flat;
+            for (ci, &cc) in contracted.iter().enumerate() {
+                let _sz = contracted_sizes[ci];
+                c_coords.insert(cc, c_rem / if ci + 1 < contracted_sizes.len() {
+                    contracted_sizes[ci + 1..].iter().product::<usize>().max(1)
+                } else {
+                    1
+                });
+                c_rem %= if ci + 1 < contracted_sizes.len() {
+                    contracted_sizes[ci + 1..].iter().product::<usize>().max(1)
+                } else {
+                    1
+                };
+            }
+
+            // Compute a flat index
+            let mut a_flat = 0usize;
+            for (i, &c) in lhs_idx.iter().enumerate() {
+                if i < a_strides.len() {
+                    a_flat += c_coords.get(&c).copied().unwrap_or(0) * a_strides[i];
+                }
+            }
+            // Compute b flat index
+            let mut b_flat = 0usize;
+            for (i, &c) in rhs_idx.iter().enumerate() {
+                if i < b_strides.len() {
+                    b_flat += c_coords.get(&c).copied().unwrap_or(0) * b_strides[i];
+                }
+            }
+
+            if a_flat < a_data.len() && b_flat < b_data.len() {
+                sum += a_data[a_flat] * b_data[b_flat];
+            }
+        }
+        result[out_flat] = sum;
+    }
+
+    if out_shape.is_empty() {
+        // Scalar output (e.g., "i,i->")
+        Ok(IrValue::F32(result[0]))
+    } else {
+        Ok(IrValue::Tensor(result, out_shape))
+    }
+}
+
+/// Evaluate single-input einsum (trace, transpose-via-einsum, etc.)
+fn eval_einsum_single(
+    notation: &str,
+    data: &[f32],
+    shape: &[usize],
+) -> Result<IrValue, InterpError> {
+    let (in_idx, out_idx) = parse_einsum_single_notation(notation).ok_or_else(|| {
+        InterpError::Unsupported {
+            detail: format!("cannot parse single-input einsum '{}'", notation),
+        }
+    })?;
+
+    let mut dim_map: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+    for (i, &c) in in_idx.iter().enumerate() {
+        if i < shape.len() {
+            dim_map.insert(c, shape[i]);
+        }
+    }
+
+    let contracted: Vec<char> = {
+        let mut seen = Vec::new();
+        let mut dupes = Vec::new();
+        for &c in &in_idx {
+            if seen.contains(&c) && !dupes.contains(&c) && !out_idx.contains(&c) {
+                dupes.push(c);
+            }
+            seen.push(c);
+        }
+        dupes
+    };
+
+    let out_shape: Vec<usize> = out_idx
+        .iter()
+        .map(|c| dim_map.get(c).copied().unwrap_or(1))
+        .collect();
+    let out_numel: usize = out_shape.iter().product::<usize>().max(1);
+    let in_strides = compute_strides(shape);
+    let out_strides = compute_strides(&out_shape);
+
+    let contracted_sizes: Vec<usize> = contracted
+        .iter()
+        .map(|c| dim_map.get(c).copied().unwrap_or(1))
+        .collect();
+    let contracted_total: usize = contracted_sizes.iter().product::<usize>().max(1);
+
+    let mut result = vec![0.0f32; out_numel];
+
+    for out_flat in 0..out_numel {
+        let mut coords: std::collections::HashMap<char, usize> = std::collections::HashMap::new();
+        let mut rem = out_flat;
+        for (d, &c) in out_idx.iter().enumerate() {
+            if d < out_strides.len() {
+                coords.insert(c, rem / out_strides[d]);
+                rem %= out_strides[d];
+            }
+        }
+
+        let mut sum = 0.0f32;
+        for c_flat in 0..contracted_total {
+            let mut c_coords = coords.clone();
+            let mut c_rem = c_flat;
+            for (ci, &cc) in contracted.iter().enumerate() {
+                let div = if ci + 1 < contracted_sizes.len() {
+                    contracted_sizes[ci + 1..].iter().product::<usize>().max(1)
+                } else {
+                    1
+                };
+                c_coords.insert(cc, c_rem / div);
+                c_rem %= div;
+            }
+
+            let mut in_flat = 0usize;
+            for (i, &c) in in_idx.iter().enumerate() {
+                if i < in_strides.len() {
+                    in_flat += c_coords.get(&c).copied().unwrap_or(0) * in_strides[i];
+                }
+            }
+            if in_flat < data.len() {
+                sum += data[in_flat];
+            }
+        }
+        result[out_flat] = sum;
+    }
+
+    if out_shape.is_empty() {
+        Ok(IrValue::F32(result[0]))
+    } else {
+        Ok(IrValue::Tensor(result, out_shape))
+    }
+}
+
+/// Compute strides for a row-major shape.
+fn compute_strides(shape: &[usize]) -> Vec<usize> {
+    let ndim = shape.len();
+    if ndim == 0 {
+        return vec![];
+    }
+    let mut strides = vec![1usize; ndim];
+    for i in (0..ndim.saturating_sub(1)).rev() {
+        strides[i] = strides[i + 1] * shape[i + 1];
+    }
+    strides
+}
+
+/// Evaluate a reduce operation on a tensor.
+fn eval_reduce(
+    data: &[f32],
+    shape: &[usize],
+    op: &str,
+    axes: &[usize],
+    keepdims: bool,
+) -> Result<IrValue, InterpError> {
+    if shape.is_empty() {
+        return Ok(IrValue::F32(if data.is_empty() { 0.0 } else { data[0] }));
+    }
+
+    let ndim = shape.len();
+    let strides = compute_strides(shape);
+
+    // Normalize axes
+    let reduce_axes: Vec<usize> = if axes.is_empty() {
+        (0..ndim).collect()
+    } else {
+        axes.to_vec()
+    };
+
+    // Compute output shape
+    let mut out_shape: Vec<usize> = Vec::new();
+    for d in 0..ndim {
+        if reduce_axes.contains(&d) {
+            if keepdims {
+                out_shape.push(1);
+            }
+        } else {
+            out_shape.push(shape[d]);
+        }
+    }
+    let out_numel: usize = out_shape.iter().product::<usize>().max(1);
+    let out_strides = compute_strides(&out_shape);
+
+    // Init result
+    let init_val = match op {
+        "sum" | "mean" => 0.0f32,
+        "max" => f32::NEG_INFINITY,
+        "min" => f32::INFINITY,
+        "prod" => 1.0f32,
+        _ => {
+            return Err(InterpError::Unsupported {
+                detail: format!("reduce op '{}' not supported", op),
+            })
+        }
+    };
+    let mut result = vec![init_val; out_numel];
+    let mut counts = vec![0usize; out_numel];
+
+    let total: usize = shape.iter().product::<usize>();
+    for flat in 0..total {
+        // Decompose into coords
+        let mut coords = vec![0usize; ndim];
+        let mut rem = flat;
+        for d in 0..ndim {
+            coords[d] = rem / strides[d];
+            rem %= strides[d];
+        }
+
+        // Compute output flat index (skip reduced dims)
+        let mut out_flat = 0usize;
+        let mut out_d = 0usize;
+        for d in 0..ndim {
+            if reduce_axes.contains(&d) {
+                if keepdims {
+                    // This dim is 1, contributes 0 to flat index
+                    out_d += 1;
+                }
+            } else {
+                if out_d < out_strides.len() {
+                    out_flat += coords[d] * out_strides[out_d];
+                }
+                out_d += 1;
+            }
+        }
+
+        let val = data[flat];
+        match op {
+            "sum" | "mean" => result[out_flat] += val,
+            "max" => {
+                if val > result[out_flat] {
+                    result[out_flat] = val;
+                }
+            }
+            "min" => {
+                if val < result[out_flat] {
+                    result[out_flat] = val;
+                }
+            }
+            "prod" => result[out_flat] *= val,
+            _ => {}
+        }
+        counts[out_flat] += 1;
+    }
+
+    if op == "mean" {
+        for i in 0..out_numel {
+            if counts[i] > 0 {
+                result[i] /= counts[i] as f32;
+            }
+        }
+    }
+
+    if out_shape.is_empty() {
+        Ok(IrValue::F32(result[0]))
+    } else {
+        Ok(IrValue::Tensor(result, out_shape))
     }
 }
 
@@ -3204,6 +3973,58 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
             let body = str_arg(&args[1]);
             Ok(IrValue::Str(http_request("POST", &url, &body)))
         }
+        "http_request" => {
+            let method = str_arg(&args[0]);
+            let url = str_arg(&args[1]);
+            let body = if args.len() > 2 { str_arg(&args[2]) } else { String::new() };
+            Ok(IrValue::Str(http_request(&method, &url, &body)))
+        }
+        "http_post_json" => {
+            let url = str_arg(&args[0]);
+            let body = str_arg(&args[1]);
+            Ok(IrValue::Str(http_request("POST", &url, &body)))
+        }
+        // ---- UDP (interpreter stubs — use OS sockets via std) ----
+        "udp_open" => Ok(IrValue::I64(-1)),   // not supported in interpreter
+        "udp_send" => Ok(IrValue::I64(0)),
+        "udp_recv" => Ok(IrValue::Str(String::new())),
+        "udp_close" => Ok(IrValue::I64(0)),
+        // ---- Terminal ----
+        "read_key" => {
+            // Simple: read one byte from stdin
+            use std::io::Read;
+            let mut buf = [0u8; 1];
+            let _ = std::io::stdin().read(&mut buf);
+            Ok(IrValue::I64(buf[0] as i64))
+        }
+        "read_password" => {
+            // Interpreter: just use read_line (no echo-hiding in interp mode)
+            let mut line = String::new();
+            let _ = std::io::stdin().read_line(&mut line);
+            Ok(IrValue::Str(line.trim_end_matches('\n').trim_end_matches('\r').to_string()))
+        }
+        "term_clear"       => { print!("\x1b[2J\x1b[H"); Ok(IrValue::I64(0)) }
+        "term_cursor"      => {
+            let row = i64_arg(&args[0]);
+            let col = i64_arg(&args[1]);
+            print!("\x1b[{};{}H", row, col);
+            Ok(IrValue::I64(0))
+        }
+        "term_show_cursor" => {
+            let show = i64_arg(&args[0]);
+            if show != 0 { print!("\x1b[?25h"); } else { print!("\x1b[?25l"); }
+            Ok(IrValue::I64(0))
+        }
+        "term_set_color"   => {
+            let fg = i64_arg(&args[0]);
+            let bg = i64_arg(&args[1]);
+            if fg >= 0 { print!("\x1b[38;5;{}m", fg); }
+            if bg >= 0 { print!("\x1b[48;5;{}m", bg); }
+            Ok(IrValue::I64(0))
+        }
+        "term_reset"       => { print!("\x1b[0m"); Ok(IrValue::I64(0)) }
+        "term_rows"        => Ok(IrValue::I64(24)),
+        "term_cols"        => Ok(IrValue::I64(80)),
         // ---- JSON ----
         "json_parse" => {
             let s = str_arg(&args[0]);
@@ -3390,6 +4211,7 @@ fn interp_builtin(name: &str, args: &[IrValue]) -> Result<IrValue, InterpError> 
                 IrValue::Unit => "unit",
                 IrValue::Grad { .. } => "grad",
                 IrValue::Sparse(_) => "sparse",
+                IrValue::TapeNode { .. } => "tape_node",
             };
             Ok(IrValue::Str(t.to_string()))
         }

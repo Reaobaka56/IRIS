@@ -1,14 +1,18 @@
-def safe_div(a: i64, b: i64) -> i64 {
-    if b == 0 { 0 } else { a / b }
+def safe_div(a : i64, b : i64) -> i64 {
+    if b == 0 {
+        0
+    }
+    else {
+        a / b
+    }
+    
 }
-
-def double(x: i64) -> i64 {
+def double(x : i64) -> i64 {
     x * 2
 }
-
 def main() -> i64 {
     val a = double(21);
     val b = safe_div(100, 5);
-    a + b
+    print(a + b);
+    0
 }
-

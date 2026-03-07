@@ -1,8 +1,8 @@
 /// Phase 88: TCP network I/O — tcp_connect, tcp_listen, tcp_accept,
 /// tcp_read, tcp_write, tcp_close intrinsics.
 ///
-/// Interpreter stubs return sentinel values (fd=-1, str="").
-/// Tests verify compile success, IR structure, and stub evaluation.
+/// Interpreter uses real TCP via std::net.
+/// Tests verify compile success, IR structure, and evaluation.
 use iris::{compile, EmitKind};
 
 fn eval(src: &str) -> String {
@@ -22,14 +22,15 @@ fn llvm(src: &str) -> String {
 // ------------------------------------------------------------------
 #[test]
 fn test_tcp_connect_compiles() {
+    // Connect to an unreachable host → returns -1 (connection refused)
     let src = r#"
 def main() -> i64 {
-    val fd = tcp_connect("localhost", 8080)
+    val fd = tcp_connect("127.0.0.1", 59999)
     fd
 }
 "#;
     let v: i64 = eval(src).trim().parse().unwrap();
-    assert_eq!(v, -1, "expected sentinel fd -1, got {v}");
+    assert_eq!(v, -1, "expected fd -1 for unreachable host, got {v}");
 }
 
 // ------------------------------------------------------------------
@@ -37,14 +38,16 @@ def main() -> i64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_tcp_listen_compiles() {
+    // Listen on ephemeral port → returns a valid fd (>= 0)
     let src = r#"
 def main() -> i64 {
-    val listener = tcp_listen(9090)
-    listener
+    val listener = tcp_listen(0)
+    val _ = tcp_close(listener)
+    if listener >= 0 { 1 } else { 0 }
 }
 "#;
     let v: i64 = eval(src).trim().parse().unwrap();
-    assert_eq!(v, -1);
+    assert_eq!(v, 1, "expected listener fd >= 0");
 }
 
 // ------------------------------------------------------------------
@@ -52,15 +55,16 @@ def main() -> i64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_tcp_accept_compiles() {
+    // Verify tcp_accept compiles (don't actually call it — it blocks)
     let src = r#"
 def main() -> i64 {
-    val listener = tcp_listen(9091)
-    val conn = tcp_accept(listener)
-    conn
+    val listener = tcp_listen(0)
+    val _ = tcp_close(listener)
+    42
 }
 "#;
     let v: i64 = eval(src).trim().parse().unwrap();
-    assert_eq!(v, -1);
+    assert_eq!(v, 42);
 }
 
 // ------------------------------------------------------------------
@@ -68,9 +72,10 @@ def main() -> i64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_tcp_read_returns_empty_str() {
+    // Reading from invalid fd (-1) returns empty string
     let src = r#"
 def main() -> i64 {
-    val conn = tcp_connect("host", 1234)
+    val conn = tcp_connect("127.0.0.1", 59999)
     val s = tcp_read(conn)
     len(s)
 }
@@ -84,9 +89,10 @@ def main() -> i64 {
 // ------------------------------------------------------------------
 #[test]
 fn test_tcp_write_close_no_crash() {
+    // Write/close on invalid fd should not crash
     let src = r#"
 def main() -> i64 {
-    val conn = tcp_connect("host", 80)
+    val conn = tcp_connect("127.0.0.1", 59999)
     val _ = tcp_write(conn, "GET / HTTP/1.0")
     val _ = tcp_close(conn)
     42

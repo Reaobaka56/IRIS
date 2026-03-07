@@ -36,3 +36,87 @@ pub enum ValueDef {
         instr: crate::ir::instr::InstrId,
     },
 }
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::ir::block::BlockId;
+    use crate::ir::instr::InstrId;
+    use crate::ir::types::{DType, IrType};
+
+    // -- ValueId --------------------------------------------------------------
+
+    #[test]
+    fn value_id_display() {
+        assert_eq!(format!("{}", ValueId(0)), "%0");
+        assert_eq!(format!("{}", ValueId(99)), "%99");
+    }
+
+    #[test]
+    fn value_id_equality() {
+        assert_eq!(ValueId(0), ValueId(0));
+        assert_ne!(ValueId(0), ValueId(1));
+    }
+
+    #[test]
+    fn value_id_ordering() {
+        assert!(ValueId(0) < ValueId(1));
+        assert!(ValueId(10) > ValueId(5));
+    }
+
+    #[test]
+    fn value_id_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(ValueId(0));
+        set.insert(ValueId(1));
+        set.insert(ValueId(0));
+        assert_eq!(set.len(), 2);
+    }
+
+    // -- BlockParam -----------------------------------------------------------
+
+    #[test]
+    fn block_param_with_name() {
+        let p = BlockParam {
+            id: ValueId(0),
+            ty: IrType::Scalar(DType::I64),
+            name: Some("x".into()),
+        };
+        assert_eq!(p.name.as_deref(), Some("x"));
+        assert_eq!(p.id, ValueId(0));
+    }
+
+    #[test]
+    fn block_param_unnamed() {
+        let p = BlockParam {
+            id: ValueId(1),
+            ty: IrType::Str,
+            name: None,
+        };
+        assert!(p.name.is_none());
+    }
+
+    // -- ValueDef -------------------------------------------------------------
+
+    #[test]
+    fn value_def_block_param() {
+        let def = ValueDef::BlockParam {
+            block: BlockId(0),
+        };
+        assert!(matches!(def, ValueDef::BlockParam { block } if block == BlockId(0)));
+    }
+
+    #[test]
+    fn value_def_instr_result() {
+        let def = ValueDef::InstrResult {
+            block: BlockId(1),
+            instr: InstrId(3),
+        };
+        assert!(matches!(def, ValueDef::InstrResult { block, instr } if block == BlockId(1) && instr == InstrId(3)));
+    }
+}

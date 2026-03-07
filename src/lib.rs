@@ -32,9 +32,12 @@ pub mod lsp;
 pub mod parser;
 pub mod pass;
 pub mod pkg;
+pub mod profiler;
 pub mod proto;
 pub mod repl;
+pub mod security;
 pub mod stdlib;
+pub mod test_runner;
 
 pub use codegen::ir_serial::{deserialize_module, serialize_module};
 pub use compiler::FileCompiler;
@@ -44,8 +47,8 @@ pub use ir::module::IrModule;
 pub use lsp::{LspDiagnostic, LspState};
 pub use parser::ast::{AstBring, BringPath};
 pub use pass::{
-    ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning, LoopUnrollPass,
-    StrengthReducePass,
+    CopyPropPass, ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning,
+    LicmPass, LoopUnrollPass, StrengthReducePass,
 };
 pub use repl::ReplState;
 
@@ -236,8 +239,8 @@ pub fn compile_ast_to_module(
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
     use crate::pass::{
-        ConstFoldPass, CsePass, DcePass, OpExpandPass, PassManager, ShapeCheckPass,
-        StrengthReducePass,
+        ConstFoldPass, CopyPropPass, CsePass, DcePass, LicmPass, OpExpandPass, PassManager,
+        ShapeCheckPass, StrengthReducePass,
     };
 
     let mut ir_module = lower(ast_module, module_name)?;
@@ -257,7 +260,9 @@ pub fn compile_ast_to_module(
     pm.add_pass(TypeInferPass);
     pm.add_pass(ConstFoldPass);
     pm.add_pass(StrengthReducePass);
+    pm.add_pass(CopyPropPass);
     pm.add_pass(OpExpandPass);
+    pm.add_pass(LicmPass);
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
@@ -291,8 +296,8 @@ fn compile_ast(
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
     use crate::pass::{
-        ConstFoldPass, CsePass, DcePass, DeadNodePass, GraphPassManager, OpExpandPass, PassManager,
-        ShapeCheckPass, StrengthReducePass,
+        ConstFoldPass, CopyPropPass, CsePass, DcePass, DeadNodePass, GraphPassManager, LicmPass,
+        OpExpandPass, PassManager, ShapeCheckPass, StrengthReducePass,
     };
 
     if emit == EmitKind::Graph {
@@ -342,7 +347,9 @@ fn compile_ast(
     pm.add_pass(TypeInferPass);
     pm.add_pass(ConstFoldPass);
     pm.add_pass(StrengthReducePass);
+    pm.add_pass(CopyPropPass);
     pm.add_pass(OpExpandPass);
+    pm.add_pass(LicmPass);
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
@@ -410,15 +417,17 @@ pub fn compile_to_module(source: &str, module_name: &str) -> Result<IrModule, Er
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
     use crate::pass::{
-        ConstFoldPass, CsePass, DcePass, OpExpandPass, PassManager, ShapeCheckPass,
-        StrengthReducePass,
+        ConstFoldPass, CopyPropPass, CsePass, DcePass, LicmPass, OpExpandPass, PassManager,
+        ShapeCheckPass, StrengthReducePass,
     };
     let mut pm = PassManager::new();
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
     pm.add_pass(ConstFoldPass);
     pm.add_pass(StrengthReducePass);
+    pm.add_pass(CopyPropPass);
     pm.add_pass(OpExpandPass);
+    pm.add_pass(LicmPass);
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);

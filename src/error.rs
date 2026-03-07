@@ -2,6 +2,20 @@ use thiserror::Error;
 
 use crate::parser::lexer::Span;
 
+fn format_undef(name: &str, suggestion: Option<&str>) -> String {
+    let base = format!(
+        "cannot find '{}' — this variable or function is not defined in the current scope. \
+         Check for typos or make sure it is declared before use",
+        name
+    );
+    if let Some(s) = suggestion {
+        format!("{}
+  help: did you mean '{}'?", base, s)
+    } else {
+        base
+    }
+}
+
 /// Top-level error type for the IRIS compiler pipeline.
 #[derive(Debug, Error)]
 pub enum Error {
@@ -79,8 +93,8 @@ pub enum ParseError {
 
 #[derive(Debug, Error)]
 pub enum LowerError {
-    #[error("cannot find '{name}' — this variable or function is not defined in the current scope. Check for typos or make sure it is declared before use")]
-    UndefinedVariable { name: String, span: Span },
+    #[error("{}", format_undef(name, suggestion.as_deref()))]
+    UndefinedVariable { name: String, span: Span, suggestion: Option<String> },
 
     #[error("type mismatch — expected '{expected}' but found '{found}'. The types on both sides of this expression must agree")]
     TypeMismatch {
@@ -224,5 +238,338 @@ impl Error {
             Error::Interp(_) => "E0400",
             Error::Io(_) => "E0500",
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dummy_span() -> Span {
+        Span {
+            start: crate::parser::lexer::BytePos(0),
+            end: crate::parser::lexer::BytePos(1),
+        }
+    }
+
+    // -- format_error_pretty --------------------------------------------------
+
+    #[test]
+    fn format_error_pretty_basic() {
+        let s = format_error_pretty("syntax error", "unexpected '@'");
+        assert_eq!(s, "[syntax error] unexpected '@'");
+    }
+
+    // -- describe_location ----------------------------------------------------
+
+    #[test]
+    fn describe_location_with_source() {
+        let src = "abc\ndef\nghi";
+        assert_eq!(describe_location(Some(src), 0), "line 1, column 1");
+        assert_eq!(describe_location(Some(src), 4), "line 2, column 1");
+        assert_eq!(describe_location(Some(src), 6), "line 2, column 3");
+    }
+
+    #[test]
+    fn describe_location_no_source() {
+        assert_eq!(describe_location(None, 42), "byte 42");
+    }
+
+    #[test]
+    fn describe_location_past_end() {
+        let src = "ab";
+        // byte offset past end — uses full source length
+        let result = describe_location(Some(src), 100);
+        assert!(result.contains("line"));
+    }
+
+    // -- ParseError Display ---------------------------------------------------
+
+    #[test]
+    fn parse_error_unexpected_char() {
+        let e = ParseError::UnexpectedChar { ch: '@', pos: 5 };
+        let msg = format!("{}", e);
+        assert!(msg.contains("@"));
+        assert!(msg.contains("byte 5"));
+    }
+
+    #[test]
+    fn parse_error_unterminated_string() {
+        let e = ParseError::UnterminatedString { pos: 10 };
+        let msg = format!("{}", e);
+        assert!(msg.contains("unterminated string"));
+    }
+
+    #[test]
+    fn parse_error_invalid_escape() {
+        let e = ParseError::InvalidEscape {
+            ch: Some('q'),
+            pos: 3,
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("\\q"));
+    }
+
+    #[test]
+    fn parse_error_invalid_escape_eof() {
+        let e = ParseError::InvalidEscape { ch: None, pos: 3 };
+        let msg = format!("{}", e);
+        assert!(msg.contains("EOF"));
+    }
+
+    #[test]
+    fn parse_error_unexpected_token() {
+        let e = ParseError::UnexpectedToken {
+            expected: "';'".into(),
+            found: "def".into(),
+            span: dummy_span(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("';'"));
+        assert!(msg.contains("def"));
+    }
+
+    #[test]
+    fn parse_error_unexpected_eof() {
+        let e = ParseError::UnexpectedEof {
+            context: "function body".into(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("function body"));
+    }
+
+    // -- LowerError Display ---------------------------------------------------
+
+    #[test]
+    fn lower_error_undefined_variable() {
+        let e = LowerError::UndefinedVariable {
+            name: "foo".into(),
+            span: dummy_span(),
+            suggestion: None,
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("foo"));
+        assert!(msg.contains("not defined"));
+    }
+
+    #[test]
+    fn lower_error_type_mismatch() {
+        let e = LowerError::TypeMismatch {
+            expected: "i64".into(),
+            found: "str".into(),
+            span: dummy_span(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("i64"));
+        assert!(msg.contains("str"));
+    }
+
+    #[test]
+    fn lower_error_duplicate_function() {
+        let e = LowerError::DuplicateFunction {
+            name: "main".into(),
+            span: dummy_span(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("main"));
+        assert!(msg.contains("already defined"));
+    }
+
+    // -- PassError Display ----------------------------------------------------
+
+    #[test]
+    fn pass_error_use_before_def() {
+        let e = PassError::UseBeforeDef {
+            func: "foo".into(),
+            value: "%5".into(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("foo"));
+        assert!(msg.contains("%5"));
+    }
+
+    #[test]
+    fn pass_error_missing_terminator() {
+        let e = PassError::MissingTerminator {
+            func: "main".into(),
+            block: "bb0".into(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("main"));
+        assert!(msg.contains("bb0"));
+    }
+
+    // -- InterpError Display --------------------------------------------------
+
+    #[test]
+    fn interp_error_division_by_zero() {
+        let e = InterpError::DivisionByZero;
+        let msg = format!("{}", e);
+        assert!(msg.contains("division by zero"));
+    }
+
+    #[test]
+    fn interp_error_index_out_of_bounds() {
+        let e = InterpError::IndexOutOfBounds { idx: 10, len: 5 };
+        let msg = format!("{}", e);
+        assert!(msg.contains("10"));
+        assert!(msg.contains("5"));
+    }
+
+    #[test]
+    fn interp_error_index_out_of_bounds_empty() {
+        let e = InterpError::IndexOutOfBounds { idx: 0, len: 0 };
+        let msg = format!("{}", e);
+        assert!(msg.contains("0 elements"));
+    }
+
+    // -- CodegenError Display -------------------------------------------------
+
+    #[test]
+    fn codegen_error_unsupported() {
+        let e = CodegenError::Unsupported {
+            backend: "LLVM".into(),
+            detail: "closures".into(),
+        };
+        let msg = format!("{}", e);
+        assert!(msg.contains("LLVM"));
+        assert!(msg.contains("closures"));
+    }
+
+    #[test]
+    fn codegen_error_from_fmt() {
+        let e: CodegenError = std::fmt::Error.into();
+        let msg = format!("{}", e);
+        assert!(msg.contains("codegen"));
+    }
+
+    // -- Error wrapper Display ------------------------------------------------
+
+    #[test]
+    fn error_wraps_parse() {
+        let e = Error::Parse(ParseError::UnexpectedChar { ch: '#', pos: 0 });
+        let msg = format!("{}", e);
+        assert!(msg.contains("[syntax error]"));
+    }
+
+    #[test]
+    fn error_wraps_lower() {
+        let e = Error::Lower(LowerError::UnknownOp {
+            op: "conv3d".into(),
+        });
+        let msg = format!("{}", e);
+        assert!(msg.contains("[compile error]"));
+    }
+
+    #[test]
+    fn error_wraps_interp() {
+        let e = Error::Interp(InterpError::DivisionByZero);
+        let msg = format!("{}", e);
+        assert!(msg.contains("[runtime error]"));
+    }
+
+    // -- Diagnostic codes -----------------------------------------------------
+
+    #[test]
+    fn diagnostic_code_parse() {
+        assert_eq!(
+            Error::Parse(ParseError::UnexpectedChar { ch: '@', pos: 0 }).diagnostic_code(),
+            "E0001"
+        );
+        assert_eq!(
+            Error::Parse(ParseError::UnterminatedString { pos: 0 }).diagnostic_code(),
+            "E0002"
+        );
+        assert_eq!(
+            Error::Parse(ParseError::InvalidEscape { ch: None, pos: 0 }).diagnostic_code(),
+            "E0003"
+        );
+        assert_eq!(
+            Error::Parse(ParseError::InvalidLiteral {
+                text: "".into(),
+                span: dummy_span()
+            })
+            .diagnostic_code(),
+            "E0004"
+        );
+        assert_eq!(
+            Error::Parse(ParseError::UnexpectedToken {
+                expected: "".into(),
+                found: "".into(),
+                span: dummy_span()
+            })
+            .diagnostic_code(),
+            "E0005"
+        );
+        assert_eq!(
+            Error::Parse(ParseError::UnexpectedEof {
+                context: "".into()
+            })
+            .diagnostic_code(),
+            "E0006"
+        );
+    }
+
+    #[test]
+    fn diagnostic_code_lower() {
+        assert_eq!(
+            Error::Lower(LowerError::UndefinedVariable {
+                name: "".into(),
+                span: dummy_span(),
+                suggestion: None,
+            })
+            .diagnostic_code(),
+            "E0100"
+        );
+        assert_eq!(
+            Error::Lower(LowerError::UnknownOp { op: "".into() }).diagnostic_code(),
+            "E0107"
+        );
+    }
+
+    #[test]
+    fn diagnostic_code_pass() {
+        assert_eq!(
+            Error::Pass(PassError::UseBeforeDef {
+                func: "".into(),
+                value: "".into()
+            })
+            .diagnostic_code(),
+            "E0200"
+        );
+        assert_eq!(
+            Error::Pass(PassError::UnresolvedInfer { func: "".into() }).diagnostic_code(),
+            "E0205"
+        );
+    }
+
+    #[test]
+    fn diagnostic_code_codegen() {
+        assert_eq!(
+            Error::Codegen(CodegenError::Unsupported {
+                backend: "".into(),
+                detail: "".into()
+            })
+            .diagnostic_code(),
+            "E0300"
+        );
+    }
+
+    #[test]
+    fn diagnostic_code_interp() {
+        assert_eq!(
+            Error::Interp(InterpError::DivisionByZero).diagnostic_code(),
+            "E0400"
+        );
+    }
+
+    #[test]
+    fn diagnostic_code_io() {
+        let e = Error::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "test"));
+        assert_eq!(e.diagnostic_code(), "E0500");
     }
 }

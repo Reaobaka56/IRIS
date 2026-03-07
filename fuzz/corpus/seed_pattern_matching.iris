@@ -1,0 +1,18 @@
+choice Maybe { Some(i64), None }
+def safe_head(xs: list<i64>) -> Maybe {
+    if len(xs) > 0 {
+        Maybe.Some(list_get(xs, 0))
+    } else {
+        Maybe.None
+    }
+}
+def main() -> i64 {
+    val xs = [1, 2, 3];
+    val h = safe_head(xs);
+    val result = when h {
+        Maybe.Some(v) => v,
+        Maybe.None => -1,
+    };
+    print(result);
+    0
+}

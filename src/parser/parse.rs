@@ -453,8 +453,13 @@ impl<'t> Parser<'t> {
             let mut params = Vec::new();
             while !matches!(self.peek_tok(), Token::RParen | Token::Eof) {
                 let pname = self.expect_ident()?;
-                self.expect(&Token::Colon)?;
-                let pty = self.parse_type()?;
+                // Allow bare `self` without type annotation.
+                let pty = if pname.name == "self" && matches!(self.peek_tok(), Token::Comma | Token::RParen) {
+                    AstType::Named("self".to_string(), self.current_span())
+                } else {
+                    self.expect(&Token::Colon)?;
+                    self.parse_type()?
+                };
                 params.push(AstParam {
                     name: pname,
                     ty: pty,
@@ -704,9 +709,9 @@ impl<'t> Parser<'t> {
         loop {
             match self.peek_tok().clone() {
                 Token::RBrace | Token::Eof => break,
-                Token::Input => inputs.push(self.parse_model_input()?),
-                Token::Layer => layers.push(self.parse_layer()?),
-                Token::Output => outputs.push(self.parse_model_output()?),
+                Token::Ident(ref kw) if kw == "input" => inputs.push(self.parse_model_input()?),
+                Token::Ident(ref kw) if kw == "layer" => layers.push(self.parse_layer()?),
+                Token::Ident(ref kw) if kw == "output" => outputs.push(self.parse_model_output()?),
                 _ => {
                     return Err(ParseError::UnexpectedToken {
                         expected: "'input', 'layer', or 'output'".to_owned(),
@@ -729,7 +734,7 @@ impl<'t> Parser<'t> {
 
     fn parse_model_input(&mut self) -> Result<AstModelInput, ParseError> {
         let start = self.current_span();
-        self.expect(&Token::Input)?;
+        self.advance(); // consume 'input' (already matched as Ident("input"))
         let name = self.expect_ident()?;
         self.expect(&Token::Colon)?;
         let ty = self.parse_type()?;
@@ -743,7 +748,7 @@ impl<'t> Parser<'t> {
 
     fn parse_layer(&mut self) -> Result<AstLayer, ParseError> {
         let start = self.current_span();
-        self.expect(&Token::Layer)?;
+        self.advance(); // consume 'layer' (already matched as Ident("layer"))
         let name = self.expect_ident()?;
         let op = self.expect_ident()?;
         let (input_refs, params) = if matches!(self.peek_tok(), Token::LParen) {
@@ -796,7 +801,7 @@ impl<'t> Parser<'t> {
 
     fn parse_model_output(&mut self) -> Result<AstModelOutput, ParseError> {
         let start = self.current_span();
-        self.expect(&Token::Output)?;
+        self.advance(); // consume 'output' (already matched as Ident("output"))
         let name = self.expect_ident()?;
         let end = name.span;
         Ok(AstModelOutput {
@@ -823,6 +828,14 @@ impl<'t> Parser<'t> {
 
     fn parse_param(&mut self) -> Result<AstParam, ParseError> {
         let name = self.expect_ident()?;
+        // Allow bare `self` without type annotation (trait/impl methods).
+        if name.name == "self" && matches!(self.peek_tok(), Token::Comma | Token::RParen) {
+            return Ok(AstParam {
+                name,
+                ty: AstType::Named("self".to_string(), self.current_span()),
+                default: None,
+            });
+        }
         self.expect(&Token::Colon)?;
         let ty = self.parse_type()?;
         let default = if matches!(self.peek_tok(), Token::Eq) {
@@ -1044,6 +1057,26 @@ impl<'t> Parser<'t> {
                     Ok(AstType::Tuple(elems, span.merge(end)))
                 }
             }
+            Token::Pipe => {
+                // Closure type: |T1, T2, ...| -> R
+                self.advance(); // consume '|'
+                let mut params = Vec::new();
+                while !matches!(self.peek_tok(), Token::Pipe | Token::Eof) {
+                    params.push(self.parse_type()?);
+                    if matches!(self.peek_tok(), Token::Comma) {
+                        self.advance();
+                    }
+                }
+                let _end = self.expect(&Token::Pipe)?;
+                self.expect(&Token::Arrow)?;
+                let ret = self.parse_type()?;
+                let ret_span = ret.span();
+                Ok(AstType::Fn {
+                    params,
+                    ret: Box::new(ret),
+                    span: span.merge(ret_span),
+                })
+            }
             _ => Err(ParseError::UnexpectedToken {
                 expected: "type".to_owned(),
                 found: format!("{}", self.peek_tok()),
@@ -1141,30 +1174,35 @@ impl<'t> Parser<'t> {
             // `while` statement
             if matches!(self.peek_tok(), Token::While) {
                 stmts.push(self.parse_while_stmt()?);
+                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
                 continue;
             }
 
             // `for` range loop
             if matches!(self.peek_tok(), Token::For) {
                 stmts.push(self.parse_for_stmt()?);
+                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
                 continue;
             }
 
             // `par for` parallel range loop
             if matches!(self.peek_tok(), Token::Par) {
                 stmts.push(self.parse_par_for_stmt()?);
+                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
                 continue;
             }
 
             // `spawn { }` concurrent task
             if matches!(self.peek_tok(), Token::Spawn) {
                 stmts.push(self.parse_spawn_stmt()?);
+                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
                 continue;
             }
 
             // `loop` statement
             if matches!(self.peek_tok(), Token::Loop) {
                 stmts.push(self.parse_loop_stmt()?);
+                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
                 continue;
             }
 
@@ -1226,6 +1264,12 @@ impl<'t> Parser<'t> {
                 });
             } else if matches!(self.peek_tok(), Token::Semi) {
                 self.advance(); // consume `;`
+                stmts.push(AstStmt::Expr(Box::new(expr)));
+            } else if matches!(&expr, AstExpr::If { .. } | AstExpr::When { .. } | AstExpr::Block(_))
+                && !matches!(self.peek_tok(), Token::RBrace | Token::Eof)
+            {
+                // Block-type expressions (if, when, block literal) act as implicit statements
+                // when not at block end — no `;` required after their closing `}`.
                 stmts.push(AstStmt::Expr(Box::new(expr)));
             } else {
                 // No `;` → this is the tail expression.
@@ -1574,10 +1618,24 @@ impl<'t> Parser<'t> {
                 let cond = self.parse_expr()?;
                 let then_block = self.parse_block()?;
                 let (else_block, end_span) = if matches!(self.peek_tok(), Token::Else) {
-                    self.advance();
-                    let eb = self.parse_block()?;
-                    let es = eb.span;
-                    (Some(eb), es)
+                    self.advance(); // consume 'else'
+                    if matches!(self.peek_tok(), Token::If) {
+                        // Desugar `else if cond { .. }` as `else { if cond { .. } }`
+                        let elif_span_start = self.current_span();
+                        let elif_expr = self.parse_primary()?;
+                        let elif_span = elif_expr.span();
+                        let eb = AstBlock {
+                            stmts: vec![],
+                            tail: Some(Box::new(elif_expr)),
+                            span: elif_span_start.merge(elif_span),
+                        };
+                        let es = eb.span;
+                        (Some(eb), es)
+                    } else {
+                        let eb = self.parse_block()?;
+                        let es = eb.span;
+                        (Some(eb), es)
+                    }
                 } else {
                     (None, then_block.span)
                 };

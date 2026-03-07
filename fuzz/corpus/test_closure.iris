@@ -1,0 +1,7 @@
+def double(x: i64) -> i64 {
+    x * 2
+}
+def main() -> i64 {
+    print(double(21));
+    0
+}  

@@ -128,6 +128,7 @@ IrisVal* iris_box_f64(double v);
 IrisVal* iris_box_f32(float v);
 IrisVal* iris_box_bool(int v);
 IrisVal* iris_box_str(const char* s);
+IrisVal* iris_box_option(IrisOption* opt);
 int64_t  iris_unbox_i64(IrisVal* v);
 double   iris_unbox_f64(IrisVal* v);
 int      iris_unbox_bool(IrisVal* v);
@@ -279,7 +280,7 @@ char*    iris_env_var(const char* key);
 IrisChannel* iris_chan_new(void);
 void         iris_chan_send(IrisChannel* chan, IrisVal* val);
 IrisVal*     iris_chan_recv(IrisChannel* chan);
-void         iris_spawn_fn(void* fn);
+void         iris_spawn_fn(void* fn, void* arg);
 void         iris_par_for(void (*fn)(int64_t), int64_t start, int64_t end);
 void         iris_barrier(void);
 
@@ -301,11 +302,30 @@ IrisGrad* iris_make_grad(double value, double tangent);
 double    iris_grad_value(IrisGrad* g);
 double    iris_grad_tangent(IrisGrad* g);
 
+// Forward declaration so sparse-tensor prototypes can reference it.
+typedef struct IrisTensor IrisTensor;
+
 // ---------------------------------------------------------------------------
 // Sparse tensors
 // ---------------------------------------------------------------------------
 IrisSparse* iris_sparsify(IrisList* dense);
 IrisList*   iris_densify(IrisSparse* sparse);
+
+/// Sparsify a dense tensor: extract non-zero (index, value) pairs.
+IrisSparse* iris_tensor_sparsify(IrisTensor* t);
+/// Densify a sparse representation back to a dense 1D tensor.
+IrisTensor* iris_sparse_to_tensor(IrisSparse* sp, int64_t size);
+/// Sparse-dense vector dot product.
+double      iris_sparse_dot(IrisSparse* sp, IrisTensor* dense);
+/// Number of non-zero elements in sparse.
+int64_t     iris_sparse_nnz(IrisSparse* sp);
+
+// ---------------------------------------------------------------------------
+// Reverse-mode AD runtime stubs (tape managed by interpreter/codegen)
+// ---------------------------------------------------------------------------
+void* iris_tape_record(void* value);
+void* iris_backward(void* loss);
+double iris_tape_grad(void* tape_node);
 
 // ---------------------------------------------------------------------------
 // Non-scalar array fallback (for complex element types)
@@ -314,7 +334,41 @@ IrisList*  iris_alloc_array(void);
 IrisVal*   iris_array_load(IrisList* arr, int64_t idx);
 void       iris_array_store(IrisList* arr, int64_t idx, IrisVal* val);
 
-// Tensor ops (stub — shape tracking only)
+// Tensor ops — real compute
+// IrisTensor holds a contiguous f32 buffer with shape metadata.
+struct IrisTensor {
+    float*  data;     // row-major contiguous data
+    int64_t* shape;   // shape array (heap-allocated)
+    int32_t  ndim;    // number of dimensions
+    int64_t  numel;   // total number of elements (product of shape)
+};
+
+IrisTensor* iris_tensor_alloc(int32_t ndim, const int64_t* shape);
+void        iris_tensor_free(IrisTensor* t);
+IrisTensor* iris_tensor_zeros(int32_t ndim, const int64_t* shape);
+IrisTensor* iris_tensor_fill(int32_t ndim, const int64_t* shape, float val);
+float       iris_tensor_get(IrisTensor* t, int64_t flat_idx);
+void        iris_tensor_set(IrisTensor* t, int64_t flat_idx, float val);
+IrisTensor* iris_tensor_matmul(IrisTensor* a, IrisTensor* b);
+IrisTensor* iris_tensor_add(IrisTensor* a, IrisTensor* b);
+IrisTensor* iris_tensor_sub(IrisTensor* a, IrisTensor* b);
+IrisTensor* iris_tensor_mul(IrisTensor* a, IrisTensor* b);
+IrisTensor* iris_tensor_div(IrisTensor* a, IrisTensor* b);
+IrisTensor* iris_tensor_neg(IrisTensor* t);
+IrisTensor* iris_tensor_relu(IrisTensor* t);
+IrisTensor* iris_tensor_sigmoid(IrisTensor* t);
+IrisTensor* iris_tensor_tanh_act(IrisTensor* t);
+IrisTensor* iris_tensor_exp(IrisTensor* t);
+IrisTensor* iris_tensor_log(IrisTensor* t);
+IrisTensor* iris_tensor_sqrt(IrisTensor* t);
+IrisTensor* iris_tensor_abs(IrisTensor* t);
+IrisTensor* iris_tensor_reshape(IrisTensor* t, int32_t new_ndim, const int64_t* new_shape);
+IrisTensor* iris_tensor_transpose(IrisTensor* t, const int32_t* axes);
+IrisTensor* iris_tensor_reduce_sum(IrisTensor* t, int32_t axis, int keepdims);
+IrisTensor* iris_tensor_reduce_max(IrisTensor* t, int32_t axis, int keepdims);
+IrisTensor* iris_tensor_reduce_mean(IrisTensor* t, int32_t axis, int keepdims);
+
+// Legacy stubs (kept for backward compat, deprecated)
 void* iris_tensor_op(void);
 void* iris_tensor_load(void* t, ...);
 void  iris_tensor_store(void* t, ...);
@@ -335,6 +389,33 @@ IrisVal* iris_get_element(IrisVal* t, int32_t idx);
 IrisVal* iris_make_closure(void* fn, int ncaptures, ...);
 IrisVal* iris_call_closure(IrisVal* closure, ...);
 void     iris_call_closure_void(IrisVal* closure, ...);
+
+// ---------------------------------------------------------------------------
+// Terminal / Interactive Input
+// ---------------------------------------------------------------------------
+int64_t iris_read_key(void);           /* read one keypress (no echo, no Enter) */
+char*   iris_read_password(const char* prompt); /* read line with echo off */
+void    iris_term_clear(void);         /* clear screen */
+void    iris_term_cursor(int64_t row, int64_t col); /* move cursor */
+void    iris_term_show_cursor(int show); /* show/hide cursor (1=show, 0=hide) */
+void    iris_term_set_color(int64_t fg, int64_t bg); /* set ANSI color (0-255) */
+void    iris_term_reset(void);         /* reset terminal to normal */
+int64_t iris_term_rows(void);          /* terminal height */
+int64_t iris_term_cols(void);          /* terminal width */
+
+// ---------------------------------------------------------------------------
+// UDP Networking
+// ---------------------------------------------------------------------------
+int64_t iris_udp_open(int64_t port);      /* open UDP socket bound to port (0 = ephemeral) */
+void    iris_udp_send(int64_t fd, const char* addr_port, int64_t data_len); /* send datagram */
+char*   iris_udp_recv(int64_t fd);         /* receive datagram, returns "addr:port:data" */
+void    iris_udp_close(int64_t fd);
+
+// ---------------------------------------------------------------------------
+// HTTP (extended)
+// ---------------------------------------------------------------------------
+char*   iris_http_request(const char* method, const char* url,
+                          const char* body, const char* content_type);
 
 // ---------------------------------------------------------------------------
 // TCP Networking
@@ -487,6 +568,26 @@ IrisList* iris_list_drop(IrisList* list, int64_t n);
 
 // -- Concurrency extras --
 int64_t   iris_thread_count(void);
+
+// -- Reference Counting GC --
+// Each heap-allocated value (IrisVal*) has a reference count stored in
+// a separate side table. iris_retain increments, iris_release decrements
+// and frees when the count reaches zero.
+void      iris_retain(void* ptr);
+void      iris_release(void* ptr);
+int64_t   iris_refcount(void* ptr);
+void      iris_gc_collect(void);   // Force collection of zero-refcount objects.
+int64_t   iris_gc_stats_allocated(void);  // Total live allocations.
+int64_t   iris_gc_stats_freed(void);      // Total freed since start.
+
+// -- Security / Sandboxing --
+// Check whether an operation is allowed by the current sandbox policy.
+// Returns 0 if allowed, non-zero if denied.
+int       iris_sandbox_check_fs_read(const char* path);
+int       iris_sandbox_check_fs_write(const char* path);
+int       iris_sandbox_check_network(const char* host);
+int       iris_sandbox_check_ffi(const char* lib_path);
+void      iris_sandbox_set_policy(int allow_fs, int allow_net, int allow_ffi);
 
 #ifdef __cplusplus
 }

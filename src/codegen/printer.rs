@@ -578,6 +578,31 @@ fn emit_instr(out: &mut String, instr: &IrInstr) -> Result<(), CodegenError> {
             write!(out, "{} = grad_tangent {}", result, operand)?;
         }
 
+        IrInstr::TapeRecord {
+            result,
+            value,
+            op,
+            parents,
+        } => {
+            let parents_str: Vec<String> = parents.iter().map(|p| p.to_string()).collect();
+            write!(
+                out,
+                "{} = tape_record {} op=\"{}\" parents=[{}]",
+                result,
+                value,
+                op,
+                parents_str.join(", ")
+            )?;
+        }
+
+        IrInstr::Backward { result, loss } => {
+            write!(out, "{} = backward {}", result, loss)?;
+        }
+
+        IrInstr::TapeGrad { result, tape_node } => {
+            write!(out, "{} = tape_grad {}", result, tape_node)?;
+        }
+
         IrInstr::Sparsify {
             result, operand, ..
         } => {

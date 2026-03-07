@@ -1,0 +1,38 @@
+// Benchmark: Binary search
+// Tests recursive divide-and-conquer with comparison chains.
+
+def binary_search(arr: list<i64>, target: i64, low: i64, high: i64) -> i64 {
+    if low > high {
+        -1
+    } else {
+        val mid = low + ((high - low) / 2);
+        val v = list_get(arr, mid);
+        if v == target {
+            mid
+        } else {
+            if v < target {
+                binary_search(arr, target, mid + 1, high)
+            } else {
+                binary_search(arr, target, low, mid - 1)
+            }
+        }
+    }
+}
+
+def main() -> i64 {
+    val arr = list()
+    var i = 0;
+    while (i < 1000) {
+        push(arr, i * 2);
+        i = i + 1
+    }
+    var found = 0;
+    i = 0;
+    while (i < 500) {
+        val idx = binary_search(arr, (i * 4), 0, 999);
+        if (idx >= 0) { found = found + 1 } else { 0 };
+        i = i + 1
+    }
+    print(found);
+    0
+}

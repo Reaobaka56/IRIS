@@ -144,11 +144,12 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     }
 
     // 5b. Compile LLVM IR → module.o using clang (only clang understands .ll).
+    // Use -O1 for user IR to avoid clang 17 optimizer crashes with complex IR patterns.
     let mod_obj = tmp_dir.join("module.o");
     let mut ir_cmd = Command::new(&clang);
     ir_cmd.args(target_args);
     ir_cmd.args([
-        "-O2",
+        "-O1",
         "-c",
         ll_path.to_str().unwrap(),
         "-o",

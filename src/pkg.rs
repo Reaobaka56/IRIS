@@ -1,38 +1,44 @@
 //! IRIS Package Manager (`iris pkg`).
 //!
-//! Provides a simple project-level package manager for IRIS projects.
+//! Supports **local path** and **git** dependencies only.
+//! No central registry — packages are referenced by path or git URL.
 //!
 //! ## Manifest format (`iris.toml`)
 //!
 //! ```toml
 //! [package]
-//! name = "my-project"
+//! name    = "my-project"
 //! version = "0.1.0"
-//! entry = "main.iris"
-//!
-//! [registry]
-//! url = "https://registry.iris-lang.org"
+//! entry   = "main.iris"
 //!
 //! [dependencies]
 //! utils = { path = "../shared/utils" }
 //! web   = { git = "https://github.com/user/iris-web.git" }
-//! json  = "0.3.1"
+//! auth  = { git = "https://github.com/user/iris-auth.git", tag  = "v1.2.0" }
+//! core  = { git = "https://github.com/user/iris-core.git", rev  = "a1b2c3d" }
+//! dev   = { git = "https://github.com/user/iris-dev.git",  branch = "main" }
 //! ```
+//!
+//! ## Lock file (`iris.lock`)
+//!
+//! Auto-generated next to `iris.toml`. Commit it to source control for
+//! reproducible builds. Records the exact git commit for each git dependency.
 //!
 //! ## Commands
 //!
-//! - `iris pkg init`                  — create a new `iris.toml` in the current directory
-//! - `iris pkg add <name> --path <p>` — add a local path dependency
-//! - `iris pkg add <name> --git <u>`  — add a git dependency
-//! - `iris pkg add <name> --version <v>` — add a registry dependency
+//! - `iris pkg init`                  — create a new `iris.toml`
+//! - `iris pkg add <n> --path <p>`    — add a local path dependency
+//! - `iris pkg add <n> --git <url>`   — add a git dependency (latest)
+//! - `iris pkg add <n> --git <url> --tag <t>`    — pin to a git tag
+//! - `iris pkg add <n> --git <url> --rev <sha>`  — pin to a commit SHA
+//! - `iris pkg add <n> --git <url> --branch <b>` — track a branch
 //! - `iris pkg remove <name>`         — remove a dependency
-//! - `iris pkg install`               — fetch / sync all dependencies into `.iris/deps/`
+//! - `iris pkg install`               — fetch / sync all deps into `.iris/deps/`
+//! - `iris pkg update [name]`         — update git deps to latest matching ref
 //! - `iris pkg list`                  — list current dependencies
-//! - `iris pkg build`                 — build the project described by `iris.toml`
-//! - `iris pkg run`                   — build + run the project
-//! - `iris pkg publish`               — publish the package to the registry
-//! - `iris pkg search <query>`        — search the registry for packages
-//! - `iris pkg info <name>`           — show details about a registry package
+//! - `iris pkg build`                 — install deps + build entry binary
+//! - `iris pkg run`                   — build + run
+//! - `iris pkg check`                 — verify all deps are installed
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -52,30 +58,37 @@ pub struct Manifest {
     pub description: String,
     pub license: String,
     pub repository: String,
-    pub registry_url: String,
     pub deps: BTreeMap<String, Dep>,
 }
 
-/// Default registry URL.
-pub const DEFAULT_REGISTRY: &str = "https://registry.iris-lang.org";
-
-/// A single dependency.
+/// A single dependency — path or git only.
 #[derive(Debug, Clone)]
 pub enum Dep {
-    /// Local path dependency: `name = { path = "..." }`.
+    /// `name = { path = "..." }`
     Path(String),
-    /// Git repository dependency: `name = { git = "..." }`.
-    Git(String),
-    /// Registry dependency: `name = "version"` or `name = { version = "..." }`.
-    Registry { version: String },
+    /// `name = { git = "...", [branch = "..."], [tag = "..."], [rev = "..."] }`
+    Git {
+        url: String,
+        /// Track a specific branch (default: repo default branch).
+        branch: Option<String>,
+        /// Pin to a git tag (e.g. "v1.2.0").
+        tag: Option<String>,
+        /// Pin to an exact commit SHA.
+        rev: Option<String>,
+    },
 }
 
 impl fmt::Display for Dep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Dep::Path(p) => write!(f, "{{ path = \"{}\" }}", p),
-            Dep::Git(u) => write!(f, "{{ git = \"{}\" }}", u),
-            Dep::Registry { version } => write!(f, "\"{}\"", version),
+            Dep::Git { url, branch, tag, rev } => {
+                write!(f, "{{ git = \"{}\"", url)?;
+                if let Some(b) = branch { write!(f, ", branch = \"{}\"", b)?; }
+                if let Some(t) = tag    { write!(f, ", tag = \"{}\"", t)?; }
+                if let Some(r) = rev    { write!(f, ", rev = \"{}\"", r)?; }
+                write!(f, " }}")
+            }
         }
     }
 }
@@ -91,72 +104,35 @@ impl Manifest {
         let mut description = String::new();
         let mut license = String::new();
         let mut repository = String::new();
-        let mut registry_url = String::from(DEFAULT_REGISTRY);
         let mut deps: BTreeMap<String, Dep> = BTreeMap::new();
         let mut section = String::new();
 
         for (lineno, raw_line) in src.lines().enumerate() {
             let line = raw_line.split('#').next().unwrap_or("").trim();
-            if line.is_empty() {
-                continue;
-            }
+            if line.is_empty() { continue; }
 
-            // Section header: [package], [dependencies], [registry]
             if line.starts_with('[') && line.ends_with(']') {
                 section = line[1..line.len() - 1].trim().to_string();
                 continue;
             }
 
-            // Key = value
             if let Some(eq_pos) = line.find('=') {
                 let key = line[..eq_pos].trim();
                 let val = line[eq_pos + 1..].trim();
 
                 match section.as_str() {
                     "package" => match key {
-                        "name" => name = unquote(val),
-                        "version" => version = unquote(val),
-                        "entry" => entry = unquote(val),
+                        "name"        => name        = unquote(val),
+                        "version"     => version     = unquote(val),
+                        "entry"       => entry       = unquote(val),
                         "description" => description = unquote(val),
-                        "license" => license = unquote(val),
-                        "repository" => repository = unquote(val),
+                        "license"     => license     = unquote(val),
+                        "repository"  => repository  = unquote(val),
                         _ => {}
                     },
-                    "registry" => {
-                        if key == "url" {
-                            registry_url = unquote(val)
-                        }
-                    }
                     "dependencies" => {
-                        // Parse inline table: name = { path = "..." } or { git = "..." } or { version = "..." }
-                        if val.starts_with('{') {
-                            let inner = val.trim_start_matches('{').trim_end_matches('}').trim();
-                            if let Some(p) = extract_inline_key(inner, "path") {
-                                deps.insert(key.to_string(), Dep::Path(p));
-                            } else if let Some(g) = extract_inline_key(inner, "git") {
-                                deps.insert(key.to_string(), Dep::Git(g));
-                            } else if let Some(v) = extract_inline_key(inner, "version") {
-                                deps.insert(key.to_string(), Dep::Registry { version: v });
-                            } else {
-                                return Err(format!(
-                                    "line {}: dependency '{}' must have `path`, `git`, or `version` key",
-                                    lineno + 1,
-                                    key
-                                ));
-                            }
-                        } else {
-                            // Simple string: name = "version" — registry dependency
-                            let v = unquote(val);
-                            // Heuristic: if it looks like a version (starts with digit or *)
-                            // treat as registry dep; otherwise treat as path for compat.
-                            if v.starts_with(|c: char| {
-                                c.is_ascii_digit() || c == '*' || c == '^' || c == '~'
-                            }) {
-                                deps.insert(key.to_string(), Dep::Registry { version: v });
-                            } else {
-                                deps.insert(key.to_string(), Dep::Path(v));
-                            }
-                        }
+                        let dep = parse_dep(key, val, lineno + 1)?;
+                        deps.insert(key.to_string(), dep);
                     }
                     _ => {}
                 }
@@ -167,25 +143,16 @@ impl Manifest {
             return Err("missing [package] name".into());
         }
 
-        Ok(Manifest {
-            name,
-            version,
-            entry,
-            description,
-            license,
-            repository,
-            registry_url,
-            deps,
-        })
+        Ok(Manifest { name, version, entry, description, license, repository, deps })
     }
 
     /// Serialize back to TOML text.
     pub fn to_toml(&self) -> String {
         let mut out = String::new();
         out.push_str("[package]\n");
-        out.push_str(&format!("name = \"{}\"\n", self.name));
+        out.push_str(&format!("name    = \"{}\"\n", self.name));
         out.push_str(&format!("version = \"{}\"\n", self.version));
-        out.push_str(&format!("entry = \"{}\"\n", self.entry));
+        out.push_str(&format!("entry   = \"{}\"\n", self.entry));
         if !self.description.is_empty() {
             out.push_str(&format!("description = \"{}\"\n", self.description));
         }
@@ -196,11 +163,6 @@ impl Manifest {
             out.push_str(&format!("repository = \"{}\"\n", self.repository));
         }
         out.push('\n');
-        if self.registry_url != DEFAULT_REGISTRY {
-            out.push_str("[registry]\n");
-            out.push_str(&format!("url = \"{}\"\n", self.registry_url));
-            out.push('\n');
-        }
         out.push_str("[dependencies]\n");
         for (name, dep) in &self.deps {
             out.push_str(&format!("{} = {}\n", name, dep));
@@ -209,18 +171,52 @@ impl Manifest {
     }
 }
 
-/// Remove surrounding quotes from a TOML string value.
+/// Parse a single dependency value from the `[dependencies]` section.
+fn parse_dep(name: &str, val: &str, lineno: usize) -> Result<Dep, String> {
+    if val.starts_with('{') {
+        let inner = val.trim_start_matches('{').trim_end_matches('}').trim();
+        if let Some(p) = extract_inline_key(inner, "path") {
+            return Ok(Dep::Path(p));
+        }
+        if let Some(url) = extract_inline_key(inner, "git") {
+            let branch = extract_inline_key(inner, "branch");
+            let tag    = extract_inline_key(inner, "tag");
+            let rev    = extract_inline_key(inner, "rev");
+            return Ok(Dep::Git { url, branch, tag, rev });
+        }
+        // Registry deps explicitly not supported.
+        if extract_inline_key(inner, "version").is_some() {
+            return Err(format!(
+                "line {}: '{}' uses a registry version dep — only `path` and `git` are supported.\n\
+                 Use: {} = {{ git = \"https://github.com/...\" }}",
+                lineno, name, name
+            ));
+        }
+        Err(format!(
+            "line {}: dependency '{}' must have `path` or `git` key", lineno, name
+        ))
+    } else {
+        // Bare string: treat as a path for backward compat.
+        let v = unquote(val);
+        if v.starts_with("http://") || v.starts_with("https://") || v.starts_with("git@") {
+            Ok(Dep::Git { url: v, branch: None, tag: None, rev: None })
+        } else {
+            Ok(Dep::Path(v))
+        }
+    }
+}
+
 fn unquote(s: &str) -> String {
     let s = s.trim();
-    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
+    if (s.starts_with('"') && s.ends_with('"'))
+        || (s.starts_with('\'') && s.ends_with('\''))
+    {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
     }
 }
 
-/// Extract a value for `key` inside a TOML inline table body.
-/// E.g. `path = "../lib"` → Some("../lib")
 fn extract_inline_key(inner: &str, key: &str) -> Option<String> {
     for part in inner.split(',') {
         let part = part.trim();
@@ -235,38 +231,135 @@ fn extract_inline_key(inner: &str, key: &str) -> Option<String> {
     None
 }
 
-// ── Package manager commands ──────────────────────────────────────────────────
+// ── Lock file ─────────────────────────────────────────────────────────────────
 
-/// Find `iris.toml` by walking up from `start_dir`.
+/// One entry in `iris.lock`.
+#[derive(Debug, Clone)]
+pub struct LockEntry {
+    /// "path" or "git"
+    pub kind: String,
+    /// Canonical source: absolute path or git URL.
+    pub source: String,
+    /// For git: the resolved commit SHA (40 hex chars).
+    pub commit: Option<String>,
+}
+
+/// The `iris.lock` file — maps dep name → locked entry.
+#[derive(Debug, Default)]
+pub struct LockFile {
+    pub entries: BTreeMap<String, LockEntry>,
+}
+
+impl LockFile {
+    /// Parse from the text content of `iris.lock`.
+    pub fn parse(src: &str) -> Self {
+        let mut entries: BTreeMap<String, LockEntry> = BTreeMap::new();
+        let mut cur_name = String::new();
+        let mut cur_kind = String::new();
+        let mut cur_source = String::new();
+        let mut cur_commit: Option<String> = None;
+
+        for raw in src.lines() {
+            let line = raw.trim();
+            if line.starts_with('#') || line.is_empty() {
+                continue;
+            }
+            if line.starts_with("[dep.") && line.ends_with(']') {
+                // Flush previous entry.
+                if !cur_name.is_empty() && !cur_kind.is_empty() {
+                    entries.insert(
+                        cur_name.clone(),
+                        LockEntry { kind: cur_kind.clone(), source: cur_source.clone(), commit: cur_commit.clone() },
+                    );
+                }
+                cur_name   = line[5..line.len() - 1].to_string();
+                cur_kind   = String::new();
+                cur_source = String::new();
+                cur_commit = None;
+            } else if let Some(eq) = line.find('=') {
+                let k = line[..eq].trim();
+                let v = unquote(line[eq + 1..].trim());
+                match k {
+                    "kind"   => cur_kind   = v,
+                    "source" => cur_source = v,
+                    "commit" => cur_commit = Some(v),
+                    _ => {}
+                }
+            }
+        }
+        // Flush last entry.
+        if !cur_name.is_empty() && !cur_kind.is_empty() {
+            entries.insert(
+                cur_name,
+                LockEntry { kind: cur_kind, source: cur_source, commit: cur_commit },
+            );
+        }
+        LockFile { entries }
+    }
+
+    /// Serialize to text.
+    pub fn to_text(&self) -> String {
+        let mut out = String::from(
+            "# iris.lock — generated by `iris pkg install`. Commit to version control.\n\
+             # Do not edit manually.\n\n"
+        );
+        for (name, entry) in &self.entries {
+            out.push_str(&format!("[dep.{}]\n", name));
+            out.push_str(&format!("kind   = \"{}\"\n", entry.kind));
+            out.push_str(&format!("source = \"{}\"\n", entry.source));
+            if let Some(c) = &entry.commit {
+                out.push_str(&format!("commit = \"{}\"\n", c));
+            }
+            out.push('\n');
+        }
+        out
+    }
+}
+
+// ── Manifest / lock file I/O ──────────────────────────────────────────────────
+
 fn find_manifest(start_dir: &Path) -> Option<PathBuf> {
     let mut dir = start_dir.to_path_buf();
     loop {
         let candidate = dir.join("iris.toml");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        if !dir.pop() {
-            return None;
-        }
+        if candidate.exists() { return Some(candidate); }
+        if !dir.pop() { return None; }
     }
 }
 
-/// Load and parse the project manifest from the current directory or above.
 fn load_manifest() -> Result<(PathBuf, Manifest), String> {
     let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {}", e))?;
     let path = find_manifest(&cwd)
         .ok_or_else(|| "no iris.toml found (run `iris pkg init` to create one)".to_string())?;
-    let text =
-        fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
+    let text = fs::read_to_string(&path)
+        .map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
     let manifest = Manifest::parse(&text)?;
     Ok((path, manifest))
 }
 
-/// Save manifest back to disk.
 fn save_manifest(path: &Path, manifest: &Manifest) -> Result<(), String> {
     fs::write(path, manifest.to_toml())
         .map_err(|e| format!("cannot write {}: {}", path.display(), e))
 }
+
+fn lock_path(manifest_path: &Path) -> PathBuf {
+    manifest_path.with_file_name("iris.lock")
+}
+
+fn load_lock(manifest_path: &Path) -> LockFile {
+    let lp = lock_path(manifest_path);
+    fs::read_to_string(&lp)
+        .map(|s| LockFile::parse(&s))
+        .unwrap_or_default()
+}
+
+fn save_lock(manifest_path: &Path, lock: &LockFile) -> Result<(), String> {
+    let lp = lock_path(manifest_path);
+    fs::write(&lp, lock.to_text())
+        .map_err(|e| format!("cannot write iris.lock: {}", e))
+}
+
+// ── Commands ──────────────────────────────────────────────────────────────────
 
 /// `iris pkg init` — create a new project.
 pub fn cmd_init() -> Result<(), String> {
@@ -277,7 +370,6 @@ pub fn cmd_init() -> Result<(), String> {
         return Err("iris.toml already exists in this directory".into());
     }
 
-    // Derive project name from directory name.
     let dir_name = cwd
         .file_name()
         .and_then(|n| n.to_str())
@@ -291,40 +383,30 @@ pub fn cmd_init() -> Result<(), String> {
         description: String::new(),
         license: String::new(),
         repository: String::new(),
-        registry_url: DEFAULT_REGISTRY.into(),
         deps: BTreeMap::new(),
     };
 
     save_manifest(&manifest_path, &manifest)?;
 
-    // Create main.iris if it doesn't exist.
     let main_path = cwd.join("main.iris");
     if !main_path.exists() {
         fs::write(
             &main_path,
             format!(
-                "// {} — entry point\n\ndef main() -> int {{\n    print(\"Hello from {}!\")\n    0\n}}\n",
+                "// {} — entry point\n\ndef main() -> i64 {{\n    print(\"Hello from {}!\");\n    0\n}}\n",
                 dir_name, dir_name
             ),
-        )
-        .map_err(|e| format!("cannot write main.iris: {}", e))?;
+        ).map_err(|e| format!("cannot write main.iris: {}", e))?;
     }
 
-    // Create .iris/ directory for deps.
-    let iris_dir = cwd.join(".iris");
-    if !iris_dir.exists() {
-        fs::create_dir_all(&iris_dir).map_err(|e| format!("cannot create .iris/: {}", e))?;
-    }
+    fs::create_dir_all(cwd.join(".iris"))
+        .map_err(|e| format!("cannot create .iris/: {}", e))?;
 
-    eprintln!(
-        "initialized IRIS project '{}' in {}",
-        dir_name,
-        cwd.display()
-    );
+    eprintln!("initialized IRIS project '{}' in {}", dir_name, cwd.display());
     Ok(())
 }
 
-/// `iris pkg add <name> --path <p>` or `iris pkg add <name> --git <url>`.
+/// `iris pkg add <name> --path <p>` or `--git <url> [--tag t | --rev r | --branch b]`.
 pub fn cmd_add(name: &str, dep: Dep) -> Result<(), String> {
     let (path, mut manifest) = load_manifest()?;
     manifest.deps.insert(name.to_string(), dep.clone());
@@ -339,78 +421,191 @@ pub fn cmd_remove(name: &str) -> Result<(), String> {
     if manifest.deps.remove(name).is_none() {
         return Err(format!("dependency '{}' not found in iris.toml", name));
     }
+    // Also remove from lock file.
+    let mut lock = load_lock(&path);
+    lock.entries.remove(name);
     save_manifest(&path, &manifest)?;
+    save_lock(&path, &lock)?;
     eprintln!("removed dependency '{}'", name);
     Ok(())
 }
 
 /// `iris pkg list` — print all dependencies.
 pub fn cmd_list() -> Result<(), String> {
-    let (_path, manifest) = load_manifest()?;
+    let (manifest_path, manifest) = load_manifest()?;
+    let lock = load_lock(&manifest_path);
     eprintln!("{} v{}", manifest.name, manifest.version);
     if manifest.deps.is_empty() {
         eprintln!("  (no dependencies)");
     } else {
         for (name, dep) in &manifest.deps {
-            eprintln!("  {} = {}", name, dep);
+            let locked = lock.entries.get(name);
+            let pin = match locked {
+                Some(e) if e.commit.is_some() =>
+                    format!(" [{}]", &e.commit.as_deref().unwrap_or("")[ ..8.min(e.commit.as_deref().unwrap_or("").len())]),
+                _ => String::new(),
+            };
+            eprintln!("  {} = {}{}", name, dep, pin);
         }
     }
     Ok(())
 }
 
-/// `iris pkg install` — fetch/sync all dependencies into `.iris/deps/`.
+/// `iris pkg check` — verify all deps are installed.
+pub fn cmd_check() -> Result<(), String> {
+    let (manifest_path, manifest) = load_manifest()?;
+    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
+    let deps_dir = project_dir.join(".iris").join("deps");
+    let mut missing = Vec::new();
+    for (name, _dep) in &manifest.deps {
+        let target = deps_dir.join(name);
+        if !target.exists() {
+            missing.push(name.clone());
+        }
+    }
+    if missing.is_empty() {
+        eprintln!("all {} dependencies installed", manifest.deps.len());
+        Ok(())
+    } else {
+        for m in &missing {
+            eprintln!("  missing: {}", m);
+        }
+        Err(format!("{} dependency/ies missing — run `iris pkg install`", missing.len()))
+    }
+}
+
+/// `iris pkg install` — fetch/sync all deps (including transitive) into `.iris/deps/`.
 pub fn cmd_install() -> Result<(), String> {
     let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path
-        .parent()
-        .ok_or("cannot determine project directory")?;
+    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
     let deps_dir = project_dir.join(".iris").join("deps");
 
-    if !deps_dir.exists() {
-        fs::create_dir_all(&deps_dir).map_err(|e| format!("cannot create .iris/deps/: {}", e))?;
-    }
+    fs::create_dir_all(&deps_dir)
+        .map_err(|e| format!("cannot create .iris/deps/: {}", e))?;
 
     if manifest.deps.is_empty() {
         eprintln!("no dependencies to install");
         return Ok(());
     }
 
-    for (name, dep) in &manifest.deps {
-        let target = deps_dir.join(name);
-        match dep {
-            Dep::Path(rel_path) => {
-                // Symlink or copy the local path dependency.
-                let source = project_dir.join(rel_path);
+    let mut lock = load_lock(&manifest_path);
+
+    // BFS queue of (dep_name, dep, project_dir) triples.
+    // We track installed names globally to avoid cycles.
+    let mut queue: Vec<(String, Dep, PathBuf)> = manifest.deps
+        .iter()
+        .map(|(n, d)| (n.clone(), d.clone(), project_dir.to_path_buf()))
+        .collect();
+
+    let mut installed: std::collections::HashSet<String> = std::collections::HashSet::new();
+
+    while let Some((name, dep, from_dir)) = queue.pop() {
+        if installed.contains(&name) {
+            continue;
+        }
+        installed.insert(name.clone());
+
+        let target = deps_dir.join(&name);
+
+        // `transitive_from_dir` is where relative paths in this dep's iris.toml
+        // should be resolved from — the *original* source, not the installed copy.
+        let (lock_entry, transitive_from_dir) = match &dep {
+            Dep::Path(rel) => {
+                let source = from_dir.join(rel);
+                let source = source.canonicalize()
+                    .unwrap_or_else(|_| source.clone());
                 if !source.exists() {
                     return Err(format!(
                         "dependency '{}': path '{}' does not exist",
-                        name,
-                        source.display()
+                        name, source.display()
                     ));
                 }
-                install_path_dep(&source, &target, name)?;
+                install_path_dep(&source, &target, &name)?;
+                let entry = LockEntry {
+                    kind: "path".into(),
+                    source: source.to_string_lossy().into_owned(),
+                    commit: None,
+                };
+                // Transitive deps in libA/iris.toml are relative to libA's source dir.
+                (entry, source.clone())
             }
-            Dep::Git(url) => {
-                install_git_dep(url, &target, name)?;
+            Dep::Git { url, branch, tag, rev } => {
+                let commit = install_git_dep(url, branch.as_deref(), tag.as_deref(), rev.as_deref(), &target, &name)?;
+                let entry = LockEntry { kind: "git".into(), source: url.clone(), commit: Some(commit) };
+                // Transitive deps in a git repo's iris.toml are relative to the
+                // checked-out repo root (the installed target).
+                (entry, target.clone())
             }
-            Dep::Registry { version } => {
-                install_registry_dep(&manifest.registry_url, name, version, &target)?;
+        };
+
+        lock.entries.insert(name.clone(), lock_entry);
+
+        // Check if this dep has its own iris.toml (transitive deps).
+        // Read from the *original source* to get correct paths.
+        let sub_manifest_path = transitive_from_dir.join("iris.toml");
+        if sub_manifest_path.exists() {
+            if let Ok(text) = fs::read_to_string(&sub_manifest_path) {
+                if let Ok(sub_manifest) = Manifest::parse(&text) {
+                    for (sub_name, sub_dep) in sub_manifest.deps {
+                        if !installed.contains(&sub_name) {
+                            queue.push((sub_name, sub_dep, transitive_from_dir.clone()));
+                        }
+                    }
+                }
             }
         }
     }
 
-    eprintln!("installed {} dependencies", manifest.deps.len());
+    save_lock(&manifest_path, &lock)?;
+    eprintln!("installed {} dependencies", installed.len());
     Ok(())
 }
 
-/// Install a local path dependency via copy (or junction on Windows).
-fn install_path_dep(source: &Path, target: &Path, name: &str) -> Result<(), String> {
-    // Remove old target if it exists.
-    if target.exists() {
-        remove_dir_all_safe(target)?;
+/// `iris pkg update [name]` — update git deps to latest matching ref.
+pub fn cmd_update(only: Option<&str>) -> Result<(), String> {
+    let (manifest_path, manifest) = load_manifest()?;
+    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
+    let deps_dir = project_dir.join(".iris").join("deps");
+    let mut lock = load_lock(&manifest_path);
+    let mut updated = 0usize;
+
+    for (name, dep) in &manifest.deps {
+        if let Some(filter) = only {
+            if name != filter { continue; }
+        }
+        match dep {
+            Dep::Git { url, branch, tag, rev } => {
+                let target = deps_dir.join(name);
+                if !target.exists() {
+                    eprintln!("  {} — not installed, skipping (run `iris pkg install`)", name);
+                    continue;
+                }
+                eprintln!("  {} — updating {}", name, url);
+                let commit = git_pull_or_fetch(&target, url, branch.as_deref(), tag.as_deref(), rev.as_deref(), name)?;
+                lock.entries.insert(name.clone(), LockEntry {
+                    kind: "git".into(),
+                    source: url.clone(),
+                    commit: Some(commit),
+                });
+                updated += 1;
+            }
+            Dep::Path(_) => {
+                eprintln!("  {} — path dep, nothing to update", name);
+            }
+        }
     }
 
-    // Try symlink first, fall back to copy.
+    save_lock(&manifest_path, &lock)?;
+    eprintln!("updated {} git dependencies", updated);
+    Ok(())
+}
+
+// ── Install helpers ───────────────────────────────────────────────────────────
+
+/// Install a local path dep via symlink (Unix) or recursive copy (Windows).
+fn install_path_dep(source: &Path, target: &Path, name: &str) -> Result<(), String> {
+    if target.exists() { remove_dir_all_safe(target)?; }
+
     #[cfg(unix)]
     {
         if std::os::unix::fs::symlink(source, target).is_ok() {
@@ -419,81 +614,167 @@ fn install_path_dep(source: &Path, target: &Path, name: &str) -> Result<(), Stri
         }
     }
 
-    // Fall back to recursive copy.
     copy_dir_recursive(source, target)
         .map_err(|e| format!("dependency '{}': copy failed: {}", name, e))?;
     eprintln!("  {} → {} (copied)", name, source.display());
     Ok(())
 }
 
-/// Install a git dependency by clone or pull.
-fn install_git_dep(url: &str, target: &Path, name: &str) -> Result<(), String> {
+/// Clone or fetch a git dependency. Returns the resolved commit SHA.
+fn install_git_dep(
+    url: &str,
+    branch: Option<&str>,
+    tag: Option<&str>,
+    rev: Option<&str>,
+    target: &Path,
+    name: &str,
+) -> Result<String, String> {
     if target.join(".git").exists() {
-        // Already cloned — pull latest.
-        eprintln!("  {} — updating from {}", name, url);
-        let status = Command::new("git")
-            .args(["pull", "--ff-only"])
+        // Already cloned — update to the pinned ref.
+        git_pull_or_fetch(target, url, branch, tag, rev, name)
+    } else {
+        git_clone(url, branch, tag, rev, target, name)
+    }
+}
+
+/// Fresh `git clone` into `target`. Returns resolved commit SHA.
+fn git_clone(
+    url: &str,
+    branch: Option<&str>,
+    tag: Option<&str>,
+    rev: Option<&str>,
+    target: &Path,
+    name: &str,
+) -> Result<String, String> {
+    eprintln!("  {} — cloning {} ...", name, url);
+    if target.exists() { remove_dir_all_safe(target)?; }
+
+    // Choose which ref to clone.
+    let ref_arg: Option<&str> = tag.or(branch);
+    let mut cmd = Command::new("git");
+    cmd.arg("clone").arg("--depth").arg("1");
+    if let Some(r) = ref_arg {
+        cmd.arg("--branch").arg(r);
+    }
+    cmd.arg(url).arg(target.as_os_str());
+
+    let status = cmd.status()
+        .map_err(|e| format!("dependency '{}': git clone failed: {}", name, e))?;
+    if !status.success() {
+        return Err(format!("dependency '{}': git clone failed", name));
+    }
+
+    // If a specific rev was requested, check it out.
+    if let Some(r) = rev {
+        git_checkout(target, r, name)?;
+    }
+
+    git_head_commit(target, name)
+}
+
+/// `git pull --ff-only` (or fetch + reset for pinned refs). Returns new commit SHA.
+fn git_pull_or_fetch(
+    target: &Path,
+    url: &str,
+    branch: Option<&str>,
+    tag: Option<&str>,
+    rev: Option<&str>,
+    name: &str,
+) -> Result<String, String> {
+    // Ensure remote origin is set to the correct URL.
+    let _ = Command::new("git")
+        .args(["remote", "set-url", "origin", url])
+        .current_dir(target)
+        .status();
+
+    if let Some(r) = rev {
+        // Fetch and checkout exact SHA.
+        let _ = Command::new("git")
+            .args(["fetch", "--depth", "1", "origin", r])
             .current_dir(target)
-            .status()
+            .status();
+        git_checkout(target, r, name)?;
+    } else if let Some(t) = tag {
+        // Fetch the tag.
+        let _ = Command::new("git")
+            .args(["fetch", "--depth", "1", "origin", &format!("refs/tags/{}", t)])
+            .current_dir(target)
+            .status();
+        git_checkout(target, t, name)?;
+    } else {
+        // Pull the branch (or default).
+        let mut pull = Command::new("git");
+        pull.arg("pull").arg("--ff-only");
+        if let Some(b) = branch {
+            pull.arg("origin").arg(b);
+        }
+        let status = pull.current_dir(target).status()
             .map_err(|e| format!("dependency '{}': git pull failed: {}", name, e))?;
         if !status.success() {
-            return Err(format!(
-                "dependency '{}': git pull failed (exit {})",
-                name, status
-            ));
+            return Err(format!("dependency '{}': git pull failed", name));
         }
-    } else {
-        // Fresh clone.
-        eprintln!("  {} — cloning {}", name, url);
-        if target.exists() {
-            remove_dir_all_safe(target)?;
-        }
-        let status = Command::new("git")
-            .args(["clone", "--depth", "1", url, &target.to_string_lossy()])
-            .status()
-            .map_err(|e| format!("dependency '{}': git clone failed: {}", name, e))?;
-        if !status.success() {
-            return Err(format!(
-                "dependency '{}': git clone failed (exit {})",
-                name, status
-            ));
-        }
+    }
+
+    git_head_commit(target, name)
+}
+
+/// Run `git checkout <ref>` in `target`.
+fn git_checkout(target: &Path, git_ref: &str, name: &str) -> Result<(), String> {
+    let status = Command::new("git")
+        .args(["checkout", git_ref])
+        .current_dir(target)
+        .status()
+        .map_err(|e| format!("dependency '{}': git checkout failed: {}", name, e))?;
+    if !status.success() {
+        return Err(format!("dependency '{}': git checkout '{}' failed", name, git_ref));
     }
     Ok(())
 }
 
-/// Recursively copy a directory.
+/// Return the current HEAD commit SHA (40 chars) for the repo at `target`.
+fn git_head_commit(target: &Path, name: &str) -> Result<String, String> {
+    let out = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(target)
+        .output()
+        .map_err(|e| format!("dependency '{}': git rev-parse failed: {}", name, e))?;
+    if !out.status.success() {
+        return Err(format!("dependency '{}': git rev-parse HEAD failed", name));
+    }
+    let sha = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    eprintln!("  {} → {}", name, &sha[..sha.len().min(12)]);
+    Ok(sha)
+}
+
 fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
     fs::create_dir_all(dst)?;
     for entry in fs::read_dir(src)? {
         let entry = entry?;
         let ty = entry.file_type()?;
-        let dest_path = dst.join(entry.file_name());
+        let dest = dst.join(entry.file_name());
         if ty.is_dir() {
-            copy_dir_recursive(&entry.path(), &dest_path)?;
+            copy_dir_recursive(&entry.path(), &dest)?;
         } else {
-            fs::copy(entry.path(), dest_path)?;
+            fs::copy(entry.path(), dest)?;
         }
     }
     Ok(())
 }
 
-/// Safely remove a directory (handles read-only files on Windows).
 fn remove_dir_all_safe(path: &Path) -> Result<(), String> {
-    fs::remove_dir_all(path).map_err(|e| format!("cannot remove {}: {}", path.display(), e))
+    fs::remove_dir_all(path)
+        .map_err(|e| format!("cannot remove {}: {}", path.display(), e))
 }
 
-/// `iris pkg build` — install deps then build the project entry point.
+// ── Build / run ───────────────────────────────────────────────────────────────
+
+/// `iris pkg build` / `iris pkg run` — install deps then compile the entry point.
 pub fn cmd_build(run_after: bool) -> Result<(), String> {
     let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path
-        .parent()
-        .ok_or("cannot determine project directory")?;
+    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
 
-    // Install deps first.
     cmd_install()?;
 
-    // Determine the entry file.
     let entry_path = project_dir.join(&manifest.entry);
     if !entry_path.exists() {
         return Err(format!(
@@ -502,37 +783,29 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
         ));
     }
 
-    // Collect search paths: each dep directory.
+    // Add each installed dep directory to the search path.
     let deps_dir = project_dir.join(".iris").join("deps");
     let mut extra_paths: Vec<PathBuf> = Vec::new();
     if deps_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&deps_dir) {
-            for entry in entries.flatten() {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    extra_paths.push(entry.path());
-                }
+        for entry in fs::read_dir(&deps_dir).map_err(|e| e.to_string())?.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                extra_paths.push(entry.path());
             }
         }
     }
 
-    // Use the IRIS compiler to build (leveraging FileCompiler with extra search paths).
     let extra_refs: Vec<&Path> = extra_paths.iter().map(|p| p.as_path()).collect();
     let compiler = crate::FileCompiler::new();
     let main_ast = compiler
         .compile_file_to_ast(&entry_path, &extra_refs)
         .map_err(|e| format!("{}", e))?;
 
-    let module_name = entry_path
-        .file_stem()
-        .and_then(|n| n.to_str())
-        .unwrap_or("main");
-
-    let ir =
-        crate::compile_ast_to_module(&main_ast, module_name, None).map_err(|e| format!("{}", e))?;
+    let module_name = entry_path.file_stem().and_then(|n| n.to_str()).unwrap_or("main");
+    let ir = crate::compile_ast_to_module(&main_ast, module_name, None)
+        .map_err(|e| format!("{}", e))?;
 
     let output_name = format!("{}{}", manifest.name, std::env::consts::EXE_SUFFIX);
     let output_path = project_dir.join(&output_name);
-
     crate::codegen::build_binary(&ir, &output_path).map_err(|e| format!("{}", e))?;
     eprintln!("wrote binary: {}", output_path.display());
 
@@ -548,233 +821,9 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
     Ok(())
 }
 
-// ── Registry support ──────────────────────────────────────────────────────────
-
-/// Install a registry dependency by downloading the package tarball.
-///
-/// Registry API (convention):
-/// - `GET /api/v1/packages/<name>/<version>` → package metadata JSON
-/// - `GET /api/v1/packages/<name>/<version>/download` → tarball
-///
-/// When the registry is not reachable we fall back to a git-based approach:
-/// `https://github.com/iris-pkg/<name>.git` at tag `v<version>`.
-fn install_registry_dep(
-    registry_url: &str,
-    name: &str,
-    version: &str,
-    target: &Path,
-) -> Result<(), String> {
-    // Check if already installed with correct version marker.
-    let version_marker = target.join(".iris-version");
-    if version_marker.exists() {
-        let installed = fs::read_to_string(&version_marker).unwrap_or_default();
-        if installed.trim() == version {
-            eprintln!("  {} v{} — up to date", name, version);
-            return Ok(());
-        }
-    }
-
-    // Try git clone from the registry's package namespace.
-    let git_url = format!(
-        "{}/{}/{}.git",
-        registry_url.trim_end_matches('/'),
-        "packages",
-        name
-    );
-    eprintln!("  {} v{} — fetching from registry", name, version);
-
-    if target.exists() {
-        remove_dir_all_safe(target)?;
-    }
-
-    // Attempt clone at tag v<version>
-    let tag = format!("v{}", version);
-    let status = Command::new("git")
-        .args([
-            "clone",
-            "--depth",
-            "1",
-            "--branch",
-            &tag,
-            &git_url,
-            &target.to_string_lossy(),
-        ])
-        .stderr(std::process::Stdio::null())
-        .status();
-
-    match status {
-        Ok(s) if s.success() => {
-            // Write version marker
-            let _ = fs::write(&version_marker, version);
-            eprintln!("  {} v{} — installed", name, version);
-            Ok(())
-        }
-        _ => {
-            // Fallback: try without tag (latest)
-            let status2 = Command::new("git")
-                .args(["clone", "--depth", "1", &git_url, &target.to_string_lossy()])
-                .stderr(std::process::Stdio::null())
-                .status();
-            match status2 {
-                Ok(s) if s.success() => {
-                    let _ = fs::write(&version_marker, version);
-                    eprintln!("  {} v{} — installed (latest)", name, version);
-                    Ok(())
-                }
-                _ => Err(format!(
-                    "dependency '{}': could not fetch v{} from registry ({})",
-                    name, version, registry_url
-                )),
-            }
-        }
-    }
-}
-
-/// `iris pkg publish` — package and publish to the registry.
-pub fn cmd_publish() -> Result<(), String> {
-    let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path
-        .parent()
-        .ok_or("cannot determine project directory")?;
-
-    // Validate required fields.
-    if manifest.name.is_empty() {
-        return Err("package name is required for publishing".into());
-    }
-    if manifest.version == "0.0.0" {
-        return Err("please set a version before publishing".into());
-    }
-
-    // Create a tarball of the project (excluding .iris/, target/, .git/).
-    let pkg_file = project_dir.join(format!("{}-{}.tar.gz", manifest.name, manifest.version));
-
-    // Collect files to package.
-    let mut files: Vec<PathBuf> = Vec::new();
-    collect_pkg_files(project_dir, project_dir, &mut files)?;
-
-    eprintln!("packaging {} v{}", manifest.name, manifest.version);
-    eprintln!("  {} files to include", files.len());
-    for f in &files {
-        let rel = f.strip_prefix(project_dir).unwrap_or(f);
-        eprintln!("    {}", rel.display());
-    }
-
-    // Write a package manifest for the registry.
-    let pkg_manifest = format!(
-        "{{\"name\":\"{}\",\"version\":\"{}\",\"description\":\"{}\",\"license\":\"{}\",\"repository\":\"{}\",\"files\":{}}}",
-        manifest.name,
-        manifest.version,
-        manifest.description,
-        manifest.license,
-        manifest.repository,
-        files.len(),
-    );
-    let pkg_manifest_path = project_dir.join(".iris").join("package.json");
-    let _ = fs::create_dir_all(project_dir.join(".iris"));
-    fs::write(&pkg_manifest_path, &pkg_manifest)
-        .map_err(|e| format!("cannot write package manifest: {}", e))?;
-
-    eprintln!("\npackage prepared: {}", pkg_file.display());
-    eprintln!(
-        "to upload, push to: {}/packages/{}",
-        manifest.registry_url, manifest.name
-    );
-    eprintln!("  git tag v{}", manifest.version);
-    eprintln!("  git push origin v{}", manifest.version);
-
-    Ok(())
-}
-
-/// Collect files for packaging — exclude .iris/, target/, .git/, *.exe.
-#[allow(clippy::only_used_in_recursion)]
-fn collect_pkg_files(root: &Path, dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), String> {
-    let entries =
-        fs::read_dir(dir).map_err(|e| format!("cannot read directory {}: {}", dir.display(), e))?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') || name == "target" || name == "node_modules" {
-            continue;
-        }
-        if path.is_dir() {
-            collect_pkg_files(root, &path, files)?;
-        } else {
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if ext != "exe" && ext != "dll" && ext != "so" && ext != "dylib" {
-                files.push(path);
-            }
-        }
-    }
-    Ok(())
-}
-
-/// `iris pkg search <query>` — search the registry for packages.
-pub fn cmd_search(query: &str) -> Result<(), String> {
-    let (_path, manifest) = load_manifest().unwrap_or_else(|_| {
-        // No manifest? Use default registry.
-        (
-            PathBuf::new(),
-            Manifest {
-                name: String::new(),
-                version: String::new(),
-                entry: String::new(),
-                description: String::new(),
-                license: String::new(),
-                repository: String::new(),
-                registry_url: DEFAULT_REGISTRY.into(),
-                deps: BTreeMap::new(),
-            },
-        )
-    });
-
-    eprintln!("searching registry for '{}'...", query);
-    eprintln!("  registry: {}", manifest.registry_url);
-    eprintln!();
-
-    // Without network access we show a helpful message.
-    eprintln!("  The IRIS package registry is at:");
-    eprintln!("    {}", manifest.registry_url);
-    eprintln!();
-    eprintln!("  To find packages, browse:");
-    eprintln!("    {}/search?q={}", manifest.registry_url, query);
-    eprintln!();
-    eprintln!("  Or add a git dependency directly:");
-    eprintln!("    iris pkg add <name> --git <url>");
-    Ok(())
-}
-
-/// `iris pkg info <name>` — show details about a package.
-pub fn cmd_info(name: &str) -> Result<(), String> {
-    let (_path, manifest) = load_manifest().unwrap_or_else(|_| {
-        (
-            PathBuf::new(),
-            Manifest {
-                name: String::new(),
-                version: String::new(),
-                entry: String::new(),
-                description: String::new(),
-                license: String::new(),
-                repository: String::new(),
-                registry_url: DEFAULT_REGISTRY.into(),
-                deps: BTreeMap::new(),
-            },
-        )
-    });
-
-    eprintln!("package: {}", name);
-    eprintln!("  registry: {}", manifest.registry_url);
-    eprintln!("  url: {}/packages/{}", manifest.registry_url, name);
-    eprintln!();
-    eprintln!("  To install: iris pkg add {} --version <version>", name);
-    Ok(())
-}
-
 // ── CLI dispatcher ────────────────────────────────────────────────────────────
 
 /// Parse `iris pkg <subcmd> [args...]` and dispatch.
-///
-/// `args` is the full argv slice starting from `argv[0]` (the binary name).
-/// The caller has already matched args[1] == "pkg".
 pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
     let sub = args.get(2).map(|s| s.as_str()).unwrap_or("help");
 
@@ -782,29 +831,38 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
         "init" => cmd_init(),
 
         "add" => {
-            let name = args
-                .get(3)
-                .ok_or("usage: iris pkg add <name> --path <p> | --git <url> | --version <v>")?;
-            let flag = args.get(4).map(|s| s.as_str());
-            let value = args.get(5);
+            let name = args.get(3)
+                .ok_or("usage: iris pkg add <name> --path <p> | --git <url> [--tag t | --rev r | --branch b]")?;
 
-            match flag {
-                Some("--path") => {
-                    let p = value.ok_or("--path requires a value")?;
-                    cmd_add(name, Dep::Path(p.clone()))
+            // Collect all flags.
+            let mut path_val: Option<String> = None;
+            let mut git_val:  Option<String> = None;
+            let mut tag_val:  Option<String> = None;
+            let mut rev_val:  Option<String> = None;
+            let mut branch_val: Option<String> = None;
+
+            let mut i = 4usize;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--path"   => { i += 1; path_val   = args.get(i).cloned(); }
+                    "--git"    => { i += 1; git_val    = args.get(i).cloned(); }
+                    "--tag"    => { i += 1; tag_val    = args.get(i).cloned(); }
+                    "--rev"    => { i += 1; rev_val    = args.get(i).cloned(); }
+                    "--branch" => { i += 1; branch_val = args.get(i).cloned(); }
+                    other      => return Err(format!("unknown flag: {}", other)),
                 }
-                Some("--git") => {
-                    let u = value.ok_or("--git requires a value")?;
-                    cmd_add(name, Dep::Git(u.clone()))
-                }
-                Some("--version" | "-v") => {
-                    let v = value.ok_or("--version requires a value")?;
-                    cmd_add(name, Dep::Registry { version: v.clone() })
-                }
-                _ => Err(
-                    "usage: iris pkg add <name> --path <p> | --git <url> | --version <v>".into(),
-                ),
+                i += 1;
             }
+
+            let dep = if let Some(p) = path_val {
+                Dep::Path(p)
+            } else if let Some(url) = git_val {
+                Dep::Git { url, branch: branch_val, tag: tag_val, rev: rev_val }
+            } else {
+                return Err("usage: iris pkg add <name> --path <p> | --git <url>".into());
+            };
+
+            cmd_add(name, dep)
         }
 
         "remove" | "rm" => {
@@ -814,23 +872,18 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
 
         "install" | "i" => cmd_install(),
 
+        "update" | "u" => {
+            let only = args.get(3).map(|s| s.as_str());
+            cmd_update(only)
+        }
+
         "list" | "ls" => cmd_list(),
+
+        "check" => cmd_check(),
 
         "build" | "b" => cmd_build(false),
 
         "run" | "r" => cmd_build(true),
-
-        "publish" | "pub" => cmd_publish(),
-
-        "search" | "s" => {
-            let query = args.get(3).ok_or("usage: iris pkg search <query>")?;
-            cmd_search(query)
-        }
-
-        "info" => {
-            let name = args.get(3).ok_or("usage: iris pkg info <name>")?;
-            cmd_info(name)
-        }
 
         "help" | "--help" | "-h" => {
             eprintln!("{}", pkg_help_text());
@@ -839,32 +892,39 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
 
         other => Err(format!(
             "unknown pkg subcommand: '{}'\n\n{}",
-            other,
-            pkg_help_text()
+            other, pkg_help_text()
         )),
     }
 }
 
-/// Help text for `iris pkg`.
 fn pkg_help_text() -> &'static str {
-    "IRIS Package Manager\n\
+    "IRIS Package Manager (local/git)\n\
      \n\
      Usage: iris pkg <command> [args...]\n\
      \n\
      Commands:\n\
-       init                            Create a new iris.toml in the current directory\n\
-       add <name> --path <path>        Add a local path dependency\n\
-       add <name> --git <url>          Add a git repository dependency\n\
-       add <name> --version <version>  Add a registry dependency\n\
-       remove <name>                   Remove a dependency\n\
-       install                         Fetch/sync all dependencies into .iris/deps/\n\
-       list                            List current dependencies\n\
-       build                           Install deps and build the project binary\n\
-       run                             Install deps, build, and run the project\n\
-       publish                         Package and publish to the registry\n\
-       search <query>                  Search the registry for packages\n\
-       info <name>                     Show details about a registry package\n\
-       help                            Show this help message\n\
+       init                                    Create a new iris.toml\n\
+       add <name> --path <path>                Add a local path dependency\n\
+       add <name> --git <url>                  Add a git dependency (default branch)\n\
+       add <name> --git <url> --tag <tag>      Pin to a git tag  (e.g. v1.2.0)\n\
+       add <name> --git <url> --rev <sha>      Pin to a commit SHA\n\
+       add <name> --git <url> --branch <name>  Track a specific branch\n\
+       remove <name>                           Remove a dependency\n\
+       install                                 Fetch/sync all deps into .iris/deps/\n\
+       update [name]                           Update git deps to latest matching ref\n\
+       list                                    List dependencies (with lock info)\n\
+       check                                   Verify all deps are installed\n\
+       build                                   Install deps and build the project binary\n\
+       run                                     Install deps, build, and run the project\n\
+       help                                    Show this help message\n\
      \n\
-     Aliases: rm = remove, i = install, ls = list, b = build, r = run, s = search\n"
+     Aliases: rm=remove, i=install, u=update, ls=list, b=build, r=run\n\
+     \n\
+     Lock file:\n\
+       iris.lock is auto-generated next to iris.toml.\n\
+       Commit it to source control for reproducible builds.\n\
+     \n\
+     Transitive dependencies:\n\
+       If an installed dep has its own iris.toml, its dependencies\n\
+       are automatically installed into the same .iris/deps/ directory.\n"
 }

@@ -5,5 +5,6 @@ def main() -> i64 {
     val result = fib(10);
     for i in 0..5 { print(to_str(i)); }
     while result > 0 { val x = result; }
-    result
+    print(result);
+    0
 }

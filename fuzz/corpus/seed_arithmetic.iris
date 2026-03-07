@@ -1,0 +1,16 @@
+def main() -> i64 {
+    val a = 2 + 3 * 4;
+    val b = (2 + 3) * 4;
+    val c = 10 / 3;
+    val d = 10 % 3;
+    val e = -a;
+    val f = 1.5 + 2.5;
+    val g = true;
+    val h = !g;
+    val i = 5 > 3;
+    val j = 5 == 5;
+    val k = 3 != 4;
+    val l = 1 <= 2;
+    print(a + b + c + d);
+    0
+}

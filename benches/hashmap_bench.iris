@@ -1,0 +1,24 @@
+// Benchmark: Hash map operations
+// Tests map insert, lookup, and iteration.
+
+def main() -> i64 {
+    val m = map()
+    var i = 0;
+    // Insert 500 entries.
+    while (i < 500) {
+        val key = to_str(i);
+        map_set(m, key, i * i);
+        i = i + 1
+    }
+    // Look up all entries.
+    var sum = 0;
+    i = 0;
+    while (i < 500) {
+        val key = to_str(i);
+        val v = unwrap(map_get(m, key));
+        sum = sum + v;
+        i = i + 1
+    }
+    print(sum);
+    0
+}
