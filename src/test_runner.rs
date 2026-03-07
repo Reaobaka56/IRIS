@@ -52,6 +52,7 @@ enum Outcome {
     Pass { elapsed_ms: f64 },
     Fail { reason: String, elapsed_ms: f64 },
     Panic { msg: String, elapsed_ms: f64 },
+    #[allow(dead_code)]
     Ignored,
 }
 
@@ -108,6 +109,7 @@ fn run_one(module: &crate::ir::module::IrModule, fn_name: &str) -> Outcome {
 // ── Test a single file ────────────────────────────────────────────────────────
 
 struct FileResult {
+    #[allow(dead_code)]
     path: PathBuf,
     results: Vec<(String, Outcome)>,
 }
