@@ -104,6 +104,37 @@ $llvmMB = [math]::Round($llvmTotal / 1048576, 1)
 Write-Host "  LLVM total: $llvmMB MB" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
+# Step 6b: Stage Visual C++ Runtime DLLs
+# ---------------------------------------------------------------------------
+# clang.exe and iris.exe both import VCRUNTIME140.dll / MSVCP140.dll which
+# are NOT guaranteed on a fresh Windows installation.  We bundle them
+# app-locally so Windows finds them via the app-directory search (which
+# takes priority over System32 and PATH).
+# These DLLs are on the official Microsoft redistribution list (redist.txt).
+# ---------------------------------------------------------------------------
+Write-Host "[6b/9] Staging VC++ Runtime DLLs..." -ForegroundColor Yellow
+$VcrtDlls = @('MSVCP140.dll', 'VCRUNTIME140.dll', 'VCRUNTIME140_1.dll')
+$VcrtSrc  = "C:\Windows\System32"
+$vcrtTotal = 0
+foreach ($dll in $VcrtDlls) {
+    $src = Join-Path $VcrtSrc $dll
+    if (Test-Path $src) {
+        # Place next to iris.exe (app root)
+        Copy-Item $src $StageDir -Force
+        # Place next to clang.exe / ld.lld.exe (toolchain/llvm/bin)
+        Copy-Item $src $LlvmDst.FullName -Force
+        $sz = (Get-Item $src).Length
+        $vcrtTotal += $sz
+        $szMB = [math]::Round($sz / 1048576, 1)
+        Write-Host "  $dll ($szMB MB)" -ForegroundColor Green
+    } else {
+        Write-Warning "  $dll not found at $src - skipping (install VC++ Redistributable on this machine first)"
+    }
+}
+$vcrtMB = [math]::Round($vcrtTotal / 1048576, 1)
+Write-Host "  VC++ runtime total: $vcrtMB MB" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
 # Step 7: Stage MinGW sysroot (headers + static libs, NO executables)
 # ---------------------------------------------------------------------------
 Write-Host "[7/9] Staging MinGW sysroot..." -ForegroundColor Yellow

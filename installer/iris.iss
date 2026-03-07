@@ -72,6 +72,12 @@ Name: "installvscode"; Description: "Install VSCode extension (if VSCode is dete
 ; Core compiler
 Source: "{#StageDir}\iris.exe";               DestDir: "{app}";                              Flags: ignoreversion;             Components: main
 
+; Visual C++ Runtime DLLs (app-local deployment — iris.exe and clang.exe both need these)
+; Listed in Microsoft's official redistribution list (redist.txt).
+Source: "{#StageDir}\VCRUNTIME140.dll";       DestDir: "{app}";  Flags: ignoreversion skipifsourcedoesntexist; Components: main
+Source: "{#StageDir}\VCRUNTIME140_1.dll";     DestDir: "{app}";  Flags: ignoreversion skipifsourcedoesntexist; Components: main
+Source: "{#StageDir}\MSVCP140.dll";           DestDir: "{app}";  Flags: ignoreversion skipifsourcedoesntexist; Components: main
+
 ; Documentation / readme
 Source: "{#StageDir}\README.md";              DestDir: "{app}";                              Flags: ignoreversion isreadme;    Components: main
 Source: "{#StageDir}\icon.png";               DestDir: "{app}";                              Flags: ignoreversion skipifsourcedoesntexist; Components: main
