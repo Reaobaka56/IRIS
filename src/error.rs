@@ -176,6 +176,17 @@ pub enum InterpError {
 
     #[error("program panicked: {msg}")]
     Panic { msg: String },
+
+    /// Wraps any runtime error with the source byte offset of the instruction
+    /// that triggered it, enabling source-excerpt rendering in diagnostics.
+    #[error("{inner}")]
+    Located {
+        inner: Box<InterpError>,
+        /// Byte offset into the original source of the failing instruction.
+        byte: u32,
+        /// Name of the function in which the error occurred.
+        func: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -235,7 +246,22 @@ impl Error {
                 PassError::UnresolvedInfer { .. } => "E0205",
             },
             Error::Codegen(_) => "E0300",
-            Error::Interp(_) => "E0400",
+            Error::Interp(ie) => {
+                // Unwrap Located to get the code of the inner error.
+                let inner = match ie {
+                    InterpError::Located { inner, .. } => inner.as_ref(),
+                    other => other,
+                };
+                match inner {
+                    InterpError::UndefinedValue { .. } => "E0401",
+                    InterpError::DivisionByZero => "E0402",
+                    InterpError::IndexOutOfBounds { .. } => "E0403",
+                    InterpError::TypeError { .. } => "E0404",
+                    InterpError::Unsupported { .. } => "E0405",
+                    InterpError::Panic { .. } => "E0406",
+                    InterpError::Located { .. } => "E0400",
+                }
+            }
             Error::Io(_) => "E0500",
         }
     }
@@ -563,7 +589,21 @@ mod tests {
     fn diagnostic_code_interp() {
         assert_eq!(
             Error::Interp(InterpError::DivisionByZero).diagnostic_code(),
-            "E0400"
+            "E0402"
+        );
+        assert_eq!(
+            Error::Interp(InterpError::IndexOutOfBounds { idx: 0, len: 0 }).diagnostic_code(),
+            "E0403"
+        );
+        // Located unwraps to the inner error code.
+        assert_eq!(
+            Error::Interp(InterpError::Located {
+                inner: Box::new(InterpError::DivisionByZero),
+                byte: 10,
+                func: "f".into(),
+            })
+            .diagnostic_code(),
+            "E0402"
         );
     }
 

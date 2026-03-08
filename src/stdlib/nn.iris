@@ -3,9 +3,9 @@
 // Multi-layer perceptron (MLP) with backpropagation, batch training,
 // and multiple optimizers. Suitable for classification and regression.
 //
-// Usage:  bring nn
+// Usage:  bring std.nn
 
-bring ml
+bring std.ml
 
 // ---------------------------------------------------------------------------
 // Network architecture: a network is represented as flat lists of
@@ -39,7 +39,7 @@ pub def mlp_create(layer_sizes: list<i64>) -> (list<f64>, list<f64>, list<i64>) 
     for l in 0..n_layers {
         val n_in = list_get(layer_sizes, l)
         val n_out = list_get(layer_sizes, l + 1)
-        list_push(shapes, encode_shape(n_in, n_out))
+        val _ = list_push(shapes, encode_shape(n_in, n_out))
         val w = xavier_init(n_in, n_out)
         val b = zero_bias(n_out)
         val wn = list_len(w)
@@ -83,7 +83,7 @@ pub def mlp_forward(
 ) -> list<list<f64>> {
     val n_layers = list_len(shapes)
     val activations: list<list<f64>> = list()
-    list_push(activations, input)
+    val _ = list_push(activations, input)
     var current = input
     for l in 0..n_layers {
         val s = list_get(shapes, l)
@@ -107,7 +107,7 @@ pub def mlp_forward(
         } else {
             if use_relu == 1 { apply_relu(z) } else { apply_sigmoid(z) }
         }
-        list_push(activations, a)
+        val _ = list_push(activations, a)
         current = a
     }
     activations
@@ -133,7 +133,6 @@ pub def mlp_backward(
     for i in 0..total_w {
         list_push(wg, 0.0)
     }
-    val total_b_len = list_len(shapes)
     var total_b = 0
     for l in 0..n_layers {
         total_b = total_b + shape_n_out(list_get(shapes, l))
@@ -178,9 +177,6 @@ pub def mlp_backward(
 
         // Compute delta for previous layer (if not input layer)
         if l > 0 {
-            val prev_s = list_get(shapes, l - 1)
-            val prev_n_out = shape_n_out(prev_s)
-            val a_prev = list_get(activations, l)
             val w_off_l = layer_weight_offset(shapes, l)
             val new_delta: list<f64> = list()
             for i in 0..n_in {

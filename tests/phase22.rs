@@ -112,16 +112,16 @@ def f() -> i64 {
 #[test]
 fn test_array_of_floats() {
     let src = r#"
-def f() -> f32 {
+def f() -> f64 {
     val arr = [1.0, 2.5, 3.14]
     arr[1]
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
     // The value should be approximately 2.5
-    let v: f32 = out.trim().parse().expect("should parse as float");
+    let v: f64 = out.trim().parse().expect("should parse as float");
     assert!(
-        (v - 2.5f32).abs() < 1e-5,
+        (v - 2.5f64).abs() < 1e-5,
         "arr[1] should be 2.5, got: {}",
         v
     );

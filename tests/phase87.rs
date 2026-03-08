@@ -37,7 +37,7 @@ def main() -> i64 { 0 }
 fn test_kernel_attr_marked_as_kernel() {
     let src = r#"
 @kernel
-def my_kernel(x: f32) -> f32 { x * 2.0 }
+def my_kernel(x: f32) -> f32 { x * (2.0 to f32) }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
@@ -111,7 +111,7 @@ fn test_multiple_kernels_annotated() {
 @kernel
 def kernel_a(x: f32) -> f32 { x }
 @kernel
-def kernel_b(x: f32) -> f32 { x * 2.0 }
+def kernel_b(x: f32) -> f32 { x * (2.0 to f32) }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);
@@ -147,7 +147,7 @@ def main() -> i64 { 0 }
 fn test_kernel_float_arithmetic() {
     let src = r#"
 @kernel
-def scale(x: f32) -> f32 { x * 2.0 }
+def scale(x: f32) -> f32 { x * (2.0 to f32) }
 def main() -> i64 { 0 }
 "#;
     let out = cuda(src);

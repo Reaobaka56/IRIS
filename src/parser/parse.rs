@@ -1372,13 +1372,13 @@ impl<'t> Parser<'t> {
     }
 
     fn parse_and_expr(&mut self) -> Result<AstExpr, ParseError> {
-        let mut lhs = self.parse_add_expr()?;
+        let mut lhs = self.parse_cmp_expr()?;
         loop {
             if !matches!(self.peek_tok(), Token::AmpAmp) {
                 break;
             }
             self.advance();
-            let rhs = self.parse_add_expr()?;
+            let rhs = self.parse_cmp_expr()?;
             let span = lhs.span().merge(rhs.span());
             lhs = AstExpr::BinOp {
                 op: AstBinOp::And,
@@ -1435,7 +1435,7 @@ impl<'t> Parser<'t> {
 
     /// Parses a cmp expression, then checks for a postfix `to Type` cast.
     fn parse_cast_expr(&mut self) -> Result<AstExpr, ParseError> {
-        let mut expr = self.parse_cmp_expr()?;
+        let mut expr = self.parse_unary()?;
         while matches!(self.peek_tok(), Token::To) {
             let start = expr.span();
             self.advance(); // consume 'to'
@@ -1451,7 +1451,7 @@ impl<'t> Parser<'t> {
     }
 
     fn parse_cmp_expr(&mut self) -> Result<AstExpr, ParseError> {
-        let mut lhs = self.parse_unary()?;
+        let mut lhs = self.parse_add_expr()?;
         loop {
             let op = match self.peek_tok() {
                 Token::EqEq => AstBinOp::CmpEq,
@@ -1463,7 +1463,7 @@ impl<'t> Parser<'t> {
                 _ => break,
             };
             self.advance();
-            let rhs = self.parse_unary()?;
+            let rhs = self.parse_add_expr()?;
             let span = lhs.span().merge(rhs.span());
             lhs = AstExpr::BinOp {
                 op,

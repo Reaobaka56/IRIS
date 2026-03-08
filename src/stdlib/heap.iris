@@ -22,7 +22,7 @@ pub def heap_pop_val(h: MinHeap) -> i64 {
 
 // Returns a new heap with the minimum element removed.
 pub def heap_pop_heap(h: MinHeap) -> MinHeap {
-    var new_data = list()
+    var new_data: list<i64> = list()
     var i = 1
     val n = list_len(h.data)
     while i < n {
@@ -34,7 +34,7 @@ pub def heap_pop_heap(h: MinHeap) -> MinHeap {
 
 // Inserts v into the heap maintaining sorted (ascending) order.
 pub def heap_push(h: MinHeap, v: i64) -> MinHeap {
-    var new_data = list()
+    var new_data: list<i64> = list()
     var inserted = 0
     var i = 0
     val n = list_len(h.data)

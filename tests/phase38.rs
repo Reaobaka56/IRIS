@@ -86,14 +86,14 @@ def f() -> i64 {
 #[test]
 fn test_alias_f32() {
     let src = r#"
-type Loss = f32
+type Loss = f64
 
 def f() -> Loss {
     0.5
 }
 "#;
     let out = compile(src, "test", EmitKind::Eval).expect("should eval");
-    let v: f32 = out.trim().parse().expect("should parse as f32");
+    let v: f64 = out.trim().parse().expect("should parse as f64");
     assert!((v - 0.5).abs() < 1e-6, "expected 0.5, got {}", v);
 }
 

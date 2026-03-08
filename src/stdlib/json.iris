@@ -18,7 +18,7 @@ pub def json_arr(items: list<str>) -> str {
 
 // Build a JSON object from parallel key/value lists (values already encoded).
 pub def json_obj(keys: list<str>, vals: list<str>) -> str {
-    var parts = list()
+    var parts: list<str> = list()
     var i = 0
     val n = list_len(keys)
     while i < n {
@@ -35,7 +35,8 @@ pub def json_obj(keys: list<str>, vals: list<str>) -> str {
 // A parsed object is list<str> [k0, v0, k1, v1, ...].
 
 pub def json_new() -> list<str> {
-    list()
+    val empty: list<str> = list()
+    empty
 }
 
 // Returns the value for key, or "" if not found.
@@ -53,7 +54,7 @@ pub def json_get(pairs: list<str>, key: str) -> str {
 
 // Adds or updates a key/value pair (string value). Returns new pairs list.
 pub def json_set(pairs: list<str>, key: str, val_str: str) -> list<str> {
-    var new_pairs = list()
+    var new_pairs: list<str> = list()
     var found = 0
     var i = 0
     val n = list_len(pairs)
@@ -92,7 +93,7 @@ pub def json_parse(text: str) -> list<str> {
     val inner = if n >= 2 { slice(text, 1, n - 1) } else { text }
     // Split by "," to get "key":"value" tokens
     val tokens = split(inner, ",")
-    var pairs = list()
+    var pairs: list<str> = list()
     var i = 0
     val nt = list_len(tokens)
     while i < nt {

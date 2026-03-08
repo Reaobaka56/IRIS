@@ -92,6 +92,25 @@ impl super::Pass for InlinePass {
                     }
                 }
                 module.functions[caller_idx].blocks[block_idx].instrs = new_instrs;
+
+                // Propagate alias_map to all other blocks in the function.
+                // IRIS IR allows cross-block references (entry-block values used
+                // directly in later blocks without block-param threading), so any
+                // inlined call result must be globally replaced everywhere.
+                if !alias_map.is_empty() {
+                    let other_blocks = module.functions[caller_idx].blocks.len();
+                    for other_idx in 0..other_blocks {
+                        if other_idx == block_idx {
+                            continue;
+                        }
+                        for instr in &mut module.functions[caller_idx].blocks[other_idx].instrs {
+                            apply_replacements(instr, &alias_map);
+                        }
+                        // Also update block params (their args in Br/CondBr are
+                        // instructions, but the params themselves are definitions —
+                        // no replacement needed there).
+                    }
+                }
             }
         }
         Ok(())
@@ -240,6 +259,19 @@ pub(crate) fn set_result(instr: &mut IrInstr, v: ValueId) {
         IrInstr::EnvVar { result, .. } => *result = v,
         IrInstr::GetVariantTag { result, .. } => *result = v,
         IrInstr::StrEq { result, .. } => *result = v,
+        IrInstr::StrSplit { result, .. } => *result = v,
+        IrInstr::StrJoin { result, .. } => *result = v,
+        IrInstr::NowMs { result } => *result = v,
+        IrInstr::SleepMs { result, .. } => *result = v,
+        IrInstr::DbOpen { result, .. } => *result = v,
+        IrInstr::DbExec { result, .. } => *result = v,
+        IrInstr::DbQuery { result, .. } => *result = v,
+        IrInstr::DbClose { result, .. } => *result = v,
+        IrInstr::TcpConnect { result, .. } => *result = v,
+        IrInstr::TcpListen { result, .. } => *result = v,
+        IrInstr::TcpAccept { result, .. } => *result = v,
+        IrInstr::TcpRead { result, .. } => *result = v,
+        IrInstr::BuiltinCall { result, .. } => *result = v,
         _ => {}
     }
 }

@@ -295,6 +295,10 @@ struct Interpreter<'m> {
     trace_source: String,
     /// Gradient accumulator for reverse-mode AD (populated by Backward).
     tape_grads: HashMap<ValueId, f64>,
+    /// Byte offset of the most-recently executed instruction (for error location).
+    last_byte: Option<u32>,
+    /// Name of the function currently executing (for error location).
+    cur_func: String,
 }
 
 impl<'m> Interpreter<'m> {
@@ -308,10 +312,35 @@ impl<'m> Interpreter<'m> {
             trace_func: String::new(),
             trace_source: String::new(),
             tape_grads: HashMap::new(),
+            last_byte: None,
+            cur_func: String::new(),
+        }
+    }
+
+    /// Wraps `e` with `InterpError::Located` if a source span is available.
+    fn located(&self, e: InterpError) -> InterpError {
+        if let Some(byte) = self.last_byte {
+            InterpError::Located {
+                inner: Box::new(e),
+                byte,
+                func: self.cur_func.clone(),
+            }
+        } else {
+            e
         }
     }
 
     fn run(
+        &mut self,
+        func: &IrFunction,
+        entry_args: &[IrValue],
+    ) -> Result<Vec<IrValue>, InterpError> {
+        self.cur_func = func.name.clone();
+        self.run_inner(func, entry_args)
+            .map_err(|e| self.located(e))
+    }
+
+    fn run_inner(
         &mut self,
         func: &IrFunction,
         entry_args: &[IrValue],
@@ -339,6 +368,11 @@ impl<'m> Interpreter<'m> {
                             self.opts.max_steps
                         ),
                     });
+                }
+
+                // Track the source span of the current instruction for error reporting.
+                if let Some(byte) = func.span_table.get(current.0, instr_idx) {
+                    self.last_byte = Some(byte);
                 }
 
                 // Emit a trace entry whenever this instruction has a recorded span.

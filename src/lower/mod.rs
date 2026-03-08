@@ -1058,7 +1058,35 @@ impl<'m> Lowerer<'m> {
             } => {
                 // Check if base is a bare identifier naming an enum → variant construction with data.
                 // e.g. `Shape.Circle(3.14)` is parsed as MethodCall(base=Ident("Shape"), method="Circle", args=[3.14])
+                // Also handle module-qualified calls: `utils.normalize(x)` where `utils` is not a
+                // local variable but `normalize` is a known function (imported via `bring`).
                 if let AstExpr::Ident(base_ident) = base.as_ref() {
+                    // Module-qualified call: base not in scope, but method is a known function.
+                    if !self.scope.contains_key(&base_ident.name)
+                        && self.module.enum_def(&base_ident.name).is_none()
+                        && self.module.struct_def(&base_ident.name).is_none()
+                    {
+                        let ret_ty = self.fn_sigs.get(method.as_str()).cloned()
+                            .or_else(|| self.mono_sigs.borrow().get(method.as_str()).cloned());
+                        if let Some(ret_ty) = ret_ty {
+                            let mut arg_vals = Vec::with_capacity(args.len());
+                            for arg in args {
+                                let (v, _) = self.lower_expr(arg)?;
+                                arg_vals.push(v);
+                            }
+                            let result = self.builder.fresh_value();
+                            self.builder.push_instr(
+                                IrInstr::Call {
+                                    result: Some(result),
+                                    callee: method.clone(),
+                                    args: arg_vals,
+                                    result_ty: Some(ret_ty.clone()),
+                                },
+                                Some(ret_ty.clone()),
+                            );
+                            return Ok((result, ret_ty));
+                        }
+                    }
                     if let Some(variants) = self.module.enum_def(&base_ident.name) {
                         let variants = variants.clone();
                         if let Some(variant_idx) = variants.iter().position(|v| v == method) {
@@ -3968,10 +3996,17 @@ impl<'m> Lowerer<'m> {
                 arg_tys.push(ty);
             }
 
-            // Build type substitution by matching type_params against arg types.
+            // Build type substitution by matching each parameter's declared type
+            // against the concrete argument type.  Only params whose type IS a
+            // type parameter (e.g. `a: T`) contribute to the substitution;
+            // params with concrete types (e.g. `cond: bool`) are skipped.
             let mut subs: HashMap<String, IrType> = HashMap::new();
-            for (tp_name, arg_ty) in generic_fn.type_params.iter().zip(arg_tys.iter()) {
-                subs.insert(tp_name.clone(), arg_ty.clone());
+            for (param, arg_ty) in generic_fn.params.iter().zip(arg_tys.iter()) {
+                if let crate::parser::ast::AstType::Named(n, _) = &param.ty {
+                    if generic_fn.type_params.contains(n) {
+                        subs.entry(n.clone()).or_insert_with(|| arg_ty.clone());
+                    }
+                }
             }
 
             // Resolve the concrete return type.
@@ -4112,6 +4147,18 @@ impl<'m> Lowerer<'m> {
             .cloned()
             .or_else(|| self.mono_sigs.borrow().get(&callee.name).cloned())
             .unwrap_or(IrType::Infer);
+
+        // If we still have Infer here, the callee is not defined anywhere.
+        // Emit a compile-time error rather than silently producing bad IR.
+        if ret_ty == IrType::Infer
+            && !self.module.extern_fns.iter().any(|e| e.name == callee.name)
+        {
+            return Err(LowerError::UndefinedVariable {
+                name: callee.name.clone(),
+                span,
+                suggestion: None,
+            });
+        }
 
         // Build argument list, filling in defaults for omitted trailing args.
         let defaults = self.fn_defaults.get(&callee.name).cloned();
@@ -5771,6 +5818,30 @@ impl<'m> Lowerer<'m> {
         // 1. Evaluate start and end once in the current (pre-loop) block.
         let (start_val, loop_var_ty) = self.lower_expr(start)?;
         let (end_val, _) = self.lower_expr(end)?;
+
+        // Defensive: the loop variable must be an integer scalar.  A non-integer
+        // type here usually means the start expression was something unexpected
+        // (e.g. a bare side-effecting call before the loop that the parser
+        // attached to start).  Fail clearly rather than propagating a bad type
+        // through all the block params.
+        if !matches!(
+            loop_var_ty,
+            IrType::Scalar(
+                DType::I64
+                    | DType::I32
+                    | DType::U64
+                    | DType::U32
+                    | DType::USize
+                    | DType::I8
+                    | DType::U8
+            )
+        ) {
+            return Err(LowerError::TypeMismatch {
+                expected: "integer scalar (for-loop range variable)".to_string(),
+                found: format!("{}", loop_var_ty),
+                span,
+            });
+        }
 
         // 2. Pre-scan body for rebounded variables; loop var is always rebound.
         let mut rebound = find_rebound_vars(body);

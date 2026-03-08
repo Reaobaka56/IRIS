@@ -92,6 +92,7 @@ fn extract_span(err: &Error) -> Option<(u32, u32)> {
             LowerError::InvalidLayerParam { span, .. } => Some((span.start.0, span.end.0)),
             LowerError::UnknownOp { .. } => None,
         },
+        Error::Interp(InterpError::Located { byte, .. }) => Some((*byte, *byte + 1)),
         _ => None,
     }
 }
@@ -144,15 +145,22 @@ fn error_hint(err: &Error) -> Option<&'static str> {
             }
             _ => None,
         },
-        Error::Interp(ie) => match ie {
-            InterpError::DivisionByZero => {
-                Some("check that the divisor is not zero before dividing")
+        Error::Interp(ie) => {
+            // Unwrap Located to get hints for the inner error.
+            let inner = match ie {
+                InterpError::Located { inner, .. } => inner.as_ref(),
+                other => other,
+            };
+            match inner {
+                InterpError::DivisionByZero => {
+                    Some("check that the divisor is not zero before dividing")
+                }
+                InterpError::IndexOutOfBounds { .. } => {
+                    Some("use 'len(list)' to check bounds before indexing")
+                }
+                _ => None,
             }
-            InterpError::IndexOutOfBounds { .. } => {
-                Some("use 'len(list)' to check bounds before indexing")
-            }
-            _ => None,
-        },
+        }
         _ => None,
     }
 }

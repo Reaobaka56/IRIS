@@ -224,6 +224,16 @@ impl FileCompiler {
     fn merge_dep(&self, main_ast: &mut AstModule, dep: AstModule) {
         for func in dep.functions {
             if func.is_pub {
+                // Warn if a function with the same name is already defined.
+                let collision = main_ast.functions.iter().any(|f| f.name.name == func.name.name);
+                if collision {
+                    eprintln!(
+                        "\x1b[1;33mwarning\x1b[0m: function '{}' is defined in multiple \
+                         brought modules; use module-qualified syntax (e.g. \
+                         `module.{}(...)`) to disambiguate",
+                        func.name.name, func.name.name
+                    );
+                }
                 main_ast.functions.push(func);
             }
         }

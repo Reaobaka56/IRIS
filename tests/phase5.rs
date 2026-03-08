@@ -72,7 +72,7 @@ fn test_cse_deduplicates_const() {
     // Two identical `1.0` literals produce two `const.f` instructions before CSE.
     // After CSE only one should survive.
     let src = r#"
-def samecst(x: f32) -> f32 {
+def samecst(x: f64) -> f64 {
     val a = 1.0;
     val b = 1.0;
     a + b

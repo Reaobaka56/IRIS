@@ -174,7 +174,7 @@ impl ReplState {
                     bring_line,
                     self.top_level.join("\n")
                 );
-                match crate::compile(&test_src, "repl", crate::EmitKind::Ir) {
+                match crate::compile_multi(&[("repl", &test_src)], "repl", crate::EmitKind::Ir) {
                     Ok(_) => {
                         // Prepend to top-level so it's available in all future evals.
                         self.top_level.insert(0, bring_line.clone());
@@ -218,7 +218,7 @@ impl ReplState {
                     format!("def __eval_{n}() -> i64 {{\n    {ctx}\n    {arg}\n}}")
                 };
                 let src = self.full_source_for_eval(&eval_fn);
-                match crate::compile(&src, "repl", EmitKind::Ir) {
+                match crate::compile_multi(&[("repl", &src)], "repl", EmitKind::Ir) {
                     Ok(ir) => ir.trim_end().to_owned(),
                     Err(e) => format!("error: {}", e),
                 }
@@ -259,7 +259,7 @@ impl ReplState {
             format!("def __eval_{n}() -> {ret_ty} {{\n    {ctx}\n    {expr}\n}}")
         };
         let src = self.full_source_for_eval(&eval_fn);
-        crate::compile(&src, "repl", EmitKind::Eval).ok()
+        crate::compile_multi(&[("repl", &src)], "repl", EmitKind::Eval).ok()
     }
 
     fn eval_expression(&mut self, expr: &str) -> Result<String, Error> {
@@ -282,7 +282,7 @@ impl ReplState {
         };
         let src = self.full_source_for_eval(&eval_fn);
         // This will return the error.
-        crate::compile(&src, "repl", EmitKind::Eval)?;
+        crate::compile_multi(&[("repl", &src)], "repl", EmitKind::Eval)?;
         // Unreachable — the line above always errors when we get here.
         Ok(String::new())
     }
@@ -298,7 +298,7 @@ impl ReplState {
             "{}\ndef __repl_validate__() -> i64 {{ 0 }}",
             self.top_level.join("\n")
         );
-        if let Err(e) = crate::compile(&test_src, "repl", EmitKind::Ir) {
+        if let Err(e) = crate::compile_multi(&[("repl", &test_src)], "repl", EmitKind::Ir) {
             // Roll back.
             self.top_level.pop();
             return Err(e);
@@ -329,12 +329,185 @@ impl ReplState {
             self.top_level.join("\n"),
             ctx
         );
-        if let Err(e) = crate::compile(&test_src, "repl", EmitKind::Ir) {
+        if let Err(e) = crate::compile_multi(&[("repl", &test_src)], "repl", EmitKind::Ir) {
             self.context.pop();
             return Err(e);
         }
 
         Ok(format!("defined: {}", name))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn repl() -> ReplState {
+        ReplState::new()
+    }
+
+    #[test]
+    fn eval_integer_literal() {
+        let mut r = repl();
+        assert_eq!(r.eval("42").unwrap(), "42");
+    }
+
+    #[test]
+    fn eval_float_literal() {
+        let mut r = repl();
+        assert_eq!(r.eval("3.14").unwrap(), "3.14");
+    }
+
+    #[test]
+    fn eval_bool_literal() {
+        let mut r = repl();
+        assert_eq!(r.eval("true").unwrap(), "true");
+        assert_eq!(r.eval("false").unwrap(), "false");
+    }
+
+    #[test]
+    fn eval_arithmetic() {
+        let mut r = repl();
+        assert_eq!(r.eval("2 + 3").unwrap(), "5");
+        assert_eq!(r.eval("10 - 4").unwrap(), "6");
+        assert_eq!(r.eval("3 * 7").unwrap(), "21");
+    }
+
+    #[test]
+    fn add_context_val() {
+        let mut r = repl();
+        assert!(r.eval("val x = 10").is_ok());
+        // x should now be in scope
+        assert_eq!(r.eval("x + 1").unwrap(), "11");
+    }
+
+    #[test]
+    fn add_context_var() {
+        let mut r = repl();
+        assert!(r.eval("var y = 5").is_ok());
+        assert_eq!(r.eval("y * 2").unwrap(), "10");
+    }
+
+    #[test]
+    fn add_top_level_def() {
+        let mut r = repl();
+        r.eval("def double(x: i64) -> i64 { x * 2 }").unwrap();
+        assert_eq!(r.eval("double(7)").unwrap(), "14");
+    }
+
+    #[test]
+    fn add_invalid_def_rolls_back() {
+        let mut r = repl();
+        // This def references an undefined function — should fail.
+        let result = r.eval("def bad() -> i64 { totally_undefined_fn() }");
+        assert!(result.is_err());
+        // Top-level should be empty after rollback.
+        assert!(r.top_level_defs().is_empty());
+    }
+
+    #[test]
+    fn add_invalid_context_rolls_back() {
+        let mut r = repl();
+        let result = r.eval("val z = totally_undefined_fn()");
+        assert!(result.is_err());
+        assert!(r.context_bindings().is_empty());
+    }
+
+    #[test]
+    fn command_help() {
+        let mut r = repl();
+        let out = r.eval(":help").unwrap();
+        assert!(out.contains(":help"));
+        assert!(out.contains(":quit"));
+    }
+
+    #[test]
+    fn command_env_empty() {
+        let mut r = repl();
+        let out = r.eval(":env").unwrap();
+        assert_eq!(out, "(empty session)");
+    }
+
+    #[test]
+    fn command_env_with_state() {
+        let mut r = repl();
+        r.eval("val a = 1").unwrap();
+        let out = r.eval(":env").unwrap();
+        assert!(out.contains("a"));
+    }
+
+    #[test]
+    fn command_reset() {
+        let mut r = repl();
+        r.eval("val x = 99").unwrap();
+        r.eval(":reset").unwrap();
+        assert!(r.context_bindings().is_empty());
+        assert!(r.top_level_defs().is_empty());
+    }
+
+    #[test]
+    fn command_type_integer() {
+        let mut r = repl();
+        let out = r.eval(":type 42").unwrap();
+        assert_eq!(out, ": i64");
+    }
+
+    #[test]
+    fn command_type_integer_expr() {
+        let mut r = repl();
+        let out = r.eval(":type 10 + 5").unwrap();
+        assert_eq!(out, ": i64");
+    }
+
+    #[test]
+    fn command_history() {
+        let mut r = repl();
+        r.eval("1 + 1").unwrap();
+        r.eval("2 + 2").unwrap();
+        let out = r.eval(":history").unwrap();
+        assert!(out.contains("1 + 1"));
+        assert!(out.contains("2 + 2"));
+    }
+
+    #[test]
+    fn bring_std_math() {
+        let mut r = repl();
+        // :bring should load stdlib and make its functions available
+        let out = r.eval(":bring std.math").unwrap();
+        assert!(out.contains("std.math"), "expected 'std.math' in: {}", out);
+        // After bring, stdlib functions must be callable
+        let result = r.eval("gcd(12, 8)");
+        assert!(result.is_ok(), "gcd unavailable after :bring std.math: {:?}", result);
+    }
+
+    #[test]
+    fn bring_short_form() {
+        let mut r = repl();
+        // `:bring math` should auto-prefix to `std.math`
+        let out = r.eval(":bring math").unwrap();
+        assert!(out.contains("std.math"), "expected 'std.math' in: {}", out);
+    }
+
+    #[test]
+    fn elapsed_time_set_after_eval() {
+        let mut r = repl();
+        assert!(r.last_elapsed().is_none());
+        r.eval("1 + 1").unwrap();
+        assert!(r.last_elapsed().is_some());
+    }
+
+    #[test]
+    fn empty_input_returns_empty() {
+        let mut r = repl();
+        assert_eq!(r.eval("").unwrap(), "");
+        assert_eq!(r.eval("   ").unwrap(), "");
+    }
+
+    #[test]
+    fn multiline_def_via_eval() {
+        let mut r = repl();
+        r.eval("def add(a: i64, b: i64) -> i64 {\n    a + b\n}").unwrap();
+        assert_eq!(r.eval("add(3, 4)").unwrap(), "7");
     }
 }
 

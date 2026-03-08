@@ -204,7 +204,21 @@ void iris_print_bool(int v)     { printf("%s\n", v ? "true" : "false"); }
 void iris_print_str(const char* s)  { printf("%s\n", s ? s : ""); }
 
 void iris_panic(const char* msg) {
-    fprintf(stderr, "panic: %s\n", msg);
+    fprintf(stderr, "\x1b[1;31mpanic\x1b[0m: %s\n", msg ? msg : "(null)");
+    fflush(stderr);
+    abort();
+}
+
+/* iris_panic_at — like iris_panic but includes a compile-time source location
+ * string (e.g. "in function 'foo'") embedded by the IRIS LLVM codegen. */
+void iris_panic_at(const char* msg, const char* location) {
+    if (location && *location) {
+        fprintf(stderr, "\x1b[1;31mpanic\x1b[0m: %s\n    at %s\n",
+                msg ? msg : "(null)", location);
+    } else {
+        fprintf(stderr, "\x1b[1;31mpanic\x1b[0m: %s\n", msg ? msg : "(null)");
+    }
+    fflush(stderr);
     abort();
 }
 
@@ -3348,9 +3362,17 @@ int64_t iris_thread_count(void) {
 
 #define RC_TABLE_BUCKETS 4096
 
+/* Bacon-Rajan cycle GC color codes. */
+#define RC_COLOR_BLACK  0   /* live, not a candidate */
+#define RC_COLOR_GRAY   1   /* possible cycle root */
+#define RC_COLOR_WHITE  2   /* unreachable, collect me */
+
 typedef struct RcEntry {
     void*          ptr;
     int64_t        count;
+    int64_t        scan_count; /* scratch counter used by cycle collector */
+    int            color;
+    int            buffered;   /* 1 if in possible_roots */
     struct RcEntry* next;
 } RcEntry;
 
@@ -3358,12 +3380,21 @@ static RcEntry* rc_table[RC_TABLE_BUCKETS];
 static int64_t  gc_total_allocated = 0;
 static int64_t  gc_total_freed = 0;
 
+/* Global mutex protecting the rc_table from concurrent retain/release calls. */
+static pthread_mutex_t rc_global_mu = PTHREAD_MUTEX_INITIALIZER;
+
+/* Possible cycle roots (Gray nodes). */
+#define POSSIBLE_ROOTS_MAX 512
+static void* possible_roots[POSSIBLE_ROOTS_MAX];
+static int   possible_roots_count = 0;
+
 static size_t rc_hash(void* ptr) {
     uintptr_t v = (uintptr_t)ptr;
     v = (v >> 4) ^ (v >> 16);
     return (size_t)(v % RC_TABLE_BUCKETS);
 }
 
+/* Must be called with rc_global_mu held. */
 static RcEntry* rc_find(void* ptr) {
     size_t h = rc_hash(ptr);
     RcEntry* e = rc_table[h];
@@ -3374,11 +3405,15 @@ static RcEntry* rc_find(void* ptr) {
     return NULL;
 }
 
+/* Must be called with rc_global_mu held. */
 static RcEntry* rc_insert(void* ptr) {
     size_t h = rc_hash(ptr);
     RcEntry* e = xmalloc(sizeof(RcEntry));
     e->ptr = ptr;
     e->count = 1;
+    e->scan_count = 0;
+    e->color = RC_COLOR_BLACK;
+    e->buffered = 0;
     e->next = rc_table[h];
     rc_table[h] = e;
     gc_total_allocated++;
@@ -3387,26 +3422,32 @@ static RcEntry* rc_insert(void* ptr) {
 
 void iris_retain(void* ptr) {
     if (!ptr) return;
+    pthread_mutex_lock(&rc_global_mu);
     RcEntry* e = rc_find(ptr);
     if (e) {
         e->count++;
+        e->color = RC_COLOR_BLACK; /* back to live */
     } else {
         rc_insert(ptr);
     }
+    pthread_mutex_unlock(&rc_global_mu);
 }
 
 static void rc_deep_free(IrisVal* val);
 
 void iris_release(void* ptr) {
     if (!ptr) return;
+    pthread_mutex_lock(&rc_global_mu);
     RcEntry* e = rc_find(ptr);
-    if (!e) return;
+    if (!e) { pthread_mutex_unlock(&rc_global_mu); return; }
     e->count--;
     if (e->count <= 0) {
-        /* Free the value deeply. */
+        /* Definite garbage: deep-free and remove from table. */
+        e->color = RC_COLOR_BLACK;
+        pthread_mutex_unlock(&rc_global_mu);
         rc_deep_free((IrisVal*)ptr);
+        pthread_mutex_lock(&rc_global_mu);
         gc_total_freed++;
-        /* Remove from table. */
         size_t h = rc_hash(ptr);
         RcEntry** pp = &rc_table[h];
         while (*pp) {
@@ -3414,11 +3455,21 @@ void iris_release(void* ptr) {
                 RcEntry* tmp = *pp;
                 *pp = tmp->next;
                 free(tmp);
-                return;
+                break;
             }
             pp = &((*pp)->next);
         }
+    } else {
+        /* Count dropped but still > 0: possible cycle root. */
+        if (e->color != RC_COLOR_GRAY && !e->buffered) {
+            e->color = RC_COLOR_GRAY;
+            e->buffered = 1;
+            if (possible_roots_count < POSSIBLE_ROOTS_MAX) {
+                possible_roots[possible_roots_count++] = ptr;
+            }
+        }
     }
+    pthread_mutex_unlock(&rc_global_mu);
 }
 
 static void rc_deep_free(IrisVal* val) {
@@ -3480,19 +3531,116 @@ static void rc_deep_free(IrisVal* val) {
 
 int64_t iris_refcount(void* ptr) {
     if (!ptr) return 0;
+    pthread_mutex_lock(&rc_global_mu);
     RcEntry* e = rc_find(ptr);
-    return e ? e->count : 0;
+    int64_t c = e ? e->count : 0;
+    pthread_mutex_unlock(&rc_global_mu);
+    return c;
 }
 
-void iris_gc_collect(void) {
-    /* Sweep: free all entries with count <= 0. */
+/* ── Bacon-Rajan cycle collector ─────────────────────────────────────────── */
+
+/* Call fn(child_ptr) for every IrisVal* child owned by val. */
+typedef void (*ChildFn)(void*, void*);
+static void rc_each_child(IrisVal* val, ChildFn fn, void* ctx) {
+    if (!val) return;
+    switch (val->tag) {
+        case IRIS_TAG_LIST: {
+            IrisList* list = (IrisList*)val->ptr;
+            if (list) for (size_t i = 0; i < list->len; i++) fn(list->data[i], ctx);
+            break;
+        }
+        case IRIS_TAG_MAP: {
+            IrisMap* m = (IrisMap*)val->ptr;
+            if (m) for (size_t i = 0; i < m->n_buckets; i++)
+                for (IrisMapEntry* e = m->buckets[i]; e; e = e->next) fn(e->val, ctx);
+            break;
+        }
+        case IRIS_TAG_OPTION: {
+            IrisOption* opt = (IrisOption*)val->ptr;
+            if (opt && opt->has_value) fn(opt->value, ctx);
+            break;
+        }
+        case IRIS_TAG_RESULT: {
+            IrisResult* res = (IrisResult*)val->ptr;
+            if (res) fn(res->value, ctx);
+            break;
+        }
+        default: break;
+    }
+}
+
+/* Phase 2 helper: decrement scan_count of child. */
+static void rc_mark_gray_child(void* child, void* ctx) {
+    (void)ctx;
+    if (!child) return;
+    RcEntry* e = rc_find(child);
+    if (e) e->scan_count--;
+}
+
+/* Phase 3 helper: restore children to BLACK (external ref exists). */
+static void rc_scan_black_child(void* child, void* ctx);
+static void rc_scan_black_node(RcEntry* e) {
+    if (!e || e->color == RC_COLOR_BLACK) return;
+    e->color = RC_COLOR_BLACK;
+    rc_each_child((IrisVal*)e->ptr, rc_scan_black_child, NULL);
+}
+static void rc_scan_black_child(void* child, void* ctx) {
+    (void)ctx;
+    if (!child) return;
+    RcEntry* e = rc_find(child);
+    if (e) {
+        e->scan_count++;
+        rc_scan_black_node(e);
+    }
+}
+
+/* Cycle collection using the Bacon-Rajan trial-deletion algorithm.
+ * Must be called with rc_global_mu held. */
+static void iris_gc_cycle_collect_locked(void) {
+    if (possible_roots_count == 0) return;
+
+    /* Phase 1: Init scan_count from live count for all gray roots. */
+    for (int i = 0; i < possible_roots_count; i++) {
+        RcEntry* e = rc_find(possible_roots[i]);
+        if (e && e->color == RC_COLOR_GRAY) e->scan_count = e->count;
+    }
+
+    /* Phase 2: For each gray root, decrement scan_count of each child pointer.
+     * This simulates removing the internal (intra-cycle) references. */
+    for (int i = 0; i < possible_roots_count; i++) {
+        RcEntry* e = rc_find(possible_roots[i]);
+        if (e && e->color == RC_COLOR_GRAY)
+            rc_each_child((IrisVal*)e->ptr, rc_mark_gray_child, NULL);
+    }
+
+    /* Phase 3: Nodes with scan_count > 0 have external references — mark BLACK.
+     * Nodes with scan_count == 0 are unreachable from outside — mark WHITE. */
+    for (int i = 0; i < possible_roots_count; i++) {
+        RcEntry* e = rc_find(possible_roots[i]);
+        if (!e) continue;
+        e->buffered = 0;
+        if (e->color == RC_COLOR_GRAY) {
+            if (e->scan_count > 0) {
+                rc_scan_black_node(e); /* restore external refs transitively */
+            } else {
+                e->color = RC_COLOR_WHITE;
+            }
+        }
+    }
+    possible_roots_count = 0;
+
+    /* Phase 4: Free all White (cyclic garbage) nodes. */
     for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
         RcEntry** pp = &rc_table[h];
         while (*pp) {
-            if ((*pp)->count <= 0) {
+            if ((*pp)->color == RC_COLOR_WHITE) {
                 RcEntry* tmp = *pp;
                 *pp = tmp->next;
+                /* Deep-free outside the lock to avoid recursive acquire. */
+                pthread_mutex_unlock(&rc_global_mu);
                 rc_deep_free((IrisVal*)tmp->ptr);
+                pthread_mutex_lock(&rc_global_mu);
                 gc_total_freed++;
                 free(tmp);
             } else {
@@ -3500,6 +3648,29 @@ void iris_gc_collect(void) {
             }
         }
     }
+}
+
+void iris_gc_collect(void) {
+    pthread_mutex_lock(&rc_global_mu);
+    /* First run the cycle collector to break cycles, then sweep zero-count entries. */
+    iris_gc_cycle_collect_locked();
+    for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
+        RcEntry** pp = &rc_table[h];
+        while (*pp) {
+            if ((*pp)->count <= 0) {
+                RcEntry* tmp = *pp;
+                *pp = tmp->next;
+                pthread_mutex_unlock(&rc_global_mu);
+                rc_deep_free((IrisVal*)tmp->ptr);
+                pthread_mutex_lock(&rc_global_mu);
+                gc_total_freed++;
+                free(tmp);
+            } else {
+                pp = &((*pp)->next);
+            }
+        }
+    }
+    pthread_mutex_unlock(&rc_global_mu);
 }
 
 int64_t iris_gc_stats_allocated(void) {
@@ -3514,6 +3685,9 @@ int64_t iris_gc_stats_freed(void) {
  * Also frees the RC side-table itself.  Registered via atexit() in the
  * constructor below so that sanitizers (ASAN/Valgrind) report a clean heap. */
 static void iris_runtime_cleanup(void) {
+    /* Run cycle collector one final time before cleanup. */
+    pthread_mutex_lock(&rc_global_mu);
+    iris_gc_cycle_collect_locked();
     for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
         RcEntry* e = rc_table[h];
         while (e) {
@@ -3528,6 +3702,7 @@ static void iris_runtime_cleanup(void) {
         }
         rc_table[h] = NULL;
     }
+    pthread_mutex_unlock(&rc_global_mu);
 }
 
 #ifdef _MSC_VER

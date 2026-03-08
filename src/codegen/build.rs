@@ -214,9 +214,16 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
 }
 
 /// Find clang — required for compiling LLVM IR, C code, and linking.
-/// Search order: next to iris binary (bundled), Inno Setup install dir,
-/// system LLVM, PATH.
+/// Search order: IRIS_CLANG env var, next to iris binary (bundled),
+/// Inno Setup install dir, system LLVM, PATH.
 pub(crate) fn find_clang() -> String {
+    // Env-var override takes precedence over all automatic detection.
+    if let Ok(v) = std::env::var("IRIS_CLANG") {
+        if !v.is_empty() {
+            return v;
+        }
+    }
+
     let mut candidates: Vec<String> = Vec::new();
 
     // 1. Relative to the running executable  (…/toolchain/llvm/bin/clang[.exe])

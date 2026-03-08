@@ -1,0 +1,7 @@
+def f() -> i64 {
+    print("hello");
+}
+
+def main() -> i64 {
+    f()
+}

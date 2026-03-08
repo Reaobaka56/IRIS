@@ -3,14 +3,14 @@ def main() -> i64 {
     val b = (2 + 3) * 4;
     val c = 10 / 3;
     val d = 10 % 3;
-    val e = -a;
-    val f = 1.5 + 2.5;
-    val g = true;
-    val h = !g;
-    val i = 5 > 3;
-    val j = 5 == 5;
-    val k = 3 != 4;
-    val l = 1 <= 2;
+    val _e = -a;
+    val _f = 1.5 + 2.5;
+    val _g = true;
+    val _h = !_g;
+    val _i = 5 > 3;
+    val _j = 5 == 5;
+    val _k = 3 != 4;
+    val _l = 1 <= 2;
     print(a + b + c + d);
     0
 }

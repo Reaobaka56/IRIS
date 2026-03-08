@@ -154,8 +154,23 @@ fn run() {
                         }
                     }
                     Err(e) => {
-                        eprintln!("error: {}", e);
-                        process::exit(1);
+                        // If clang is not available, fall back to the interpreter so
+                        // `iris run` remains functional on machines without a native toolchain.
+                        if std::env::var("IRIS_NO_INTERP_FALLBACK").is_ok() {
+                            eprintln!("error: {}", e);
+                            process::exit(1);
+                        }
+                        eprintln!(
+                            "\x1b[1;33mwarning\x1b[0m: native compiler not available ({}), falling back to interpreter",
+                            e
+                        );
+                        match iris::eval_ir_module(&module) {
+                            Ok(out) => print!("{}", out),
+                            Err(ie) => {
+                                eprintln!("error: {}", ie);
+                                process::exit(1);
+                            }
+                        }
                     }
                 }
                 return;

@@ -1,5 +1,36 @@
 # IRIS Language Extension Changelog
 
+## 0.3.0
+
+### New Features
+
+- **Native binary compilation** — `iris build file.iris -o output` compiles to a standalone executable via LLVM/clang; no external toolchain required when installed via the Windows installer
+- **Closure support** — first-class closures with capture, higher-order functions, `list_map`, `list_filter`, `list_reduce` all invoke closures correctly
+- **Merge sort and binary search** — standard library additions
+- **Expanded fuzz corpus** — arithmetic, closures, concurrency, data structures, edge cases, lists, maps, methods, ML ops, pattern matching, strings, traits
+- **Benchmark suite** — `benches/` directory with binary search, Collatz, hashmap, numerical, sieve, and tree benchmarks
+- **Security hardening** — input validation and bounds checks in runtime
+- **Profiler** — built-in performance profiling (`iris run --profile file.iris`)
+- **Expanded stdlib** — ML/NN helpers (`src/stdlib/ml.iris`, `src/stdlib/nn.iris`)
+- **Windows installer** — full self-contained installer bundles LLVM/clang + MinGW sysroot + VC++ runtime; installs to PATH automatically
+
+### Improvements
+
+- 1,384 tests passing (249 unit + 1,135 integration)
+- Strength reduction and copy propagation passes
+- Loop-invariant code motion (LICM) pass
+- Improved LLVM IR emission: cleaner phi nodes, no double terminators
+- Better diagnostics with span information
+- LSP: inlay hints, code actions, and diagnostics improvements
+
+### Bug Fixes
+
+- Fixed phi predecessor handling after `Panic` blocks in LLVM IR (no double terminators at -O2)
+- Fixed `for`/`while` body tail expression being silently dropped
+- Fixed `spawn { }`, `while { }`, `for { }`, `loop { }` accepting optional trailing `;`
+- Fixed `atomic(v)` alias for `atomic_new(v)`
+- Fixed `Option`/`Result` unboxing in LLVM codegen
+
 ## 0.2.0
 
 ### New Features

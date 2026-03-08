@@ -88,7 +88,7 @@ def f() -> str {
 fn test_http_response_build() {
     let src = r#"
 bring std.http
-def f() -> str {
+def f() -> i64 {
     val resp = http_response(200, "OK", "hello")
     http_status_code(resp)
 }

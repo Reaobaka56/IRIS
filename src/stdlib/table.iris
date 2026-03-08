@@ -24,7 +24,7 @@ pub def table_new(columns: list<str>) -> Table {
 pub def table_insert(t: Table, row: list<str>) -> Table {
     val encoded = table_encode_row(row)
     val n = list_len(t.rows)
-    var new_rows = list()
+    var new_rows: list<str> = list()
     var i = 0
     while i < n {
         push(new_rows, list_get(t.rows, i));
@@ -56,7 +56,7 @@ pub def table_col_idx(t: Table, col: str) -> i64 {
 pub def table_select(t: Table, col: str) -> list<str> {
     val col_i = table_col_idx(t, col)
     val n = list_len(t.rows)
-    var result = list()
+    var result: list<str> = list()
     var i = 0
     while i < n {
         val row = table_decode_row(list_get(t.rows, i))
@@ -70,7 +70,7 @@ pub def table_select(t: Table, col: str) -> list<str> {
 pub def table_where(t: Table, col: str, value: str) -> Table {
     val col_i = table_col_idx(t, col)
     val n = list_len(t.rows)
-    var new_rows = list()
+    var new_rows: list<str> = list()
     var i = 0
     while i < n {
         val encoded = list_get(t.rows, i)
@@ -89,7 +89,7 @@ pub def table_where(t: Table, col: str, value: str) -> Table {
 pub def table_to_csv(t: Table) -> str {
     val header = join(t.columns, ",")
     val n = list_len(t.rows)
-    var lines = list()
+    var lines: list<str> = list()
     push(lines, header);
     var i = 0
     while i < n {

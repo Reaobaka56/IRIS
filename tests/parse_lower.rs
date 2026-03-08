@@ -32,7 +32,7 @@ def matmul(A: tensor<f32, [M, K]>, B: tensor<f32, [K, N]>) -> tensor<f32, [M, N]
 "#;
 
 const CONST_SRC: &str = r#"
-def always_one() -> f32 {
+def always_one() -> f64 {
     1.0
 }
 "#;

@@ -77,15 +77,29 @@ def f() -> i64 {
 
 #[test]
 fn test_typed_function_call() {
+    // Use a function with >10 non-terminator instructions so InlinePass won't inline it,
+    // ensuring a real call site exists in the LLVM IR output.
     let src = r#"
-def add(x: i64, y: i64) -> i64 { x + y }
-def main() -> i64 { add(3, 4) }
+def compute(a: i64, b: i64) -> i64 {
+    val t1 = a + b
+    val t2 = t1 * a
+    val t3 = t2 + b
+    val t4 = t3 * t1
+    val t5 = t4 + t2
+    val t6 = t5 * t3
+    val t7 = t6 + t4
+    val t8 = t7 * t5
+    val t9 = t8 + t6
+    val t10 = t9 * t7
+    t10 + t8
+}
+def main() -> i64 { compute(3, 4) }
 "#;
     let ir = compile(src, "test", EmitKind::LlvmComplete).unwrap();
     // Typed call should include the actual type, not just ptr.
     assert!(
-        ir.contains("call i64 @add(i64"),
-        "expected typed call 'call i64 @add(i64 ...' in LlvmComplete:\n{}",
+        ir.contains("call i64 @compute(i64"),
+        "expected typed call 'call i64 @compute(i64 ...' in LlvmComplete:\n{}",
         ir
     );
 }

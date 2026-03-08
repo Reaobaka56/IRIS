@@ -27,7 +27,7 @@ pub def set_add(s: Set, v: str) -> Set {
     if set_contains(s, v) {
         s
     } else {
-        var new_items = list()
+        var new_items: list<str> = list()
         var i = 0
         val n = list_len(s.items)
         while i < n {
@@ -41,7 +41,7 @@ pub def set_add(s: Set, v: str) -> Set {
 
 // Returns a new set with v removed (no-op if not present).
 pub def set_remove(s: Set, v: str) -> Set {
-    var new_items = list()
+    var new_items: list<str> = list()
     var i = 0
     val n = list_len(s.items)
     while i < n {

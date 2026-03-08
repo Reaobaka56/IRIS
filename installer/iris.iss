@@ -61,9 +61,9 @@ Name: "sysroot";    Description: "MinGW sysroot (headers + libs)";            Ty
 Name: "vscode";     Description: "VSCode extension (.vsix)";                  Types: full
 
 [Tasks]
-Name: "addtopath";     Description: "Add IRIS to the user PATH";                         GroupDescription: "Environment:"
-Name: "addllvmpath";   Description: "Add LLVM to the user PATH";                         GroupDescription: "Environment:"; Components: llvm
-Name: "installvscode"; Description: "Install VSCode extension (if VSCode is detected)";   GroupDescription: "Extras:";      Components: vscode
+Name: "addtopath";     Description: "Add IRIS to the user PATH";                         GroupDescription: "Environment:"; Flags: checked
+Name: "addllvmpath";   Description: "Add LLVM to the user PATH";                         GroupDescription: "Environment:"; Components: llvm; Flags: checked
+Name: "installvscode"; Description: "Install VSCode extension (if VSCode is detected)";   GroupDescription: "Extras:";      Components: vscode; Flags: checked
 
 ; ---------------------------------------------------------------------------
 ; Files

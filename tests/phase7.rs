@@ -56,7 +56,7 @@ def invert(b: bool) -> bool {
 #[test]
 fn test_const_fold_neg() {
     let src = r#"
-def neg_const() -> f32 {
+def neg_const() -> f64 {
     -3.0
 }
 "#;
@@ -100,7 +100,7 @@ def add(x: f32, y: f32) -> f32 {
 #[test]
 fn test_llvm_body_condbr() {
     let src = r#"
-def clamp(x: f32) -> f32 {
+def clamp(x: f64) -> f64 {
     if x < 0.0 { 0.0 } else { x }
 }
 "#;

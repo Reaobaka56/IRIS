@@ -145,6 +145,7 @@ void iris_print_f32(float v);
 void iris_print_bool(int v);
 void iris_print_str(const char* s);
 void iris_panic(const char* msg);
+void iris_panic_at(const char* msg, const char* location);
 
 // ---------------------------------------------------------------------------
 // I/O

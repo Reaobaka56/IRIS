@@ -188,16 +188,16 @@ def f() -> i64 {
 fn test_method_f32_field() {
     let src = r#"
 record Circle {
-    radius: f32,
+    radius: f64,
 }
 
 impl Circle {
-    def diameter(self: Circle) -> f32 {
+    def diameter(self: Circle) -> f64 {
         self.radius * 2.0
     }
 }
 
-def f() -> f32 {
+def f() -> f64 {
     val c = Circle { radius: 5.0 }
     c.diameter()
 }

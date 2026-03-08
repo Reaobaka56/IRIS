@@ -17,7 +17,7 @@ use iris::{compile, EmitKind};
 #[test]
 fn test_if_else_multi_block() {
     let src = r#"
-def clamp(x: f32) -> f32 {
+def clamp(x: f64) -> f64 {
     if x < 0.0 { 0.0 } else { x }
 }
 "#;
@@ -52,7 +52,7 @@ def clamp(x: f32) -> f32 {
 fn test_if_else_value() {
     // The result of the if-else is added to 1.0; both branches must contribute.
     let src = r#"
-def offset(x: f32) -> f32 {
+def offset(x: f64) -> f64 {
     val v = if x < 0.0 { 0.0 } else { x };
     v
 }
@@ -97,7 +97,7 @@ fn test_const_fold_arithmetic() {
     // 3.0 * 2.0 should be folded to const.f 6 at compile time.
     // After DCE the mul instruction and its operands disappear.
     let src = r#"
-def folded() -> f32 {
+def folded() -> f64 {
     val a = 3.0;
     val b = 2.0;
     a * b
@@ -125,7 +125,7 @@ def folded() -> f32 {
 fn test_const_fold_identity() {
     // x * 1.0 → x (identity), so no mul instruction should survive.
     let src = r#"
-def identity(x: f32) -> f32 {
+def identity(x: f64) -> f64 {
     val one = 1.0;
     x * one
 }

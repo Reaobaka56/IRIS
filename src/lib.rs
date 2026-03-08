@@ -8,13 +8,21 @@
 //! ```
 //!
 //! Passes (in order):
-//! 1. `ValidatePass`   — SSA structural correctness
-//! 2. `TypeInferPass`  — type consistency
-//! 3. `ConstFoldPass`  — constant arithmetic + identity simplification
-//! 4. `OpExpandPass`   — expand elementwise calls to TensorOp::Unary
-//! 5. `DcePass`        — dead code elimination
-//! 6. `CsePass`        — common subexpression elimination
-//! 7. `ShapeCheckPass` — tensor shape consistency
+//!  1. `HmTypeInferPass`   — resolve remaining Infer placeholders (union-find)
+//!  2. `ValidatePass`      — SSA structural correctness
+//!  3. `TypeInferPass`     — type consistency
+//!  4. `ConstFoldPass`     — constant arithmetic + identity simplification
+//!  5. `StrengthReducePass`— strength reduction (pow→mul, div-by-const, etc.)
+//!  6. `CopyPropPass`      — copy propagation
+//!  7. `OpExpandPass`      — expand elementwise calls to TensorOp::Unary
+//!  8. `LicmPass`          — loop-invariant code motion
+//!  9. `InlinePass`        — inline small single-block callees
+//! 10. `LoopUnrollPass`    — unroll constant-bound loops (≤8 iterations)
+//! 11. `ExhaustivePass`    — exhaustive match checking for enums
+//! 12. `DcePass`           — dead code elimination
+//! 13. `CsePass`           — common subexpression elimination
+//! 14. `ShapeCheckPass`    — tensor shape consistency
+//! 15. `GcAnnotatePass`    — insert Retain/Release for heap-allocated values
 
 pub mod bench;
 pub mod cache;
@@ -138,15 +146,12 @@ pub fn compile_multi_to_ast(
     sources: &[(&str, &str)],
     main_module: &str,
 ) -> Result<crate::parser::ast::AstModule, Error> {
-    use crate::parser::lexer::Lexer;
-    use crate::parser::parse::Parser;
     use std::collections::{HashMap, HashSet, VecDeque};
 
-    // Parse all provided modules.
+    // Parse all provided modules with error recovery.
     let mut parsed: HashMap<&str, crate::parser::ast::AstModule> = HashMap::new();
     for (name, src) in sources {
-        let tokens = Lexer::new(src).tokenize()?;
-        let ast = Parser::new(&tokens).parse_module()?;
+        let ast = parse_recovering(src)?;
         parsed.insert(name, ast);
     }
 
@@ -176,10 +181,7 @@ pub fn compile_multi_to_ast(
         let dep_ast_opt: Option<crate::parser::ast::AstModule> =
             if let Some(lib_name) = key.strip_prefix("std:") {
                 crate::stdlib::stdlib_source(lib_name)
-                    .map(|src| -> Result<_, Error> {
-                        let tokens = Lexer::new(src).tokenize()?;
-                        Ok(Parser::new(&tokens).parse_module()?)
-                    })
+                    .map(|src| parse_recovering(src))
                     .transpose()?
             } else {
                 // Key is the stem name (e.g., "utils" from "utils.iris" or legacy "utils").
@@ -239,7 +241,8 @@ pub fn compile_ast_to_module(
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
     use crate::pass::{
-        ConstFoldPass, CopyPropPass, CsePass, DcePass, LicmPass, OpExpandPass, PassManager,
+        ConstFoldPass, CopyPropPass, CsePass, DcePass, ExhaustivePass, GcAnnotatePass,
+        HmTypeInferPass, InlinePass, LicmPass, LoopUnrollPass, OpExpandPass, PassManager,
         ShapeCheckPass, StrengthReducePass,
     };
 
@@ -256,6 +259,7 @@ pub fn compile_ast_to_module(
             })?;
     }
     let mut pm = PassManager::new();
+    pm.add_pass(HmTypeInferPass);
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
     pm.add_pass(ConstFoldPass);
@@ -263,9 +267,13 @@ pub fn compile_ast_to_module(
     pm.add_pass(CopyPropPass);
     pm.add_pass(OpExpandPass);
     pm.add_pass(LicmPass);
+    pm.add_pass(InlinePass::default());
+    pm.add_pass(LoopUnrollPass::default());
+    pm.add_pass(ExhaustivePass);
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
+    pm.add_pass(GcAnnotatePass);
     if let Some(pass_name) = dump_ir_after {
         pm.set_dump_after(pass_name);
     }
@@ -296,7 +304,8 @@ fn compile_ast(
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
     use crate::pass::{
-        ConstFoldPass, CopyPropPass, CsePass, DcePass, DeadNodePass, GraphPassManager, LicmPass,
+        ConstFoldPass, CopyPropPass, CsePass, DcePass, DeadNodePass, ExhaustivePass,
+        GcAnnotatePass, GraphPassManager, HmTypeInferPass, InlinePass, LicmPass, LoopUnrollPass,
         OpExpandPass, PassManager, ShapeCheckPass, StrengthReducePass,
     };
 
@@ -343,6 +352,7 @@ fn compile_ast(
     }
 
     let mut pm = PassManager::new();
+    pm.add_pass(HmTypeInferPass);
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
     pm.add_pass(ConstFoldPass);
@@ -350,9 +360,13 @@ fn compile_ast(
     pm.add_pass(CopyPropPass);
     pm.add_pass(OpExpandPass);
     pm.add_pass(LicmPass);
+    pm.add_pass(InlinePass::default());
+    pm.add_pass(LoopUnrollPass::default());
+    pm.add_pass(ExhaustivePass);
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
+    pm.add_pass(GcAnnotatePass);
     if let Some(pass_name) = dump_ir_after {
         pm.set_dump_after(pass_name);
     }
@@ -407,20 +421,18 @@ fn compile_ast(
 /// Runs all standard passes (validate, type-infer, const-fold, strength-reduce,
 /// op-expand, DCE, CSE, shape-check).  Useful before calling `serialize_module`.
 pub fn compile_to_module(source: &str, module_name: &str) -> Result<IrModule, Error> {
-    use crate::parser::lexer::Lexer;
-    use crate::parser::parse::Parser;
-
-    let tokens = Lexer::new(source).tokenize()?;
-    let ast_module = Parser::new(&tokens).parse_module()?;
+    let ast_module = parse_recovering(source)?;
     let ir = crate::lower::lower(&ast_module, module_name)?;
     // Run passes identical to compile_ast.
     use crate::pass::type_infer::TypeInferPass;
     use crate::pass::validate::ValidatePass;
     use crate::pass::{
-        ConstFoldPass, CopyPropPass, CsePass, DcePass, LicmPass, OpExpandPass, PassManager,
+        ConstFoldPass, CopyPropPass, CsePass, DcePass, ExhaustivePass, GcAnnotatePass,
+        HmTypeInferPass, InlinePass, LicmPass, LoopUnrollPass, OpExpandPass, PassManager,
         ShapeCheckPass, StrengthReducePass,
     };
     let mut pm = PassManager::new();
+    pm.add_pass(HmTypeInferPass);
     pm.add_pass(ValidatePass);
     pm.add_pass(TypeInferPass);
     pm.add_pass(ConstFoldPass);
@@ -428,9 +440,13 @@ pub fn compile_to_module(source: &str, module_name: &str) -> Result<IrModule, Er
     pm.add_pass(CopyPropPass);
     pm.add_pass(OpExpandPass);
     pm.add_pass(LicmPass);
+    pm.add_pass(InlinePass::default());
+    pm.add_pass(LoopUnrollPass::default());
+    pm.add_pass(ExhaustivePass);
     pm.add_pass(DcePass);
     pm.add_pass(CsePass);
     pm.add_pass(ShapeCheckPass);
+    pm.add_pass(GcAnnotatePass);
     let mut ir = ir;
     pm.run(&mut ir).map_err(|(_, e)| Error::Pass(e))?;
     Ok(ir)
@@ -463,16 +479,35 @@ pub fn eval_ir_module(module: &IrModule) -> Result<String, Error> {
     Ok(out)
 }
 
+/// Parse source text with full error recovery, printing all errors to stderr
+/// and returning the first as `Error::Parse`. Used by all in-memory compile paths.
+fn parse_recovering(source: &str) -> Result<crate::parser::ast::AstModule, Error> {
+    use crate::parser::lexer::Lexer;
+    use crate::parser::parse::Parser;
+    let tokens = Lexer::new(source).tokenize()?;
+    let mut parser = Parser::new(&tokens);
+    let (module, errors) = parser.parse_module_recovering();
+    if errors.is_empty() {
+        return Ok(module);
+    }
+    for e in &errors {
+        eprintln!("\x1b[1;31merror\x1b[0m: {}", e);
+    }
+    if errors.len() > 1 {
+        eprintln!(
+            "\x1b[1;31merror\x1b[0m: aborting due to {} parse error(s)",
+            errors.len()
+        );
+    }
+    Err(Error::Parse(errors.into_iter().next().unwrap()))
+}
+
 /// Compiles an IRIS source string through the full pipeline.
 ///
 /// Returns the emitted output as a `String`, or an `Error` if any
 /// stage fails. The pipeline aborts at the first error.
 pub fn compile(source: &str, module_name: &str, emit: EmitKind) -> Result<String, Error> {
-    use crate::parser::lexer::Lexer;
-    use crate::parser::parse::Parser;
-
-    let tokens = Lexer::new(source).tokenize()?;
-    let ast_module = Parser::new(&tokens).parse_module()?;
+    let ast_module = parse_recovering(source)?;
     compile_ast(&ast_module, module_name, emit, 1_000_000, 500, None)
 }
 
@@ -484,11 +519,7 @@ pub fn compile_with_warnings(
     module_name: &str,
     emit: EmitKind,
 ) -> Result<(String, Vec<IrWarning>), Error> {
-    use crate::parser::lexer::Lexer;
-    use crate::parser::parse::Parser;
-
-    let tokens = Lexer::new(source).tokenize()?;
-    let ast_module = Parser::new(&tokens).parse_module()?;
+    let ast_module = parse_recovering(source)?;
     let warnings = pass::find_unused_vars(&ast_module);
     let output = compile_ast(&ast_module, module_name, emit, 1_000_000, 500, None)?;
     Ok((output, warnings))
@@ -502,11 +533,7 @@ pub fn compile_with_opts(
     max_steps: usize,
     max_depth: usize,
 ) -> Result<String, Error> {
-    use crate::parser::lexer::Lexer;
-    use crate::parser::parse::Parser;
-
-    let tokens = Lexer::new(source).tokenize()?;
-    let ast_module = Parser::new(&tokens).parse_module()?;
+    let ast_module = parse_recovering(source)?;
     compile_ast(&ast_module, module_name, emit, max_steps, max_depth, None)
 }
 
@@ -596,11 +623,7 @@ pub fn compile_with_full_opts(
     max_depth: usize,
     dump_ir_after: Option<&str>,
 ) -> Result<String, Error> {
-    use crate::parser::lexer::Lexer;
-    use crate::parser::parse::Parser;
-
-    let tokens = Lexer::new(source).tokenize()?;
-    let ast_module = Parser::new(&tokens).parse_module()?;
+    let ast_module = parse_recovering(source)?;
     compile_ast(
         &ast_module,
         module_name,

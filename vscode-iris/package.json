@@ -13,6 +13,21 @@
     "Linters",
     "Formatters"
   ],
+  "keywords": [
+    "iris",
+    "iris-lang",
+    "compiler",
+    "llvm",
+    "machine learning",
+    "dsl",
+    "language server",
+    "debugger",
+    "repl"
+  ],
+  "galleryBanner": {
+    "color": "#1e1e2e",
+    "theme": "dark"
+  },
   "icon": "icon.png",
   "license": "GPL-2.0-or-later",
   "repository": {

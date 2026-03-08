@@ -42,7 +42,7 @@ pub def csv_emit_row(row: list<str>) -> str {
 pub def csv_rows(text: str) -> list<str> {
     val all = split(text, "\n")
     val n = list_len(all)
-    var result = list()
+    var result: list<str> = list()
     var i = 0
     while i < n {
         val line = list_get(all, i)

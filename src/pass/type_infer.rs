@@ -10,6 +10,28 @@ use crate::ir::module::IrModule;
 use crate::ir::types::{DType, IrType};
 use crate::pass::Pass;
 
+/// Returns true if `ty` contains `IrType::Infer` anywhere in its structure.
+fn contains_infer(ty: &IrType) -> bool {
+    match ty {
+        IrType::Infer => true,
+        IrType::Option(inner)
+        | IrType::Chan(inner)
+        | IrType::Atomic(inner)
+        | IrType::Mutex(inner)
+        | IrType::Grad(inner)
+        | IrType::Sparse(inner)
+        | IrType::List(inner) => contains_infer(inner),
+        IrType::ResultType(ok, err) | IrType::Map(ok, err) => {
+            contains_infer(ok) || contains_infer(err)
+        }
+        IrType::Array { elem, .. } => contains_infer(elem),
+        IrType::Tuple(fields) => fields.iter().any(contains_infer),
+        IrType::Struct { fields, .. } => fields.iter().any(|(_, t)| contains_infer(t)),
+        IrType::Fn { params, ret } => params.iter().any(contains_infer) || contains_infer(ret),
+        IrType::Scalar(_) | IrType::Tensor { .. } | IrType::Str | IrType::Enum { .. } => false,
+    }
+}
+
 /// Checks that tensor operation result types are consistent with their inputs,
 /// and that binary operations do not mix incompatible types.
 ///
@@ -258,6 +280,28 @@ impl Pass for TypeInferPass {
                                             ty
                                         ),
                                     });
+                                }
+                            }
+                        }
+
+                        IrInstr::Return { values } => {
+                            // Check single-value returns match the declared return type.
+                            if values.len() == 1 {
+                                if let (Some(val_ty), ret_ty) =
+                                    (func.value_type(values[0]), &func.return_ty)
+                                {
+                                    if val_ty != ret_ty
+                                        && !contains_infer(val_ty)
+                                        && !contains_infer(ret_ty)
+                                    {
+                                        return Err(PassError::TypeError {
+                                            func: func.name.clone(),
+                                            detail: format!(
+                                                "return type mismatch — declared '{}' but found '{}'",
+                                                ret_ty, val_ty
+                                            ),
+                                        });
+                                    }
                                 }
                             }
                         }

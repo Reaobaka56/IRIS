@@ -14,7 +14,7 @@ pub def df_new(columns: list<str>) -> DataFrame {
 pub def df_add_row(df: DataFrame, row: list<f64>) -> DataFrame {
     val nc = df.n_cols
     val nd = list_len(df.data)
-    var new_data = list()
+    var new_data: list<f64> = list()
     var i = 0
     while i < nd {
         push(new_data, list_get(df.data, i));
@@ -51,7 +51,7 @@ pub def df_col_idx(df: DataFrame, name: str) -> i64 {
 pub def df_col(df: DataFrame, name: str) -> list<f64> {
     val col_i = df_col_idx(df, name)
     val nc = df.n_cols
-    var result = list()
+    var result: list<f64> = list()
     var r = 0
     while r < df.n_rows {
         val idx = r * nc + col_i
@@ -65,7 +65,7 @@ pub def df_col(df: DataFrame, name: str) -> list<f64> {
 pub def df_filter(df: DataFrame, col: str, min_val: f64, max_val: f64) -> DataFrame {
     val col_i = df_col_idx(df, col)
     val nc = df.n_cols
-    var new_data = list()
+    var new_data: list<f64> = list()
     var new_n = 0
     var r = 0
     while r < df.n_rows {
@@ -87,12 +87,12 @@ pub def df_filter(df: DataFrame, col: str, min_val: f64, max_val: f64) -> DataFr
 pub def df_to_csv(df: DataFrame) -> str {
     val header = join(df.columns, ",")
     val nc = df.n_cols
-    var lines = list()
+    var lines: list<str> = list()
     push(lines, header);
     var r = 0
     while r < df.n_rows {
         val base = r * nc
-        var cells = list()
+        var cells: list<str> = list()
         var c2 = 0
         while c2 < nc {
             push(cells, to_str(list_get(df.data, base + c2)));

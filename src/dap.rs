@@ -158,11 +158,17 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 seq += 1;
             }
             "setBreakpoints" => {
-                // Reset the session but keep source.
-                let old_source = source_content.clone();
-                session = DebugSession::new();
-                if !old_source.is_empty() {
-                    session.set_source(&old_source);
+                // If the program has already been traced, only update breakpoints —
+                // resetting the session would discard the execution trace and make
+                // step/continue non-functional for the rest of the session.
+                if session.trace_len() == 0 {
+                    let old_source = source_content.clone();
+                    session = DebugSession::new();
+                    if !old_source.is_empty() {
+                        session.set_source(&old_source);
+                    }
+                } else {
+                    session.clear_breakpoints();
                 }
                 let bps = arguments["breakpoints"]
                     .as_array()

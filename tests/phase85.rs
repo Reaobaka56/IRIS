@@ -41,7 +41,7 @@ def main() -> i64 {
 #[test]
 fn test_hm_pass_runs_on_float() {
     let src = r#"
-def main() -> f32 { 3.14 }
+def main() -> f64 { 3.14 }
 "#;
     let mut module = compile_to_module(src, "phase85").expect("compile failed");
     let mut pass = HmTypeInferPass;
@@ -54,7 +54,7 @@ def main() -> f32 { 3.14 }
 #[test]
 fn test_hm_float_result_correct() {
     let src = r#"
-def main() -> f32 {
+def main() -> f64 {
     val x = 2.0
     val y = 3.0
     x + y
@@ -121,15 +121,15 @@ def main() -> i64 {
 #[test]
 fn test_hm_cast_resolves_type() {
     let src = r#"
-def main() -> f32 {
+def main() -> f64 {
     val x = 5
-    x to f32
+    x to f64
 }
 "#;
     let mut module = compile_to_module(src, "phase85").expect("compile failed");
     let mut pass = HmTypeInferPass;
     assert!(pass.run(&mut module).is_ok());
     // Also check the program still produces correct result
-    let v: f32 = eval(src).trim().parse().unwrap();
-    assert!((v - 5.0_f32).abs() < 1e-6, "expected 5.0, got {v}");
+    let v: f64 = eval(src).trim().parse().unwrap();
+    assert!((v - 5.0_f64).abs() < 1e-6, "expected 5.0, got {v}");
 }

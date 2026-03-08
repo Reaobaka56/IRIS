@@ -4,14 +4,12 @@ use iris::{compile, EmitKind};
 
 #[test]
 fn test_while_basic() {
+    // Verify the while loop compiles and evaluates correctly.
+    // LoopUnrollPass may unroll constant-bound loops (removing while_header/cmplt
+    // from live IR), so we check semantics rather than IR structure names.
     let src = "def count() -> i64 { val x = 0; while x < 5 { val x = x + 1 } x }";
-    let ir = compile(src, "test", EmitKind::Ir).expect("should compile");
-    assert!(ir.contains("cmplt"), "IR should contain cmplt: {}", ir);
-    assert!(
-        ir.contains("while_header"),
-        "IR should have while_header block: {}",
-        ir
-    );
+    let result = compile(src, "test", EmitKind::Eval).expect("should eval");
+    assert_eq!(result.trim(), "5", "counter should reach 5: {}", result);
 }
 
 #[test]

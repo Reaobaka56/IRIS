@@ -16,7 +16,7 @@ use std::collections::HashMap;
 use crate::ir::block::{BlockId, IrBlock};
 use crate::ir::instr::{BinOp, IrInstr};
 use crate::ir::module::IrModule;
-//use crate::ir::types::IrType;
+use crate::ir::types::IrType;
 use crate::ir::value::ValueId;
 use crate::pass::PassError;
 
@@ -62,13 +62,14 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
             .instrs
             .last()
             .cloned();
-        let (cond_val, then_block, else_block) = match header_term {
+        let (cond_val, then_block, else_block, else_args_orig) = match header_term {
             Some(IrInstr::CondBr {
                 cond,
                 then_block,
                 else_block,
+                else_args,
                 ..
-            }) => (cond, then_block, else_block),
+            }) => (cond, then_block, else_block, else_args),
             _ => continue,
         };
 
@@ -143,7 +144,9 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         let body_idx = then_block.0 as usize;
         let exit_bid = else_block;
 
-        // Check: body is single block with Br back to header (no internal CondBr)
+        // Check: body is single block with Br back to header (no internal CondBr),
+        // AND the body's Br actually passes a new (non-header-param) value — otherwise
+        // the loop variable is never incremented and the loop is not a simple counting loop.
         {
             let body_instrs = &module.functions[fn_idx].blocks[body_idx].instrs;
             let has_cond_br = body_instrs
@@ -153,7 +156,14 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
                 continue;
             }
             match body_instrs.last() {
-                Some(IrInstr::Br { target, .. }) if *target == header_bid => {}
+                Some(IrInstr::Br { target, args }) if *target == header_bid => {
+                    // The body must pass exactly one arg that is NOT the header param itself.
+                    // If it passes the header param back unchanged, the loop variable never
+                    // advances and we must not unroll.
+                    if args.len() != 1 || args[0] == header_param_id {
+                        continue;
+                    }
+                }
                 _ => continue,
             }
         }
@@ -230,11 +240,34 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
         }
 
         // Terminate unrolled block by jumping to exit.
+        // If the original CondBr passed the loop variable to the exit block (else_args),
+        // pass the final value of i instead (the last body iteration's next-i, or end_val).
+        let exit_args = if !else_args_orig.is_empty() {
+            // The exit block has params that expect the final loop variable value.
+            // Use the current_i_val (last iteration's next-i) or fall back to end_val const.
+            match current_i_val {
+                Some(v) => vec![v],
+                None => {
+                    // Emit end_val as a constant to pass.
+                    let ev = module.functions[fn_idx].fresh_value();
+                    module.functions[fn_idx].blocks[unrolled_bid.0 as usize]
+                        .instrs
+                        .push(IrInstr::ConstInt {
+                            result: ev,
+                            value: end_val,
+                            ty: IrType::Scalar(crate::ir::types::DType::I64),
+                        });
+                    vec![ev]
+                }
+            }
+        } else {
+            vec![]
+        };
         module.functions[fn_idx].blocks[unrolled_bid.0 as usize]
             .instrs
             .push(IrInstr::Br {
                 target: exit_bid,
-                args: vec![],
+                args: exit_args,
             });
 
         // Patch the predecessor block(s) that had Br to header → now Br to unrolled.

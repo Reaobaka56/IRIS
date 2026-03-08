@@ -12,7 +12,7 @@ impl Vec2 {
 def main() -> i64 {
     val v1 = Vec2 { x: 3.0, y: 4.0 };
     val v2 = Vec2 { x: 1.0, y: 2.0 };
-    val v3 = v1.add(v2);
-    val len = v1.length();
+    val _v3 = v1.add(v2);
+    val _len = v1.length();
     0
 }

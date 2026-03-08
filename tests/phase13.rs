@@ -22,7 +22,7 @@ fn test_struct_keyword_lexed() {
     let src = "record Empty {}";
     // Compilation will fail at lowering (no functions), but parsing must succeed.
     // Use a valid program to verify the lexer:
-    let src2 = "record Point { x: f32, y: f32 } def zero() -> f32 { 0.0 }";
+    let src2 = "record Point { x: f32, y: f32 } def zero() -> f64 { 0.0 }";
     let result = compile(src2, "test", EmitKind::Ir);
     assert!(
         result.is_ok(),
@@ -37,7 +37,7 @@ fn test_struct_keyword_lexed() {
 // ---------------------------------------------------------------------------
 #[test]
 fn test_struct_definition_parsed() {
-    let src = "record Vec2 { x: f32, y: f32 }  def zero() -> f32 { 0.0 }";
+    let src = "record Vec2 { x: f32, y: f32 }  def zero() -> f64 { 0.0 }";
     let out = compile(src, "test", EmitKind::Ir).expect("should compile");
     // IR output won't mention struct defs directly, but no error means parsing OK
     assert!(out.contains("def zero"));

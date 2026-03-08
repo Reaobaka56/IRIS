@@ -414,6 +414,190 @@ fn compare_values(lhs: &str, op: &str, rhs: &str) -> bool {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const SIMPLE_SRC: &str = "def main() -> i64 {\n    val x = 1\n    val y = 2\n    x + y\n}\n";
+
+    fn started_session() -> DebugSession {
+        let mut s = DebugSession::new();
+        s.set_source(SIMPLE_SRC);
+        s.start().expect("start failed");
+        s
+    }
+
+    #[test]
+    fn new_session_is_empty() {
+        let s = DebugSession::new();
+        assert_eq!(s.trace_len(), 0);
+        assert!(s.current_frame().is_none());
+        assert!(s.is_finished());
+    }
+
+    #[test]
+    fn set_source_clears_trace() {
+        let mut s = started_session();
+        assert!(s.trace_len() > 0);
+        s.set_source(SIMPLE_SRC);
+        assert_eq!(s.trace_len(), 0);
+    }
+
+    #[test]
+    fn start_populates_trace() {
+        let s = started_session();
+        assert!(s.trace_len() > 0);
+        assert!(s.current_frame().is_some());
+    }
+
+    #[test]
+    fn step_advances_cursor() {
+        let mut s = started_session();
+        let start = s.cursor();
+        let advanced = s.step();
+        assert!(advanced);
+        assert_eq!(s.cursor(), start + 1);
+    }
+
+    #[test]
+    fn step_back_returns_to_previous() {
+        let mut s = started_session();
+        s.step();
+        let pos = s.cursor();
+        let went_back = s.step_back();
+        assert!(went_back);
+        assert_eq!(s.cursor(), pos - 1);
+    }
+
+    #[test]
+    fn step_back_at_start_returns_false() {
+        let mut s = started_session();
+        assert!(!s.step_back());
+        assert_eq!(s.cursor(), 0);
+    }
+
+    #[test]
+    fn continue_to_breakpoint_no_bp_returns_none() {
+        let mut s = started_session();
+        let result = s.continue_to_breakpoint();
+        assert!(result.is_none());
+        assert!(s.is_finished());
+    }
+
+    #[test]
+    fn continue_to_breakpoint_hits_registered_bp() {
+        let mut s = started_session();
+        // Set breakpoints on every line — at least one should be hit.
+        for line in 1..=5 {
+            s.set_breakpoint(line, None);
+        }
+        // Restart cursor to beginning.
+        s.set_source(SIMPLE_SRC);
+        s.start().unwrap();
+        let hit = s.continue_to_breakpoint();
+        assert!(hit.is_some());
+    }
+
+    #[test]
+    fn remove_breakpoint_prevents_stop() {
+        let mut s = DebugSession::new();
+        s.set_source(SIMPLE_SRC);
+        for line in 1..=5 {
+            s.set_breakpoint(line, None);
+        }
+        s.start().unwrap();
+        // Remove all breakpoints, then continue should run to end.
+        s.clear_breakpoints();
+        let result = s.continue_to_breakpoint();
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn set_variable_updates_display_value() {
+        let mut s = started_session();
+        // Walk forward until we find a frame with variables.
+        let has_vars = (0..s.trace_len()).any(|_| {
+            s.step();
+            s.current_frame().map(|f| !f.variables.is_empty()).unwrap_or(false)
+        });
+        if !has_vars {
+            return; // No named variables in this trace — skip.
+        }
+        if let Some(frame) = s.current_frame() {
+            if let Some((name, _)) = frame.variables.first() {
+                let name = name.clone();
+                let ok = s.set_variable(&name, "999");
+                assert!(ok);
+                let updated = s.current_frame().unwrap();
+                assert_eq!(updated.variables.iter().find(|(n, _)| n == &name).unwrap().1, "999");
+            }
+        }
+    }
+
+    #[test]
+    fn all_visible_frames_nonempty_when_running() {
+        let s = started_session();
+        let frames = s.all_visible_frames();
+        assert!(!frames.is_empty());
+    }
+
+    #[test]
+    fn step_over_skips_nested_frames() {
+        let src = "def inner(x: i64) -> i64 { x + 1 }\ndef main() -> i64 { inner(5) }\n";
+        let mut s = DebugSession::new();
+        s.set_source(src);
+        s.start().unwrap();
+        let depth_before = s.current_frame().map(|f| f.depth).unwrap_or(0);
+        let advanced = s.step_over();
+        if advanced {
+            let depth_after = s.current_frame().map(|f| f.depth).unwrap_or(0);
+            assert!(depth_after <= depth_before);
+        }
+    }
+
+    #[test]
+    fn hit_condition_count_check() {
+        assert!(super::check_hit_condition(5, ">4"));
+        assert!(!super::check_hit_condition(3, ">4"));
+        assert!(super::check_hit_condition(3, "==3"));
+        assert!(super::check_hit_condition(6, "%3"));
+        assert!(!super::check_hit_condition(5, "%3"));
+        assert!(super::check_hit_condition(10, ">=10"));
+        assert!(!super::check_hit_condition(9, ">=10"));
+    }
+
+    #[test]
+    fn log_message_interpolation() {
+        let vars = vec![("x".to_owned(), "42".to_owned())];
+        assert_eq!(super::interpolate_log_message("x = {x}", &vars), "x = 42");
+        assert_eq!(super::interpolate_log_message("no vars here", &vars), "no vars here");
+        assert_eq!(super::interpolate_log_message("{unknown}", &vars), "{unknown}");
+    }
+
+    #[test]
+    fn compare_values_numeric() {
+        assert!(super::compare_values("10", ">", "5"));
+        assert!(!super::compare_values("3", ">", "5"));
+        assert!(super::compare_values("5", "==", "5"));
+        assert!(super::compare_values("3.5", "<", "4.0"));
+    }
+
+    #[test]
+    fn compare_values_string() {
+        assert!(super::compare_values("hello", "==", "\"hello\""));
+        assert!(!super::compare_values("hello", "==", "\"world\""));
+        assert!(super::compare_values("abc", "!=", "\"xyz\""));
+    }
+
+    #[test]
+    fn start_invalid_source_returns_error() {
+        let mut s = DebugSession::new();
+        s.set_source("def broken( -> { }");
+        assert!(s.start().is_err());
+        assert_eq!(s.trace_len(), 0);
+    }
+}
+
 /// Interpolates `{varname}` placeholders in a log-point message.
 fn interpolate_log_message(msg: &str, vars: &[(String, String)]) -> String {
     let mut result = String::new();

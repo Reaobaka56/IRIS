@@ -412,10 +412,10 @@ impl LspState {
                     let params: Vec<String> = func
                         .params
                         .iter()
-                        .map(|p| format!("{}: {:?}", p.name, p.ty))
+                        .map(|p| format!("{}: {}", p.name, p.ty))
                         .collect();
                     return Some(format!(
-                        "```iris\ndef {}({}) -> {:?}\n```",
+                        "```iris\ndef {}({}) -> {}\n```",
                         bare,
                         params.join(", "),
                         func.return_ty
@@ -1142,6 +1142,314 @@ impl LspState {
         }
 
         diags
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const URI: &str = "file:///tmp/test.iris";
+
+    fn state_with(src: &str) -> LspState {
+        let mut s = LspState::new();
+        s.open_document(URI, src);
+        s
+    }
+
+    // ── diagnostics ──────────────────────────────────────────────────────────
+
+    #[test]
+    fn no_diagnostics_for_valid_source() {
+        let mut s = LspState::new();
+        let diags = s.open_document(URI, "def main() -> i64 { 42 }");
+        assert!(diags.is_empty(), "unexpected: {:?}", diags);
+    }
+
+    #[test]
+    fn error_diagnostic_for_parse_error() {
+        let mut s = LspState::new();
+        let diags = s.open_document(URI, "def broken( -> { }");
+        assert!(!diags.is_empty());
+        assert_eq!(diags[0].severity, 1);
+    }
+
+    #[test]
+    fn error_diagnostic_has_code() {
+        let mut s = LspState::new();
+        let diags = s.open_document(URI, "def broken( -> { }");
+        assert!(diags.iter().any(|d| d.code.is_some()));
+    }
+
+    #[test]
+    fn bp001_hint_for_long_function() {
+        // Build a function longer than 50 lines.
+        let mut body = String::from("def long_fn() -> i64 {\n");
+        for i in 0..55i64 {
+            body.push_str(&format!("    val _v{} = {};\n", i, i));
+        }
+        body.push_str("    0\n}\n");
+        let s = state_with(&body);
+        let diags = s.diagnose(URI);
+        let bp = diags.iter().find(|d| d.code.as_deref() == Some("BP001"));
+        assert!(bp.is_some(), "expected BP001 hint for long function");
+        assert_eq!(bp.unwrap().severity, 4);
+    }
+
+    #[test]
+    fn bp005_warning_for_empty_function() {
+        let s = state_with("def empty() -> i64 {}");
+        let diags = s.diagnose(URI);
+        let bp = diags.iter().find(|d| d.code.as_deref() == Some("BP005"));
+        assert!(bp.is_some(), "expected BP005 for empty function body");
+        assert_eq!(bp.unwrap().severity, 2);
+    }
+
+    #[test]
+    fn bp006_hint_for_double_semicolon() {
+        // Use a comment line ending with ;; so the source remains valid.
+        let s = state_with("def f() -> i64 { 0 }\n// redundant;;\n");
+        let diags = s.diagnose(URI);
+        let bp = diags.iter().find(|d| d.code.as_deref() == Some("BP006"));
+        assert!(bp.is_some(), "expected BP006 for double semicolon");
+    }
+
+    // ── hover ─────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn hover_returns_none_for_unknown_ident() {
+        let s = state_with("def main() -> i64 { 0 }");
+        assert!(s.hover(URI, 0, 100).is_none());
+    }
+
+    #[test]
+    fn hover_builtin_print() {
+        let s = state_with("def main() -> i64 { print(1); 0 }");
+        let result = s.hover(URI, 0, 21); // cursor on 'print'
+        assert!(result.is_some(), "expected hover for builtin 'print'");
+        let text = result.unwrap();
+        assert!(text.contains("print"), "expected 'print' in hover: {}", text);
+    }
+
+    #[test]
+    fn hover_user_defined_function() {
+        let src = "def add(x: i64, y: i64) -> i64 { x + y }\ndef main() -> i64 { add(1,2) }";
+        let s = state_with(src);
+        // Hover over 'add' in the definition line (col 4)
+        let result = s.hover(URI, 0, 4);
+        assert!(result.is_some(), "expected hover for 'add'");
+        let text = result.unwrap();
+        assert!(text.contains("add"), "expected 'add' in hover: {}", text);
+    }
+
+    #[test]
+    fn hover_keyword_def() {
+        let s = state_with("def main() -> i64 { 0 }");
+        let result = s.hover(URI, 0, 0); // cursor on 'def'
+        assert!(result.is_some(), "expected hover for keyword 'def'");
+    }
+
+    // ── completions ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn completions_includes_keywords() {
+        let s = state_with("def main() -> i64 { 0 }");
+        let items = s.completions(URI);
+        assert!(items.contains(&"def".to_owned()));
+        assert!(items.contains(&"val".to_owned()));
+        assert!(items.contains(&"for".to_owned()));
+    }
+
+    #[test]
+    fn completions_includes_builtins() {
+        let s = state_with("def main() -> i64 { 0 }");
+        let items = s.completions(URI);
+        assert!(items.contains(&"print".to_owned()));
+        assert!(items.contains(&"sqrt".to_owned()));
+    }
+
+    #[test]
+    fn completions_includes_user_functions() {
+        let s = state_with("def my_custom_fn() -> i64 { 0 }");
+        let items = s.completions(URI);
+        assert!(items.contains(&"my_custom_fn".to_owned()));
+    }
+
+    #[test]
+    fn completions_no_duplicates() {
+        let s = state_with("def main() -> i64 { 0 }");
+        let items = s.completions(URI);
+        let mut sorted = items.clone();
+        sorted.dedup();
+        assert_eq!(items.len(), sorted.len(), "completions contain duplicates");
+    }
+
+    // ── document symbols ─────────────────────────────────────────────────────
+
+    #[test]
+    fn document_symbols_finds_function() {
+        let s = state_with("def my_fn() -> i64 { 0 }");
+        let syms = s.document_symbols(URI);
+        assert!(syms.iter().any(|(name, kind, ..)| name == "my_fn" && *kind == 12));
+    }
+
+    #[test]
+    fn document_symbols_finds_struct() {
+        let s = state_with("record Point { x: i64, y: i64 }");
+        let syms = s.document_symbols(URI);
+        assert!(syms.iter().any(|(name, kind, ..)| name == "Point" && *kind == 23));
+    }
+
+    #[test]
+    fn document_symbols_finds_enum() {
+        let s = state_with("choice Color { Red, Green, Blue }");
+        let syms = s.document_symbols(URI);
+        assert!(syms.iter().any(|(name, kind, ..)| name == "Color" && *kind == 10));
+    }
+
+    #[test]
+    fn document_symbols_finds_const() {
+        let s = state_with("const MAX: i64 = 100");
+        let syms = s.document_symbols(URI);
+        assert!(syms.iter().any(|(name, kind, ..)| name == "MAX" && *kind == 14));
+    }
+
+    #[test]
+    fn document_symbols_sorted_by_line() {
+        let src = "def b() -> i64 { 0 }\ndef a() -> i64 { 1 }";
+        let s = state_with(src);
+        let syms = s.document_symbols(URI);
+        let lines: Vec<u32> = syms.iter().map(|(_, _, sl, ..)| *sl).collect();
+        let mut sorted = lines.clone();
+        sorted.sort();
+        assert_eq!(lines, sorted);
+    }
+
+    // ── format ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn format_does_not_crash_on_valid_source() {
+        let s = state_with("def main()->i64{42}");
+        let formatted = s.format(URI);
+        assert!(formatted.is_some());
+        let text = formatted.unwrap();
+        assert!(text.contains("def"));
+        assert!(text.contains("main"));
+    }
+
+    #[test]
+    fn format_adds_trailing_newline() {
+        let s = state_with("def f() -> i64 { 0 }");
+        let text = s.format(URI).unwrap();
+        assert!(text.ends_with('\n'));
+    }
+
+    #[test]
+    fn format_returns_original_on_parse_error() {
+        let src = "def broken( -> { }";
+        let s = state_with(src);
+        let result = s.format(URI);
+        assert!(result.is_some());
+        // Should return the source unchanged (or something non-empty).
+        assert!(!result.unwrap().is_empty());
+    }
+
+    // ── signature help ────────────────────────────────────────────────────────
+
+    #[test]
+    fn signature_help_finds_function() {
+        // Source must be valid for parse_source to succeed.
+        // Line 1: "def main() -> i64 { add(1, 2) }"
+        // Character 27 is on '2' — the second argument.
+        let src = "def add(x: i64, y: i64) -> i64 { x + y }\ndef main() -> i64 { add(1, 2) }";
+        let s = state_with(src);
+        let result = s.signature_help(URI, 1, 27);
+        assert!(result.is_some(), "expected signature help");
+        let (label, params, active) = result.unwrap();
+        assert!(label.contains("add"));
+        assert_eq!(params.len(), 2);
+        assert_eq!(active, 1); // second param
+    }
+
+    #[test]
+    fn signature_help_returns_none_outside_call() {
+        let s = state_with("def main() -> i64 { 42 }");
+        let result = s.signature_help(URI, 0, 0);
+        assert!(result.is_none());
+    }
+
+    // ── references ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn references_finds_all_occurrences() {
+        let src = "def foo() -> i64 { 0 }\ndef bar() -> i64 { foo() + foo() }";
+        let s = state_with(src);
+        let refs = s.references(URI, 0, 4); // cursor on 'foo' in definition
+        // Should find at least the definition + 2 call sites
+        assert!(refs.len() >= 3, "expected >=3 refs, got {}", refs.len());
+    }
+
+    // ── rename ────────────────────────────────────────────────────────────────
+
+    #[test]
+    fn rename_returns_edits_for_all_refs() {
+        let src = "def foo() -> i64 { 0 }\ndef bar() -> i64 { foo() }";
+        let s = state_with(src);
+        let edits = s.rename(URI, 0, 4, "baz");
+        assert!(edits.len() >= 2);
+        assert!(edits.iter().all(|(_, _, _, _, text)| text == "baz"));
+    }
+
+    // ── inlay hints ───────────────────────────────────────────────────────────
+
+    #[test]
+    fn inlay_hints_for_untyped_bindings() {
+        let s = state_with("def f() -> i64 {\n    val x = 5\n    x\n}");
+        let hints = s.inlay_hints(URI);
+        assert!(!hints.is_empty(), "expected inlay hint for untyped val binding");
+        assert!(hints.iter().any(|h| h.kind == 1));
+    }
+
+    #[test]
+    fn inlay_hints_skip_typed_bindings() {
+        let s = state_with("def f() -> i64 {\n    val x: i64 = 5\n    x\n}");
+        let hints = s.inlay_hints(URI);
+        // Typed binding should produce no inlay hint
+        assert!(hints.is_empty(), "unexpected hint for typed binding: {:?}", hints);
+    }
+
+    // ── code actions ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn code_action_always_includes_wrap_if() {
+        let s = state_with("def f() -> i64 { 0 }");
+        let actions = s.code_actions(URI, 0, 0, 0, 5);
+        assert!(actions.iter().any(|a| a.title.contains("if")));
+    }
+
+    #[test]
+    fn code_action_bp005_provides_quickfix() {
+        let src = "def empty() -> i64 {}";
+        let s = state_with(src);
+        let actions = s.code_actions(URI, 0, 4, 0, 9);
+        assert!(
+            actions.iter().any(|a| a.title.contains("placeholder") || a.title.contains("empty")),
+            "expected placeholder quickfix, got: {:?}", actions.iter().map(|a| &a.title).collect::<Vec<_>>()
+        );
+    }
+
+    // ── close document ────────────────────────────────────────────────────────
+
+    #[test]
+    fn close_document_removes_it() {
+        let mut s = LspState::new();
+        s.open_document(URI, "def f() -> i64 { 0 }");
+        s.close_document(URI);
+        // After close, hover/completions should return nothing
+        assert!(s.hover(URI, 0, 0).is_none());
+        assert!(s.completions(URI)
+            .iter()
+            .all(|c| c != "f"), "user-defined fn should be gone after close");
     }
 }
 
@@ -2382,12 +2690,14 @@ fn uri_to_module_name(uri: &str) -> String {
 /// Convert a `file://` URI to a filesystem `PathBuf`.
 /// Returns `None` for non-file URIs (e.g. `untitled:`).
 fn uri_to_file_path(uri: &str) -> Option<std::path::PathBuf> {
-    // file:///C%3A/Users/… or file:///home/…
+    // URIs look like:
+    //   Windows:  file:///C:/Users/…   (stripped → "C:/Users/…")
+    //   Linux:    file:///home/…       (stripped → "home/…" — need to add '/')
     let stripped = uri.strip_prefix("file:///")?;
-    // Percent-decode the path.
     let decoded: String = percent_decode(stripped);
-    // On Windows the path looks like "C:/Users/…"; on Unix "/home/…".
-    // std::path::PathBuf handles both forms.
+    // On non-Windows the stripped path is missing its leading '/'.
+    #[cfg(not(windows))]
+    let decoded = format!("/{}", decoded);
     let path = std::path::PathBuf::from(&decoded);
     if path.exists() {
         Some(path)

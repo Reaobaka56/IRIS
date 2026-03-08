@@ -19,6 +19,7 @@ pub fn find_unused_vars(module: &AstModule) -> Vec<IrWarning> {
     let mut warnings = Vec::new();
     for func in &module.functions {
         collect_unused_in_function(func, &mut warnings);
+        check_potential_infinite_loops(func, &mut warnings);
     }
     warnings
 }
@@ -145,4 +146,126 @@ fn expr_uses_name(expr: &AstExpr, name: &str) -> bool {
 
 fn arm_uses_name(arm: &AstWhenArm, name: &str) -> bool {
     arm.guard.as_ref().is_some_and(|g| expr_uses_name(g, name)) || expr_uses_name(&arm.body, name)
+}
+
+// ---------------------------------------------------------------------------
+// Infinite loop detection
+// ---------------------------------------------------------------------------
+
+fn check_potential_infinite_loops(func: &AstFunction, warnings: &mut Vec<IrWarning>) {
+    check_infinite_loops_in_block(&func.body, &func.name.name, warnings);
+}
+
+fn check_infinite_loops_in_block(block: &AstBlock, func_name: &str, warnings: &mut Vec<IrWarning>) {
+    for stmt in &block.stmts {
+        match stmt {
+            AstStmt::While { cond, body, span } => {
+                let cond_vars = collect_idents_in_expr(cond);
+                if !cond_vars.is_empty() {
+                    let mutated = cond_vars.iter().any(|v| body_assigns_var(body, v));
+                    let exits = body_has_exit(body);
+                    if !mutated && !exits {
+                        warnings.push(IrWarning {
+                            func: func_name.to_string(),
+                            message: format!(
+                                "possible infinite loop: '{}' is never modified in the loop body",
+                                cond_vars.join("', '")
+                            ),
+                            span: Some(*span),
+                        });
+                    }
+                }
+                check_infinite_loops_in_block(body, func_name, warnings);
+            }
+            AstStmt::ForRange { body, .. }
+            | AstStmt::ForEach { body, .. }
+            | AstStmt::ParFor { body, .. }
+            | AstStmt::Loop { body, .. } => {
+                check_infinite_loops_in_block(body, func_name, warnings);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collect all simple identifier names referenced in an expression.
+fn collect_idents_in_expr(expr: &AstExpr) -> Vec<String> {
+    let mut out = Vec::new();
+    collect_idents_recursive(expr, &mut out);
+    out
+}
+
+fn collect_idents_recursive(expr: &AstExpr, out: &mut Vec<String>) {
+    match expr {
+        AstExpr::Ident(id) => out.push(id.name.clone()),
+        AstExpr::BinOp { lhs, rhs, .. } => {
+            collect_idents_recursive(lhs, out);
+            collect_idents_recursive(rhs, out);
+        }
+        AstExpr::UnaryOp { expr, .. }
+        | AstExpr::Cast { expr, .. }
+        | AstExpr::Await { expr, .. }
+        | AstExpr::Try { expr, .. } => collect_idents_recursive(expr, out),
+        AstExpr::Call { args, .. } => args.iter().for_each(|a| collect_idents_recursive(a, out)),
+        AstExpr::MethodCall { base, args, .. } => {
+            collect_idents_recursive(base, out);
+            args.iter().for_each(|a| collect_idents_recursive(a, out));
+        }
+        AstExpr::FieldAccess { base, .. }
+        | AstExpr::TupleIndex { base, .. }
+        | AstExpr::Index { base, .. } => collect_idents_recursive(base, out),
+        _ => {}
+    }
+}
+
+/// Returns true if `name` is assigned (mutated) anywhere in `block`.
+fn body_assigns_var(block: &AstBlock, name: &str) -> bool {
+    block.stmts.iter().any(|s| stmt_assigns_var(s, name))
+}
+
+fn stmt_assigns_var(stmt: &AstStmt, name: &str) -> bool {
+    match stmt {
+        AstStmt::Assign { target, .. } => expr_uses_name(target, name),
+        AstStmt::Let { name: n, .. } => n.name == name,
+        AstStmt::While { body, .. }
+        | AstStmt::Loop { body, .. }
+        | AstStmt::ForRange { body, .. }
+        | AstStmt::ForEach { body, .. }
+        | AstStmt::ParFor { body, .. } => body_assigns_var(body, name),
+        AstStmt::Spawn { body, .. } => body.iter().any(|s| stmt_assigns_var(s, name)),
+        _ => false,
+    }
+}
+
+/// Returns true if `block` contains a `break` or `return` at the top level
+/// (not inside a nested loop, which would break the inner loop instead).
+fn body_has_exit(block: &AstBlock) -> bool {
+    block.stmts.iter().any(stmt_has_exit)
+}
+
+fn stmt_has_exit(stmt: &AstStmt) -> bool {
+    match stmt {
+        AstStmt::Break { .. } | AstStmt::Return { .. } => true,
+        // An if-expression may contain a break — check both branches.
+        AstStmt::Expr(e) => expr_has_exit(e),
+        // Nested loops own their own break — don't propagate.
+        AstStmt::While { .. }
+        | AstStmt::Loop { .. }
+        | AstStmt::ForRange { .. }
+        | AstStmt::ForEach { .. }
+        | AstStmt::ParFor { .. } => false,
+        _ => false,
+    }
+}
+
+fn expr_has_exit(expr: &AstExpr) -> bool {
+    match expr {
+        AstExpr::If {
+            then_block,
+            else_block,
+            ..
+        } => body_has_exit(then_block) || else_block.as_ref().is_some_and(|b| body_has_exit(b)),
+        AstExpr::Block(b) => body_has_exit(b),
+        _ => false,
+    }
 }
