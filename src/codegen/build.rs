@@ -46,13 +46,157 @@ pub const RUNTIME_C_SRC: &str = include_str!("../runtime/iris_runtime.c");
 /// if no compiler can be found or any compilation/link step fails.
 /// Requires at least one zero-argument function (preferably named `main`) as the entry point.
 pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, CodegenError> {
-    use crate::codegen::llvm_ir::emit_llvm_ir_for_binary;
+    build_binary_with_target(module, output_path, None)
+}
 
-    let has_entry = module
-        .functions()
-        .iter()
-        .any(|f| f.name == "main" || f.params.is_empty());
-    if !has_entry {
+/// Like `build_binary` but overrides the LLVM/clang target triple.
+pub fn build_binary_with_target(
+    module: &IrModule,
+    output_path: &Path,
+    target: Option<&str>,
+) -> Result<PathBuf, CodegenError> {
+    use crate::codegen::llvm_ir::emit_llvm_ir_for_binary;
+    if target.is_some() {
+        build_binary_impl(
+            crate::codegen::llvm_ir::emit_llvm_ir_for_binary_with_target(module, target)?,
+            output_path,
+            target,
+        )
+    } else {
+        build_binary_impl(emit_llvm_ir_for_binary(module)?, output_path, None)
+    }
+}
+
+/// Like `build_binary` but uses the eval wrapper: the entry function's return
+/// value is printed to stdout instead of being used as the process exit code.
+/// Used by `EmitKind::Eval` so that tests get the same output as the interpreter.
+pub fn build_binary_for_eval(
+    module: &IrModule,
+    output_path: &Path,
+) -> Result<PathBuf, CodegenError> {
+    build_binary_for_eval_with_target(module, output_path, None)
+}
+
+/// Like `build_binary_for_eval` but overrides the LLVM/clang target triple.
+pub fn build_binary_for_eval_with_target(
+    module: &IrModule,
+    output_path: &Path,
+    target: Option<&str>,
+) -> Result<PathBuf, CodegenError> {
+    use crate::codegen::llvm_ir::emit_llvm_ir_for_eval;
+    if target.is_some() {
+        build_binary_impl(
+            crate::codegen::llvm_ir::emit_llvm_ir_for_eval_with_target(module, target)?,
+            output_path,
+            target,
+        )
+    } else {
+        build_binary_impl(emit_llvm_ir_for_eval(module)?, output_path, None)
+    }
+}
+
+/// Build and execute a temporary native binary using the eval wrapper.
+///
+/// The entry function's return value is printed to stdout, matching the
+/// observable behavior of `EmitKind::Eval`.
+pub fn execute_binary_for_eval(module: &IrModule) -> Result<String, CodegenError> {
+    execute_binary_for_eval_with_target(module, None)
+}
+
+/// Like `execute_binary_for_eval` but overrides the LLVM/clang target triple.
+pub fn execute_binary_for_eval_with_target(
+    module: &IrModule,
+    target: Option<&str>,
+) -> Result<String, CodegenError> {
+    let output = run_binary_for_eval_entry_capture(module, None, target)?;
+    let stdout = String::from_utf8_lossy(&output.stdout)
+        .replace("\r\n", "\n")
+        .replace('\r', "\n");
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(CodegenError::Unsupported {
+            backend: "native".into(),
+            detail: format!("runtime error (exit {}): {}", output.status, stderr.trim()),
+        });
+    }
+    Ok(stdout)
+}
+
+pub(crate) fn run_binary_for_eval_entry_capture(
+    module: &IrModule,
+    entry_name: Option<&str>,
+    target: Option<&str>,
+) -> Result<std::process::Output, CodegenError> {
+    let bin_path = if let Some(name) = entry_name {
+        build_binary_from_llvm_ir(
+            crate::codegen::llvm_ir::emit_llvm_ir_for_named_eval_with_target(
+                module,
+                Some(name),
+                target,
+            )?,
+            &temp_eval_binary_path(),
+            target,
+        )?
+    } else {
+        build_binary_for_eval_with_target(module, &temp_eval_binary_path(), target)?
+    };
+    let run_path = std::fs::canonicalize(&bin_path).unwrap_or(bin_path.clone());
+    let output = Command::new(&run_path).output().map_err(CodegenError::Io)?;
+    let _ = std::fs::remove_file(&run_path);
+    Ok(output)
+}
+
+pub(crate) fn run_native_test_capture(
+    module: &IrModule,
+    entry_name: &str,
+    target: Option<&str>,
+) -> Result<std::process::Output, CodegenError> {
+    let bin_path = build_binary_from_llvm_ir(
+        crate::codegen::llvm_ir::emit_llvm_ir_for_test_entry_with_target(
+            module, entry_name, target,
+        )?,
+        &temp_eval_binary_path(),
+        target,
+    )?;
+    let run_path = std::fs::canonicalize(&bin_path).unwrap_or(bin_path.clone());
+    let output = Command::new(&run_path).output().map_err(CodegenError::Io)?;
+    let _ = std::fs::remove_file(&run_path);
+    Ok(output)
+}
+
+fn temp_eval_binary_path() -> PathBuf {
+    let pid = std::process::id();
+    let tid = format!("{:?}", std::thread::current().id())
+        .chars()
+        .filter(|c| c.is_alphanumeric())
+        .collect::<String>();
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .subsec_nanos();
+    std::env::temp_dir().join(format!(
+        "iris_eval_{}_{}_{}{}",
+        pid,
+        tid,
+        nanos,
+        std::env::consts::EXE_SUFFIX
+    ))
+}
+
+fn build_binary_from_llvm_ir(
+    llvm_ir: String,
+    output_path: &Path,
+    target: Option<&str>,
+) -> Result<PathBuf, CodegenError> {
+    build_binary_impl(llvm_ir, output_path, target)
+}
+
+fn build_binary_impl(
+    llvm_ir: String,
+    output_path: &Path,
+    target: Option<&str>,
+) -> Result<PathBuf, CodegenError> {
+    if !llvm_ir.contains("define i32 @main(") {
         return Err(CodegenError::Unsupported {
             backend: "binary".into(),
             detail: "no entry point (define main() or a zero-argument function) for native binary"
@@ -60,11 +204,16 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
         });
     }
 
-    // 1. Emit LLVM IR (with main wrapper for binary).
-    let llvm_ir = emit_llvm_ir_for_binary(module)?;
+    // 1. LLVM IR already emitted.
 
-    // 2. Set up a per-process temp directory so parallel builds don't collide.
-    let tmp_dir = std::env::temp_dir().join(format!("iris_build_{}", std::process::id()));
+    // 2. Set up a per-call temp directory so parallel builds don't collide.
+    // Derive from output_path's stem (which already contains pid+tid+nanos for eval builds).
+    let build_id = output_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(|s| format!("{}_bld", s))
+        .unwrap_or_else(|| format!("iris_build_{}", std::process::id()));
+    let tmp_dir = std::env::temp_dir().join(build_id);
     std::fs::create_dir_all(&tmp_dir).map_err(|e| CodegenError::Unsupported {
         backend: "binary".into(),
         detail: format!("failed to create temp dir '{}': {}", tmp_dir.display(), e),
@@ -98,29 +247,35 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     let msys2_lib = msys2_ucrt64_lib();
     let gcc_lib = msys2_gcc_lib();
 
-    // Common target triple for all clang invocations on Windows.
-    let target_args: &[&str] = if cfg!(target_os = "windows") {
-        &["-target", "x86_64-w64-windows-gnu"]
-    } else {
-        &[]
-    };
+    // Helper: convert a PathBuf to &str, returning a descriptive error on non-UTF8 paths.
+    fn path_str(p: &std::path::Path) -> Result<&str, CodegenError> {
+        p.to_str().ok_or_else(|| CodegenError::Unsupported {
+            backend: "binary".into(),
+            detail: format!("path contains non-UTF8 characters: {}", p.display()),
+        })
+    }
+
+    let resolved_target = resolve_target_triple(target);
+    let target_args = ["-target".to_owned(), resolved_target.clone()];
 
     // 5a. Compile iris_runtime.c → iris_runtime.o using clang.
     let rt_obj = tmp_dir.join("iris_runtime.o");
     let mut compile_cmd = Command::new(&clang);
-    compile_cmd.args(target_args);
+    compile_cmd.args(&target_args);
     compile_cmd.args([
         "-O2",
         "-c",
-        c_path.to_str().unwrap(),
+        path_str(&c_path)?,
         "-o",
-        rt_obj.to_str().unwrap(),
+        path_str(&rt_obj)?,
         "-I",
-        tmp_dir.to_str().unwrap(),
+        path_str(&tmp_dir)?,
         "-Wno-pragma-pack",
     ]);
-    if let Some(ref inc) = msys2_inc {
-        compile_cmd.arg("-I").arg(inc);
+    if resolved_target.contains("windows") {
+        if let Some(ref inc) = msys2_inc {
+            compile_cmd.arg("-I").arg(inc);
+        }
     }
     let c_output = compile_cmd
         .output()
@@ -147,13 +302,13 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     // Use -O1 for user IR to avoid clang 17 optimizer crashes with complex IR patterns.
     let mod_obj = tmp_dir.join("module.o");
     let mut ir_cmd = Command::new(&clang);
-    ir_cmd.args(target_args);
+    ir_cmd.args(&target_args);
     ir_cmd.args([
         "-O1",
         "-c",
-        ll_path.to_str().unwrap(),
+        path_str(&ll_path)?,
         "-o",
-        mod_obj.to_str().unwrap(),
+        path_str(&mod_obj)?,
         "-Wno-override-module",
     ]);
     let ir_status = ir_cmd.status().map_err(|e| CodegenError::Unsupported {
@@ -173,25 +328,31 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
 
     // 6. Link module.o + iris_runtime.o → native binary using clang + lld.
     let mut link_cmd = Command::new(&clang);
-    link_cmd.args(target_args);
+    link_cmd.args(&target_args);
     link_cmd.args([
         "-fuse-ld=lld",
         "-O2",
-        mod_obj.to_str().unwrap(),
-        rt_obj.to_str().unwrap(),
+        path_str(&mod_obj)?,
+        path_str(&rt_obj)?,
         "-o",
-        output_path.to_str().unwrap(),
+        path_str(output_path)?,
         "-lm",
         "-lpthread",
     ]);
     // Windows: link WinSock2 for TCP/HTTP builtins
-    #[cfg(target_os = "windows")]
-    link_cmd.arg("-lws2_32");
-    if let Some(ref lib) = msys2_lib {
-        link_cmd.arg(format!("-L{}", lib));
+    if resolved_target.contains("windows") {
+        link_cmd.arg("-lws2_32");
     }
-    if let Some(ref lib) = gcc_lib {
-        link_cmd.arg(format!("-L{}", lib));
+    if resolved_target.contains("windows") {
+        if let Some(ref lib) = msys2_lib {
+            link_cmd.arg(format!("-L{}", lib));
+        }
+        if let Some(ref lib) = gcc_lib {
+            link_cmd.arg(format!("-L{}", lib));
+        }
+    }
+    if !resolved_target.contains("windows") {
+        // Non-Windows targets keep relying on the target toolchain's standard sysroot.
     }
     let link_output = link_cmd.output().map_err(|e| CodegenError::Unsupported {
         backend: "binary".into(),
@@ -211,6 +372,14 @@ pub fn build_binary(module: &IrModule, output_path: &Path) -> Result<PathBuf, Co
     }
 
     Ok(output_path.to_path_buf())
+}
+
+fn resolve_target_triple(target: Option<&str>) -> String {
+    match target {
+        Some(t) => crate::codegen::llvm_ir::target_preset_to_triple(t).unwrap_or(t),
+        None => crate::codegen::llvm_ir::native_target_triple(),
+    }
+    .to_owned()
 }
 
 /// Find clang — required for compiling LLVM IR, C code, and linking.

@@ -192,6 +192,10 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
                     value: i_const_val,
                     ty: body_ty.clone(),
                 });
+            // Register the type so value_type() lookups work for codegen.
+            module.functions[fn_idx]
+                .value_types
+                .insert(i_const, body_ty.clone());
 
             // Build val_map: header_param_id → i_const, plus remap body results.
             let mut val_map: HashMap<ValueId, ValueId> = HashMap::new();
@@ -212,6 +216,14 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
             for mut bi in body_instrs {
                 if let Some(old_result) = bi.result() {
                     let fresh = module.functions[fn_idx].fresh_value();
+                    // Copy type info from the original value to the fresh one.
+                    if let Some(orig_ty) = module.functions[fn_idx]
+                        .value_types
+                        .get(&old_result)
+                        .cloned()
+                    {
+                        module.functions[fn_idx].value_types.insert(fresh, orig_ty);
+                    }
                     val_map.insert(old_result, fresh);
                     crate::pass::inline::set_result(&mut bi, fresh);
                 }
@@ -257,6 +269,9 @@ fn unroll_loops_in_function(module: &mut IrModule, fn_idx: usize, threshold: usi
                             value: end_val,
                             ty: IrType::Scalar(crate::ir::types::DType::I64),
                         });
+                    module.functions[fn_idx]
+                        .value_types
+                        .insert(ev, IrType::Scalar(crate::ir::types::DType::I64));
                     vec![ev]
                 }
             }

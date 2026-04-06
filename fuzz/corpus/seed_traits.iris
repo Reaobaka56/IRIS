@@ -1,18 +1,21 @@
-record Dog { name: str, age: i64 }
-
-trait Show {
-    def show(d: Dog) -> str
+record Dog {
+    name : str, age : i64
 }
-
+trait Show {
+    def show(d : Dog) -> str
+}
 impl Show for Dog {
-    def show(d: Dog) -> str {
+    def show(d : Dog) -> str {
         val n = d.name;
         f"Dog: {n}"
     }
+    
 }
-
 def main() -> i64 {
-    val d = Dog { name: "Rex", age: 5 };
+    val d = Dog {
+        name : "Rex", age : 5
+    }
+    ;
     val _s = show(d);
     print(d.age);
     0

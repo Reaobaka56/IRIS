@@ -10,7 +10,7 @@
 //   - Cache key (module_name, function_name, ir_hash) is stable
 //   - Jit emit produces string output (not empty)
 
-use iris::{compile, EmitKind};
+use iris::{compile, compile_to_module, EmitKind};
 
 // ── Test 1: JIT output is non-empty ───────────────────────────────────────
 
@@ -121,4 +121,15 @@ fn test_jit_stable_hash() {
         .filter(|l| l.contains("hash") || l.contains("Hash"))
         .collect();
     assert_eq!(hash1, hash2, "JIT hash should be stable across calls");
+}
+
+#[test]
+fn test_jit_plan_has_no_fallback_language() {
+    let module = compile_to_module("def f() -> i64 { 1 }", "test").unwrap();
+    let out = iris::codegen::jit::emit_jit_plan(&module).unwrap();
+    assert!(
+        !out.to_lowercase().contains("fallback"),
+        "did not expect fallback wording in JIT plan:\n{}",
+        out
+    );
 }

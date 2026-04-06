@@ -137,7 +137,8 @@ mod tests {
         }
     }
 
-    /// A pass that increments a counter on each function to verify mutation.
+    /// A pass that increments a counter on each invocation to verify mutation.
+    #[allow(dead_code)]
     struct CountPass {
         count: usize,
     }

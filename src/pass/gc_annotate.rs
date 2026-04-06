@@ -158,8 +158,7 @@ impl Pass for GcAnnotatePass {
                     for (i, instr) in instrs.into_iter().enumerate() {
                         // Insert Retain immediately after the creating instruction.
                         new_instrs.push(instr);
-                        if let Some((_, retain)) = inserts_after.iter().find(|(idx, _)| *idx == i)
-                        {
+                        if let Some((_, retain)) = inserts_after.iter().find(|(idx, _)| *idx == i) {
                             new_instrs.push(retain.clone());
                         }
                         // Insert all dominating Releases just before Return.
@@ -188,8 +187,7 @@ impl Pass for GcAnnotatePass {
                     // No Return in this block — only insert Retains.
                     for (i, instr) in instrs.into_iter().enumerate() {
                         new_instrs.push(instr);
-                        if let Some((_, retain)) = inserts_after.iter().find(|(idx, _)| *idx == i)
-                        {
+                        if let Some((_, retain)) = inserts_after.iter().find(|(idx, _)| *idx == i) {
                             new_instrs.push(retain.clone());
                         }
                     }
@@ -280,7 +278,11 @@ mod tests {
         "#;
         // Must not crash or produce invalid IR.
         let result = compile(src, "test", EmitKind::Ir);
-        assert!(result.is_ok(), "branching heap alloc should compile: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "branching heap alloc should compile: {:?}",
+            result.err()
+        );
     }
 
     /// A function with a heap allocation in the entry block releases it at
@@ -307,7 +309,15 @@ mod tests {
             def add(a: i64, b: i64) -> i64 { a + b }
         "#;
         let ir = compile(src, "test", EmitKind::Ir).expect("should compile");
-        assert!(!ir.contains("retain"), "scalar fn should not have retain: {}", ir);
-        assert!(!ir.contains("release"), "scalar fn should not have release: {}", ir);
+        assert!(
+            !ir.contains("retain"),
+            "scalar fn should not have retain: {}",
+            ir
+        );
+        assert!(
+            !ir.contains("release"),
+            "scalar fn should not have release: {}",
+            ir
+        );
     }
 }

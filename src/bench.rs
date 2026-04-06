@@ -1,6 +1,6 @@
 //! Performance benchmarking framework for IRIS programs.
 //!
-//! `iris bench <file.iris>` compiles and evaluates a file multiple times,
+//! `iris bench <file.iris>` compiles and executes a file multiple times,
 //! reporting statistics: min, max, mean, median, and standard deviation.
 
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ struct Sample {
     parse_us: u64,
     /// Lower + pass pipeline time in microseconds.
     compile_us: u64,
-    /// Interpreter evaluation time in microseconds.
+    /// Native execution time in microseconds.
     eval_us: u64,
     /// Total wall-clock time in microseconds.
     total_us: u64,
@@ -37,9 +37,9 @@ struct Stats {
 fn compute_stats(values: &[f64]) -> Stats {
     let n = values.len() as f64;
     let mut sorted = values.to_vec();
-    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let min = sorted[0];
-    let max = *sorted.last().unwrap();
+    let max = *sorted.last().expect("values is non-empty");
     let mean = sorted.iter().sum::<f64>() / n;
     let median = if sorted.len() % 2 == 0 {
         (sorted[sorted.len() / 2 - 1] + sorted[sorted.len() / 2]) / 2.0
@@ -152,7 +152,7 @@ fn bench_file(path: &Path, iterations: usize) -> Result<(), String> {
     Ok(())
 }
 
-/// Execute one full pipeline iteration (lex → parse → lower → passes → eval).
+/// Execute one full pipeline iteration (lex → parse → lower → passes → native run).
 fn run_single(source: &str, module_name: &str) -> Result<Sample, String> {
     use crate::parser::lexer::Lexer;
     use crate::parser::parse::Parser;
@@ -173,9 +173,9 @@ fn run_single(source: &str, module_name: &str) -> Result<Sample, String> {
     let ir = crate::compile_ast_to_module(&ast, module_name, None).map_err(|e| format!("{}", e))?;
     let t_compile = t1.elapsed();
 
-    // Eval
+    // Execute natively through the LLVM pipeline.
     let t2 = Instant::now();
-    let _ = crate::eval_ir_module(&ir);
+    crate::eval_ir_module(&ir).map_err(|e| format!("{}", e))?;
     let t_eval = t2.elapsed();
 
     let t_total = t0.elapsed();
@@ -236,6 +236,6 @@ fn bench_help_text() -> &'static str {
        -n, --iterations <N>  Number of measured iterations (default: 10)\n\
        --help, -h             Show this help\n\
      \n\
-     The benchmark measures parse, compile, and eval times separately,\n\
+     The benchmark measures parse, compile, and native execution times separately,\n\
      reporting min/max/mean/median/stddev for each phase.\n"
 }

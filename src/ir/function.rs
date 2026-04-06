@@ -216,9 +216,10 @@ mod tests {
     fn function_value_type() {
         let f = make_test_func();
         // The block param and const should have types
-        let has_typed = f.value_types.values().any(|t| {
-            matches!(t, IrType::Scalar(DType::I64))
-        });
+        let has_typed = f
+            .value_types
+            .values()
+            .any(|t| matches!(t, IrType::Scalar(DType::I64)));
         assert!(has_typed);
     }
 

@@ -29,12 +29,14 @@
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::process::Command;
 
+use super::build::find_clang;
+use super::llvm_ir::is_matmul_notation;
 use crate::error::CodegenError;
 use crate::ir::block::BlockId;
 use crate::ir::function::IrFunction;
 use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp};
-use super::llvm_ir::is_matmul_notation;
 use crate::ir::module::IrModule;
 use crate::ir::types::{DType, IrType};
 use crate::ir::value::ValueId;
@@ -187,6 +189,74 @@ pub fn emit_cuda(module: &IrModule) -> Result<String, CodegenError> {
     }
 
     Ok(out)
+}
+
+/// Emit compiled PTX text for a module by lowering to NVPTX LLVM IR and
+/// invoking clang's NVPTX backend.
+pub fn emit_cuda_ptx(module: &IrModule) -> Result<String, CodegenError> {
+    let cuda_ir = emit_cuda(module)?;
+    let tmp_dir = std::env::temp_dir().join(format!("iris_cuda_build_{}", std::process::id()));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| CodegenError::Unsupported {
+        backend: "cuda-ptx".into(),
+        detail: format!("failed to create temp dir '{}': {}", tmp_dir.display(), e),
+    })?;
+
+    let ll_path = tmp_dir.join("module.ll");
+    let ptx_path = tmp_dir.join("module.ptx");
+    std::fs::write(&ll_path, cuda_ir).map_err(|e| CodegenError::Unsupported {
+        backend: "cuda-ptx".into(),
+        detail: format!(
+            "failed to write CUDA LLVM IR to '{}': {}",
+            ll_path.display(),
+            e
+        ),
+    })?;
+
+    let ll_path_str = ll_path.to_str().ok_or_else(|| CodegenError::Unsupported {
+        backend: "cuda-ptx".into(),
+        detail: format!("non-UTF8 path: {}", ll_path.display()),
+    })?;
+    let ptx_path_str = ptx_path.to_str().ok_or_else(|| CodegenError::Unsupported {
+        backend: "cuda-ptx".into(),
+        detail: format!("non-UTF8 path: {}", ptx_path.display()),
+    })?;
+
+    let clang = find_clang();
+    let output = Command::new(&clang)
+        .args([
+            "-target",
+            "nvptx64-nvidia-cuda",
+            "-O3",
+            "-S",
+            "-x",
+            "ir",
+            ll_path_str,
+            "-o",
+            ptx_path_str,
+        ])
+        .output()
+        .map_err(|e| CodegenError::Unsupported {
+            backend: "cuda-ptx".into(),
+            detail: format!("failed to start '{}': {}", clang, e),
+        })?;
+
+    if !output.status.success() {
+        return Err(CodegenError::Unsupported {
+            backend: "cuda-ptx".into(),
+            detail: format!(
+                "'{}' failed to compile PTX (exit: {:?})\nstderr: {}\nstdout: {}",
+                clang,
+                output.status.code(),
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            ),
+        });
+    }
+
+    std::fs::read_to_string(&ptx_path).map_err(|e| CodegenError::Unsupported {
+        backend: "cuda-ptx".into(),
+        detail: format!("failed to read PTX output '{}': {}", ptx_path.display(), e),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -794,52 +864,54 @@ fn emit_cuda_instr(
             writeln!(out, " ]")?;
         }
 
-        IrInstr::TensorOp { result, op, inputs, .. } => {
-            match op {
-                crate::ir::instr::TensorOp::Einsum { notation } => {
-                    if inputs.len() == 2 && is_matmul_notation(notation) {
-                        writeln!(
-                            out,
-                            "  %v{} = call ptr @iris_tensor_matmul(ptr {}, ptr {})",
-                            result.0,
-                            val(inputs[0]),
-                            val(inputs[1])
-                        )?;
-                    } else {
-                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
-                    }
-                }
-                crate::ir::instr::TensorOp::Unary { op: unary_op } => {
-                    if inputs.len() == 1 {
-                        let fn_name = match unary_op.as_str() {
-                            "relu" => "iris_tensor_relu",
-                            "sigmoid" => "iris_tensor_sigmoid",
-                            "tanh" => "iris_tensor_tanh_act",
-                            "neg" => "iris_tensor_neg",
-                            "exp" => "iris_tensor_exp",
-                            "log" => "iris_tensor_log",
-                            "sqrt" => "iris_tensor_sqrt",
-                            "abs" => "iris_tensor_abs",
-                            _ => "iris_tensor_op",
-                        };
-                        if fn_name == "iris_tensor_op" {
-                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
-                        } else {
-                            writeln!(
-                                out,
-                                "  %v{} = call ptr @{}(ptr {})",
-                                result.0, fn_name, val(inputs[0])
-                            )?;
-                        }
-                    } else {
-                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
-                    }
-                }
-                _ => {
+        IrInstr::TensorOp {
+            result, op, inputs, ..
+        } => match op {
+            crate::ir::instr::TensorOp::Einsum { notation } => {
+                if inputs.len() == 2 && is_matmul_notation(notation) {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_tensor_matmul(ptr {}, ptr {})",
+                        result.0,
+                        val(inputs[0]),
+                        val(inputs[1])
+                    )?;
+                } else {
                     writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
                 }
             }
-        }
+            crate::ir::instr::TensorOp::Unary { op: unary_op } => {
+                if inputs.len() == 1 {
+                    let fn_name = match unary_op.as_str() {
+                        "relu" => "iris_tensor_relu",
+                        "sigmoid" => "iris_tensor_sigmoid",
+                        "tanh" => "iris_tensor_tanh_act",
+                        "neg" => "iris_tensor_neg",
+                        "exp" => "iris_tensor_exp",
+                        "log" => "iris_tensor_log",
+                        "sqrt" => "iris_tensor_sqrt",
+                        "abs" => "iris_tensor_abs",
+                        _ => "iris_tensor_op",
+                    };
+                    if fn_name == "iris_tensor_op" {
+                        writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
+                    } else {
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @{}(ptr {})",
+                            result.0,
+                            fn_name,
+                            val(inputs[0])
+                        )?;
+                    }
+                } else {
+                    writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                }
+            }
+            _ => {
+                writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+            }
+        },
 
         IrInstr::Call {
             result,

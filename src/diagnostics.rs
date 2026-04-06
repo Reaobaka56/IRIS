@@ -4,7 +4,7 @@
 //! in a rustc-style format with source excerpts, span underlines, error
 //! codes, and optional help/hint notes.
 
-use crate::error::{Error, LowerError, ParseError, PassError, InterpError};
+use crate::error::{Error, InterpError, LowerError, ParseError, PassError};
 
 // ---------------------------------------------------------------------------
 // ANSI color helpers (no external dependency)
@@ -203,12 +203,7 @@ pub fn render_error_colored_with_file(source: &str, err: &Error, filename: &str)
     render_error_inner(source, err, Some(filename), true)
 }
 
-fn render_error_inner(
-    source: &str,
-    err: &Error,
-    filename: Option<&str>,
-    colored: bool,
-) -> String {
+fn render_error_inner(source: &str, err: &Error, filename: Option<&str>, colored: bool) -> String {
     let code = err.diagnostic_code();
     let mut out = if colored {
         format!(
@@ -231,7 +226,9 @@ fn render_error_inner(
         // Compute underline width: clamp to the current source line
         let span_len = (end_byte.saturating_sub(start_byte)).max(1) as usize;
         // Don't underline past the end of the source line
-        let max_underline = source_line.len().saturating_sub((col as usize).saturating_sub(1));
+        let max_underline = source_line
+            .len()
+            .saturating_sub((col as usize).saturating_sub(1));
         let underline_len = span_len.min(max_underline).max(1);
 
         let indent = (col as usize).saturating_sub(1);
@@ -245,17 +242,14 @@ fn render_error_inner(
             } else {
                 format!("{}:{}", line, col)
             };
-            out.push_str(&format!(
-                " {}-->{} {}\n",
-                ansi::BOLD_BLUE, ansi::RESET, loc
-            ));
-            out.push_str(&format!(
-                "{} {}|{}\n",
-                gutter, ansi::BOLD_BLUE, ansi::RESET
-            ));
+            out.push_str(&format!(" {}-->{} {}\n", ansi::BOLD_BLUE, ansi::RESET, loc));
+            out.push_str(&format!("{} {}|{}\n", gutter, ansi::BOLD_BLUE, ansi::RESET));
             out.push_str(&format!(
                 "{}{} |{} {}\n",
-                ansi::BOLD_BLUE, line_num, ansi::RESET, source_line
+                ansi::BOLD_BLUE,
+                line_num,
+                ansi::RESET,
+                source_line
             ));
             out.push_str(&format!(
                 "{} {}|{} {}{}{}\n",
@@ -284,7 +278,9 @@ fn render_error_inner(
         if colored {
             out.push_str(&format!(
                 "   {}= help:{} {}\n",
-                ansi::BOLD_GREEN, ansi::RESET, hint
+                ansi::BOLD_GREEN,
+                ansi::RESET,
+                hint
             ));
         } else {
             out.push_str(&format!("   = help: {}\n", hint));
@@ -345,7 +341,10 @@ mod tests {
 
     #[test]
     fn span_to_line_col_delegates() {
-        assert_eq!(span_to_line_col("abc\ndef", 4), byte_to_line_col("abc\ndef", 4));
+        assert_eq!(
+            span_to_line_col("abc\ndef", 4),
+            byte_to_line_col("abc\ndef", 4)
+        );
     }
 
     // -- error_byte_offset ----------------------------------------------------
@@ -552,8 +551,15 @@ mod tests {
 
     #[test]
     fn extract_span_lower_variable() {
-        let span = Span { start: BytePos(10), end: BytePos(15) };
-        let err = Error::Lower(LowerError::UndefinedVariable { name: "foo".into(), span, suggestion: None });
+        let span = Span {
+            start: BytePos(10),
+            end: BytePos(15),
+        };
+        let err = Error::Lower(LowerError::UndefinedVariable {
+            name: "foo".into(),
+            span,
+            suggestion: None,
+        });
         assert_eq!(extract_span(&err), Some((10, 15)));
     }
 
@@ -582,7 +588,9 @@ mod tests {
 
     #[test]
     fn hint_unresolved_infer() {
-        let err = Error::Pass(PassError::UnresolvedInfer { func: "main".into() });
+        let err = Error::Pass(PassError::UnresolvedInfer {
+            func: "main".into(),
+        });
         let h = error_hint(&err).unwrap();
         assert!(h.contains("type annotation"));
     }
@@ -598,7 +606,10 @@ mod tests {
 
     #[test]
     fn hint_type_mismatch() {
-        let span = Span { start: BytePos(0), end: BytePos(1) };
+        let span = Span {
+            start: BytePos(0),
+            end: BytePos(1),
+        };
         let err = Error::Lower(LowerError::TypeMismatch {
             expected: "i64".into(),
             found: "str".into(),

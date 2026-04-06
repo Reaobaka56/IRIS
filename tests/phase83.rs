@@ -178,3 +178,34 @@ def main() -> i64 {
         llvm
     );
 }
+
+#[test]
+fn test_llvm_if_statement_inside_while_keeps_loop_backedge() {
+    let src = r#"
+def collatz_length(n: i64) -> i64 {
+    var steps = 0;
+    var x = n;
+    while (x != 1) {
+        if ((x % 2) == 0) {
+            x = x / 2
+        } else {
+            x = 3 * x + 1
+        };
+        steps = steps + 1
+    }
+    steps
+}
+"#;
+    let module = compile_to_module(src, "phase83_if_stmt_while").expect("compile failed");
+    let llvm = iris::codegen::llvm_ir::emit_llvm_ir(&module).expect("llvm emit failed");
+    assert!(
+        llvm.contains("br label %merge") || llvm.contains("br label %merge6"),
+        "expected if branches to rejoin loop body instead of returning:\n{}",
+        llvm
+    );
+    assert!(
+        !llvm.contains("then4:\n  ret i64 0") && !llvm.contains("else5:\n  ret i64 0"),
+        "if statement branches inside while should not be sealed as returns:\n{}",
+        llvm
+    );
+}

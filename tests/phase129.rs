@@ -17,11 +17,7 @@ use iris::ir::types::{DType, Dim, IrType, Shape};
 fn tensor_ty(dtype: DType, dims: &[usize]) -> IrType {
     IrType::Tensor {
         dtype,
-        shape: Shape(
-            dims.iter()
-                .map(|d| Dim::Literal(*d as u64))
-                .collect(),
-        ),
+        shape: Shape(dims.iter().map(|d| Dim::Literal(*d as u64)).collect()),
     }
 }
 
@@ -30,11 +26,7 @@ fn scalar_ty(dtype: DType) -> IrType {
 }
 
 /// Build a single-block function that runs a TensorOp and returns the result.
-fn run_tensor_op(
-    op: TensorOp,
-    inputs: Vec<(IrValue, IrType)>,
-    result_ty: IrType,
-) -> Vec<IrValue> {
+fn run_tensor_op(op: TensorOp, inputs: Vec<(IrValue, IrType)>, result_ty: IrType) -> Vec<IrValue> {
     let params: Vec<Param> = inputs
         .iter()
         .enumerate()
@@ -63,7 +55,12 @@ fn run_tensor_op(
         },
         Some(result_ty),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let func = builder.build();
     let args: Vec<IrValue> = inputs.into_iter().map(|(v, _)| v).collect();
@@ -221,11 +218,7 @@ fn test_einsum_transpose() {
         ty_r2,
     );
     // outer product: [[4,5],[8,10],[12,15]]
-    assert_tensor_close(
-        &result[0],
-        &[4.0, 5.0, 8.0, 10.0, 12.0, 15.0],
-        &[3, 2],
-    );
+    assert_tensor_close(&result[0], &[4.0, 5.0, 8.0, 10.0, 12.0, 15.0], &[3, 2]);
 }
 
 // ===========================================================================
@@ -240,11 +233,7 @@ fn test_reshape_2d_to_1d() {
 
     let result = run_tensor_op(TensorOp::Reshape, vec![(t, ty_in)], ty_out);
     // With only 1 input and no shape dims, it flattens to [6]
-    assert_tensor_close(
-        &result[0],
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[6],
-    );
+    assert_tensor_close(&result[0], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[6]);
 }
 
 #[test]
@@ -262,11 +251,7 @@ fn test_reshape_1d_to_2d() {
         vec![(t, ty_in), (dim0, ty_d.clone()), (dim1, ty_d)],
         ty_out,
     );
-    assert_tensor_close(
-        &result[0],
-        &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
-        &[2, 3],
-    );
+    assert_tensor_close(&result[0], &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[2, 3]);
 }
 
 // ===========================================================================
@@ -285,11 +270,7 @@ fn test_transpose_2d_default() {
         vec![(t, ty_in)],
         ty_out,
     );
-    assert_tensor_close(
-        &result[0],
-        &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0],
-        &[3, 2],
-    );
+    assert_tensor_close(&result[0], &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2]);
 }
 
 #[test]
@@ -304,11 +285,7 @@ fn test_transpose_2d_explicit() {
         vec![(t, ty_in)],
         ty_out,
     );
-    assert_tensor_close(
-        &result[0],
-        &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0],
-        &[3, 2],
-    );
+    assert_tensor_close(&result[0], &[1.0, 4.0, 2.0, 5.0, 3.0, 6.0], &[3, 2]);
 }
 
 #[test]
@@ -342,8 +319,14 @@ fn test_transpose_3d() {
     // Original [1,2,3]=23 → New [3,1,2]=23 (flat: 3*6+1*3+2=23)
     if let IrValue::Tensor(data, _) = &result[0] {
         assert!((data[0] - 0.0).abs() < 1e-5, "element [0,0,0]");
-        assert!((data[6] - 1.0).abs() < 1e-5, "element [1,0,0] = orig [0,0,1]");
-        assert!((data[23] - 23.0).abs() < 1e-5, "element [3,1,2] = orig [1,2,3]");
+        assert!(
+            (data[6] - 1.0).abs() < 1e-5,
+            "element [1,0,0] = orig [0,0,1]"
+        );
+        assert!(
+            (data[23] - 23.0).abs() < 1e-5,
+            "element [3,1,2] = orig [1,2,3]"
+        );
     }
 }
 
@@ -501,9 +484,7 @@ fn test_unary_tanh() {
     let ty = tensor_ty(DType::F32, &[2]);
 
     let result = run_tensor_op(
-        TensorOp::Unary {
-            op: "tanh".into(),
-        },
+        TensorOp::Unary { op: "tanh".into() },
         vec![(t, ty.clone())],
         ty,
     );
@@ -520,14 +501,8 @@ fn test_einsum_batched_matmul() {
     // Batch of 2 matrices: each 2x2 @ 2x2
     // Batch 0: [[1,0],[0,1]] @ [[5,6],[7,8]] = [[5,6],[7,8]]
     // Batch 1: [[2,0],[0,2]] @ [[1,1],[1,1]] = [[2,2],[2,2]]
-    let a = IrValue::Tensor(
-        vec![1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0],
-        vec![2, 2, 2],
-    );
-    let b = IrValue::Tensor(
-        vec![5.0, 6.0, 7.0, 8.0, 1.0, 1.0, 1.0, 1.0],
-        vec![2, 2, 2],
-    );
+    let a = IrValue::Tensor(vec![1.0, 0.0, 0.0, 1.0, 2.0, 0.0, 0.0, 2.0], vec![2, 2, 2]);
+    let b = IrValue::Tensor(vec![5.0, 6.0, 7.0, 8.0, 1.0, 1.0, 1.0, 1.0], vec![2, 2, 2]);
     let ty_a = tensor_ty(DType::F32, &[2, 2, 2]);
     let ty_b = tensor_ty(DType::F32, &[2, 2, 2]);
     let ty_c = tensor_ty(DType::F32, &[2, 2, 2]);
@@ -579,7 +554,12 @@ fn test_einsum_trace() {
         },
         Some(ty_s),
     );
-    builder.push_instr(IrInstr::Return { values: vec![result_v] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result_v],
+        },
+        None,
+    );
 
     let func = builder.build();
     let out = eval_function(&func, &[a]).expect("eval trace");
@@ -593,10 +573,7 @@ fn test_einsum_trace() {
 #[test]
 fn test_reduce_sum_full_3d() {
     // shape [2,2,2], values 1..8, sum = 36
-    let t = IrValue::Tensor(
-        vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
-        vec![2, 2, 2],
-    );
+    let t = IrValue::Tensor(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0], vec![2, 2, 2]);
     let ty_in = tensor_ty(DType::F32, &[2, 2, 2]);
     let ty_out = scalar_ty(DType::F32);
 

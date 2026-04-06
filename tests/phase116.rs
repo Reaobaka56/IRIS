@@ -63,7 +63,12 @@ def f() -> i64 {
     ANSWER
 }
 "#;
-    let result = compile_multi(&[("config", config), ("main", main)], "main", EmitKind::Eval).unwrap();
+    let result = compile_multi(
+        &[("config", config), ("main", main)],
+        "main",
+        EmitKind::Eval,
+    )
+    .unwrap();
     assert_eq!(result.trim(), "42");
 }
 
@@ -81,7 +86,12 @@ def f() -> str {
     greet("IRIS")
 }
 "#;
-    let result = compile_multi(&[("strutil", strutil), ("main", main)], "main", EmitKind::Eval).unwrap();
+    let result = compile_multi(
+        &[("strutil", strutil), ("main", main)],
+        "main",
+        EmitKind::Eval,
+    )
+    .unwrap();
     assert_eq!(result.trim(), "Hello, IRIS");
 }
 
@@ -96,7 +106,8 @@ def f() -> i64 {
     bool_to_i64(is_positive(42))
 }
 "#;
-    let result = compile_multi(&[("logic", logic), ("main", main)], "main", EmitKind::Eval).unwrap();
+    let result =
+        compile_multi(&[("logic", logic), ("main", main)], "main", EmitKind::Eval).unwrap();
     assert_eq!(result.trim(), "1");
 }
 
@@ -125,7 +136,12 @@ def f() -> i64 {
     area_approx(c)
 }
 "#;
-    let result = compile_multi(&[("shapes", shapes), ("main", main)], "main", EmitKind::Eval).unwrap();
+    let result = compile_multi(
+        &[("shapes", shapes), ("main", main)],
+        "main",
+        EmitKind::Eval,
+    )
+    .unwrap();
     assert_eq!(result.trim(), "75");
 }
 

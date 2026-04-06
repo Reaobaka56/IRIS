@@ -82,11 +82,22 @@ impl fmt::Display for Dep {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Dep::Path(p) => write!(f, "{{ path = \"{}\" }}", p),
-            Dep::Git { url, branch, tag, rev } => {
+            Dep::Git {
+                url,
+                branch,
+                tag,
+                rev,
+            } => {
                 write!(f, "{{ git = \"{}\"", url)?;
-                if let Some(b) = branch { write!(f, ", branch = \"{}\"", b)?; }
-                if let Some(t) = tag    { write!(f, ", tag = \"{}\"", t)?; }
-                if let Some(r) = rev    { write!(f, ", rev = \"{}\"", r)?; }
+                if let Some(b) = branch {
+                    write!(f, ", branch = \"{}\"", b)?;
+                }
+                if let Some(t) = tag {
+                    write!(f, ", tag = \"{}\"", t)?;
+                }
+                if let Some(r) = rev {
+                    write!(f, ", rev = \"{}\"", r)?;
+                }
                 write!(f, " }}")
             }
         }
@@ -109,7 +120,9 @@ impl Manifest {
 
         for (lineno, raw_line) in src.lines().enumerate() {
             let line = raw_line.split('#').next().unwrap_or("").trim();
-            if line.is_empty() { continue; }
+            if line.is_empty() {
+                continue;
+            }
 
             if line.starts_with('[') && line.ends_with(']') {
                 section = line[1..line.len() - 1].trim().to_string();
@@ -122,12 +135,12 @@ impl Manifest {
 
                 match section.as_str() {
                     "package" => match key {
-                        "name"        => name        = unquote(val),
-                        "version"     => version     = unquote(val),
-                        "entry"       => entry       = unquote(val),
+                        "name" => name = unquote(val),
+                        "version" => version = unquote(val),
+                        "entry" => entry = unquote(val),
                         "description" => description = unquote(val),
-                        "license"     => license     = unquote(val),
-                        "repository"  => repository  = unquote(val),
+                        "license" => license = unquote(val),
+                        "repository" => repository = unquote(val),
                         _ => {}
                     },
                     "dependencies" => {
@@ -143,7 +156,15 @@ impl Manifest {
             return Err("missing [package] name".into());
         }
 
-        Ok(Manifest { name, version, entry, description, license, repository, deps })
+        Ok(Manifest {
+            name,
+            version,
+            entry,
+            description,
+            license,
+            repository,
+            deps,
+        })
     }
 
     /// Serialize back to TOML text.
@@ -180,9 +201,14 @@ fn parse_dep(name: &str, val: &str, lineno: usize) -> Result<Dep, String> {
         }
         if let Some(url) = extract_inline_key(inner, "git") {
             let branch = extract_inline_key(inner, "branch");
-            let tag    = extract_inline_key(inner, "tag");
-            let rev    = extract_inline_key(inner, "rev");
-            return Ok(Dep::Git { url, branch, tag, rev });
+            let tag = extract_inline_key(inner, "tag");
+            let rev = extract_inline_key(inner, "rev");
+            return Ok(Dep::Git {
+                url,
+                branch,
+                tag,
+                rev,
+            });
         }
         // Registry deps explicitly not supported.
         if extract_inline_key(inner, "version").is_some() {
@@ -193,13 +219,19 @@ fn parse_dep(name: &str, val: &str, lineno: usize) -> Result<Dep, String> {
             ));
         }
         Err(format!(
-            "line {}: dependency '{}' must have `path` or `git` key", lineno, name
+            "line {}: dependency '{}' must have `path` or `git` key",
+            lineno, name
         ))
     } else {
         // Bare string: treat as a path for backward compat.
         let v = unquote(val);
         if v.starts_with("http://") || v.starts_with("https://") || v.starts_with("git@") {
-            Ok(Dep::Git { url: v, branch: None, tag: None, rev: None })
+            Ok(Dep::Git {
+                url: v,
+                branch: None,
+                tag: None,
+                rev: None,
+            })
         } else {
             Ok(Dep::Path(v))
         }
@@ -208,9 +240,7 @@ fn parse_dep(name: &str, val: &str, lineno: usize) -> Result<Dep, String> {
 
 fn unquote(s: &str) -> String {
     let s = s.trim();
-    if (s.starts_with('"') && s.ends_with('"'))
-        || (s.starts_with('\'') && s.ends_with('\''))
-    {
+    if (s.starts_with('"') && s.ends_with('"')) || (s.starts_with('\'') && s.ends_with('\'')) {
         s[1..s.len() - 1].to_string()
     } else {
         s.to_string()
@@ -269,18 +299,22 @@ impl LockFile {
                 if !cur_name.is_empty() && !cur_kind.is_empty() {
                     entries.insert(
                         cur_name.clone(),
-                        LockEntry { kind: cur_kind.clone(), source: cur_source.clone(), commit: cur_commit.clone() },
+                        LockEntry {
+                            kind: cur_kind.clone(),
+                            source: cur_source.clone(),
+                            commit: cur_commit.clone(),
+                        },
                     );
                 }
-                cur_name   = line[5..line.len() - 1].to_string();
-                cur_kind   = String::new();
+                cur_name = line[5..line.len() - 1].to_string();
+                cur_kind = String::new();
                 cur_source = String::new();
                 cur_commit = None;
             } else if let Some(eq) = line.find('=') {
                 let k = line[..eq].trim();
                 let v = unquote(line[eq + 1..].trim());
                 match k {
-                    "kind"   => cur_kind   = v,
+                    "kind" => cur_kind = v,
                     "source" => cur_source = v,
                     "commit" => cur_commit = Some(v),
                     _ => {}
@@ -291,7 +325,11 @@ impl LockFile {
         if !cur_name.is_empty() && !cur_kind.is_empty() {
             entries.insert(
                 cur_name,
-                LockEntry { kind: cur_kind, source: cur_source, commit: cur_commit },
+                LockEntry {
+                    kind: cur_kind,
+                    source: cur_source,
+                    commit: cur_commit,
+                },
             );
         }
         LockFile { entries }
@@ -301,7 +339,7 @@ impl LockFile {
     pub fn to_text(&self) -> String {
         let mut out = String::from(
             "# iris.lock — generated by `iris pkg install`. Commit to version control.\n\
-             # Do not edit manually.\n\n"
+             # Do not edit manually.\n\n",
         );
         for (name, entry) in &self.entries {
             out.push_str(&format!("[dep.{}]\n", name));
@@ -322,8 +360,12 @@ fn find_manifest(start_dir: &Path) -> Option<PathBuf> {
     let mut dir = start_dir.to_path_buf();
     loop {
         let candidate = dir.join("iris.toml");
-        if candidate.exists() { return Some(candidate); }
-        if !dir.pop() { return None; }
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if !dir.pop() {
+            return None;
+        }
     }
 }
 
@@ -331,8 +373,8 @@ fn load_manifest() -> Result<(PathBuf, Manifest), String> {
     let cwd = std::env::current_dir().map_err(|e| format!("cannot read cwd: {}", e))?;
     let path = find_manifest(&cwd)
         .ok_or_else(|| "no iris.toml found (run `iris pkg init` to create one)".to_string())?;
-    let text = fs::read_to_string(&path)
-        .map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
+    let text =
+        fs::read_to_string(&path).map_err(|e| format!("cannot read {}: {}", path.display(), e))?;
     let manifest = Manifest::parse(&text)?;
     Ok((path, manifest))
 }
@@ -355,8 +397,7 @@ fn load_lock(manifest_path: &Path) -> LockFile {
 
 fn save_lock(manifest_path: &Path, lock: &LockFile) -> Result<(), String> {
     let lp = lock_path(manifest_path);
-    fs::write(&lp, lock.to_text())
-        .map_err(|e| format!("cannot write iris.lock: {}", e))
+    fs::write(&lp, lock.to_text()).map_err(|e| format!("cannot write iris.lock: {}", e))
 }
 
 // ── Commands ──────────────────────────────────────────────────────────────────
@@ -399,10 +440,13 @@ pub fn cmd_init() -> Result<(), String> {
         ).map_err(|e| format!("cannot write main.iris: {}", e))?;
     }
 
-    fs::create_dir_all(cwd.join(".iris"))
-        .map_err(|e| format!("cannot create .iris/: {}", e))?;
+    fs::create_dir_all(cwd.join(".iris")).map_err(|e| format!("cannot create .iris/: {}", e))?;
 
-    eprintln!("initialized IRIS project '{}' in {}", dir_name, cwd.display());
+    eprintln!(
+        "initialized IRIS project '{}' in {}",
+        dir_name,
+        cwd.display()
+    );
     Ok(())
 }
 
@@ -441,8 +485,11 @@ pub fn cmd_list() -> Result<(), String> {
         for (name, dep) in &manifest.deps {
             let locked = lock.entries.get(name);
             let pin = match locked {
-                Some(e) if e.commit.is_some() =>
-                    format!(" [{}]", &e.commit.as_deref().unwrap_or("")[ ..8.min(e.commit.as_deref().unwrap_or("").len())]),
+                Some(e) if e.commit.is_some() => format!(
+                    " [{}]",
+                    &e.commit.as_deref().unwrap_or("")
+                        [..8.min(e.commit.as_deref().unwrap_or("").len())]
+                ),
                 _ => String::new(),
             };
             eprintln!("  {} = {}{}", name, dep, pin);
@@ -454,7 +501,9 @@ pub fn cmd_list() -> Result<(), String> {
 /// `iris pkg check` — verify all deps are installed.
 pub fn cmd_check() -> Result<(), String> {
     let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
+    let project_dir = manifest_path
+        .parent()
+        .ok_or("cannot determine project directory")?;
     let deps_dir = project_dir.join(".iris").join("deps");
     let mut missing = Vec::new();
     for (name, _dep) in &manifest.deps {
@@ -470,18 +519,22 @@ pub fn cmd_check() -> Result<(), String> {
         for m in &missing {
             eprintln!("  missing: {}", m);
         }
-        Err(format!("{} dependency/ies missing — run `iris pkg install`", missing.len()))
+        Err(format!(
+            "{} dependency/ies missing — run `iris pkg install`",
+            missing.len()
+        ))
     }
 }
 
 /// `iris pkg install` — fetch/sync all deps (including transitive) into `.iris/deps/`.
 pub fn cmd_install() -> Result<(), String> {
     let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
+    let project_dir = manifest_path
+        .parent()
+        .ok_or("cannot determine project directory")?;
     let deps_dir = project_dir.join(".iris").join("deps");
 
-    fs::create_dir_all(&deps_dir)
-        .map_err(|e| format!("cannot create .iris/deps/: {}", e))?;
+    fs::create_dir_all(&deps_dir).map_err(|e| format!("cannot create .iris/deps/: {}", e))?;
 
     if manifest.deps.is_empty() {
         eprintln!("no dependencies to install");
@@ -492,7 +545,8 @@ pub fn cmd_install() -> Result<(), String> {
 
     // BFS queue of (dep_name, dep, project_dir) triples.
     // We track installed names globally to avoid cycles.
-    let mut queue: Vec<(String, Dep, PathBuf)> = manifest.deps
+    let mut queue: Vec<(String, Dep, PathBuf)> = manifest
+        .deps
         .iter()
         .map(|(n, d)| (n.clone(), d.clone(), project_dir.to_path_buf()))
         .collect();
@@ -512,12 +566,12 @@ pub fn cmd_install() -> Result<(), String> {
         let (lock_entry, transitive_from_dir) = match &dep {
             Dep::Path(rel) => {
                 let source = from_dir.join(rel);
-                let source = source.canonicalize()
-                    .unwrap_or_else(|_| source.clone());
+                let source = source.canonicalize().unwrap_or_else(|_| source.clone());
                 if !source.exists() {
                     return Err(format!(
                         "dependency '{}': path '{}' does not exist",
-                        name, source.display()
+                        name,
+                        source.display()
                     ));
                 }
                 install_path_dep(&source, &target, &name)?;
@@ -529,9 +583,25 @@ pub fn cmd_install() -> Result<(), String> {
                 // Transitive deps in libA/iris.toml are relative to libA's source dir.
                 (entry, source.clone())
             }
-            Dep::Git { url, branch, tag, rev } => {
-                let commit = install_git_dep(url, branch.as_deref(), tag.as_deref(), rev.as_deref(), &target, &name)?;
-                let entry = LockEntry { kind: "git".into(), source: url.clone(), commit: Some(commit) };
+            Dep::Git {
+                url,
+                branch,
+                tag,
+                rev,
+            } => {
+                let commit = install_git_dep(
+                    url,
+                    branch.as_deref(),
+                    tag.as_deref(),
+                    rev.as_deref(),
+                    &target,
+                    &name,
+                )?;
+                let entry = LockEntry {
+                    kind: "git".into(),
+                    source: url.clone(),
+                    commit: Some(commit),
+                };
                 // Transitive deps in a git repo's iris.toml are relative to the
                 // checked-out repo root (the installed target).
                 (entry, target.clone())
@@ -564,29 +634,51 @@ pub fn cmd_install() -> Result<(), String> {
 /// `iris pkg update [name]` — update git deps to latest matching ref.
 pub fn cmd_update(only: Option<&str>) -> Result<(), String> {
     let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
+    let project_dir = manifest_path
+        .parent()
+        .ok_or("cannot determine project directory")?;
     let deps_dir = project_dir.join(".iris").join("deps");
     let mut lock = load_lock(&manifest_path);
     let mut updated = 0usize;
 
     for (name, dep) in &manifest.deps {
         if let Some(filter) = only {
-            if name != filter { continue; }
+            if name != filter {
+                continue;
+            }
         }
         match dep {
-            Dep::Git { url, branch, tag, rev } => {
+            Dep::Git {
+                url,
+                branch,
+                tag,
+                rev,
+            } => {
                 let target = deps_dir.join(name);
                 if !target.exists() {
-                    eprintln!("  {} — not installed, skipping (run `iris pkg install`)", name);
+                    eprintln!(
+                        "  {} — not installed, skipping (run `iris pkg install`)",
+                        name
+                    );
                     continue;
                 }
                 eprintln!("  {} — updating {}", name, url);
-                let commit = git_pull_or_fetch(&target, url, branch.as_deref(), tag.as_deref(), rev.as_deref(), name)?;
-                lock.entries.insert(name.clone(), LockEntry {
-                    kind: "git".into(),
-                    source: url.clone(),
-                    commit: Some(commit),
-                });
+                let commit = git_pull_or_fetch(
+                    &target,
+                    url,
+                    branch.as_deref(),
+                    tag.as_deref(),
+                    rev.as_deref(),
+                    name,
+                )?;
+                lock.entries.insert(
+                    name.clone(),
+                    LockEntry {
+                        kind: "git".into(),
+                        source: url.clone(),
+                        commit: Some(commit),
+                    },
+                );
                 updated += 1;
             }
             Dep::Path(_) => {
@@ -604,7 +696,9 @@ pub fn cmd_update(only: Option<&str>) -> Result<(), String> {
 
 /// Install a local path dep via symlink (Unix) or recursive copy (Windows).
 fn install_path_dep(source: &Path, target: &Path, name: &str) -> Result<(), String> {
-    if target.exists() { remove_dir_all_safe(target)?; }
+    if target.exists() {
+        remove_dir_all_safe(target)?;
+    }
 
     #[cfg(unix)]
     {
@@ -647,7 +741,9 @@ fn git_clone(
     name: &str,
 ) -> Result<String, String> {
     eprintln!("  {} — cloning {} ...", name, url);
-    if target.exists() { remove_dir_all_safe(target)?; }
+    if target.exists() {
+        remove_dir_all_safe(target)?;
+    }
 
     // Choose which ref to clone.
     let ref_arg: Option<&str> = tag.or(branch);
@@ -658,7 +754,8 @@ fn git_clone(
     }
     cmd.arg(url).arg(target.as_os_str());
 
-    let status = cmd.status()
+    let status = cmd
+        .status()
         .map_err(|e| format!("dependency '{}': git clone failed: {}", name, e))?;
     if !status.success() {
         return Err(format!("dependency '{}': git clone failed", name));
@@ -697,7 +794,13 @@ fn git_pull_or_fetch(
     } else if let Some(t) = tag {
         // Fetch the tag.
         let _ = Command::new("git")
-            .args(["fetch", "--depth", "1", "origin", &format!("refs/tags/{}", t)])
+            .args([
+                "fetch",
+                "--depth",
+                "1",
+                "origin",
+                &format!("refs/tags/{}", t),
+            ])
             .current_dir(target)
             .status();
         git_checkout(target, t, name)?;
@@ -708,7 +811,9 @@ fn git_pull_or_fetch(
         if let Some(b) = branch {
             pull.arg("origin").arg(b);
         }
-        let status = pull.current_dir(target).status()
+        let status = pull
+            .current_dir(target)
+            .status()
             .map_err(|e| format!("dependency '{}': git pull failed: {}", name, e))?;
         if !status.success() {
             return Err(format!("dependency '{}': git pull failed", name));
@@ -726,7 +831,10 @@ fn git_checkout(target: &Path, git_ref: &str, name: &str) -> Result<(), String> 
         .status()
         .map_err(|e| format!("dependency '{}': git checkout failed: {}", name, e))?;
     if !status.success() {
-        return Err(format!("dependency '{}': git checkout '{}' failed", name, git_ref));
+        return Err(format!(
+            "dependency '{}': git checkout '{}' failed",
+            name, git_ref
+        ));
     }
     Ok(())
 }
@@ -762,8 +870,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
 }
 
 fn remove_dir_all_safe(path: &Path) -> Result<(), String> {
-    fs::remove_dir_all(path)
-        .map_err(|e| format!("cannot remove {}: {}", path.display(), e))
+    fs::remove_dir_all(path).map_err(|e| format!("cannot remove {}: {}", path.display(), e))
 }
 
 // ── Build / run ───────────────────────────────────────────────────────────────
@@ -771,7 +878,9 @@ fn remove_dir_all_safe(path: &Path) -> Result<(), String> {
 /// `iris pkg build` / `iris pkg run` — install deps then compile the entry point.
 pub fn cmd_build(run_after: bool) -> Result<(), String> {
     let (manifest_path, manifest) = load_manifest()?;
-    let project_dir = manifest_path.parent().ok_or("cannot determine project directory")?;
+    let project_dir = manifest_path
+        .parent()
+        .ok_or("cannot determine project directory")?;
 
     cmd_install()?;
 
@@ -787,7 +896,10 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
     let deps_dir = project_dir.join(".iris").join("deps");
     let mut extra_paths: Vec<PathBuf> = Vec::new();
     if deps_dir.exists() {
-        for entry in fs::read_dir(&deps_dir).map_err(|e| e.to_string())?.flatten() {
+        for entry in fs::read_dir(&deps_dir)
+            .map_err(|e| e.to_string())?
+            .flatten()
+        {
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                 extra_paths.push(entry.path());
             }
@@ -800,9 +912,12 @@ pub fn cmd_build(run_after: bool) -> Result<(), String> {
         .compile_file_to_ast(&entry_path, &extra_refs)
         .map_err(|e| format!("{}", e))?;
 
-    let module_name = entry_path.file_stem().and_then(|n| n.to_str()).unwrap_or("main");
-    let ir = crate::compile_ast_to_module(&main_ast, module_name, None)
-        .map_err(|e| format!("{}", e))?;
+    let module_name = entry_path
+        .file_stem()
+        .and_then(|n| n.to_str())
+        .unwrap_or("main");
+    let ir =
+        crate::compile_ast_to_module(&main_ast, module_name, None).map_err(|e| format!("{}", e))?;
 
     let output_name = format!("{}{}", manifest.name, std::env::consts::EXE_SUFFIX);
     let output_path = project_dir.join(&output_name);
@@ -836,20 +951,35 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
 
             // Collect all flags.
             let mut path_val: Option<String> = None;
-            let mut git_val:  Option<String> = None;
-            let mut tag_val:  Option<String> = None;
-            let mut rev_val:  Option<String> = None;
+            let mut git_val: Option<String> = None;
+            let mut tag_val: Option<String> = None;
+            let mut rev_val: Option<String> = None;
             let mut branch_val: Option<String> = None;
 
             let mut i = 4usize;
             while i < args.len() {
                 match args[i].as_str() {
-                    "--path"   => { i += 1; path_val   = args.get(i).cloned(); }
-                    "--git"    => { i += 1; git_val    = args.get(i).cloned(); }
-                    "--tag"    => { i += 1; tag_val    = args.get(i).cloned(); }
-                    "--rev"    => { i += 1; rev_val    = args.get(i).cloned(); }
-                    "--branch" => { i += 1; branch_val = args.get(i).cloned(); }
-                    other      => return Err(format!("unknown flag: {}", other)),
+                    "--path" => {
+                        i += 1;
+                        path_val = args.get(i).cloned();
+                    }
+                    "--git" => {
+                        i += 1;
+                        git_val = args.get(i).cloned();
+                    }
+                    "--tag" => {
+                        i += 1;
+                        tag_val = args.get(i).cloned();
+                    }
+                    "--rev" => {
+                        i += 1;
+                        rev_val = args.get(i).cloned();
+                    }
+                    "--branch" => {
+                        i += 1;
+                        branch_val = args.get(i).cloned();
+                    }
+                    other => return Err(format!("unknown flag: {}", other)),
                 }
                 i += 1;
             }
@@ -857,7 +987,12 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
             let dep = if let Some(p) = path_val {
                 Dep::Path(p)
             } else if let Some(url) = git_val {
-                Dep::Git { url, branch: branch_val, tag: tag_val, rev: rev_val }
+                Dep::Git {
+                    url,
+                    branch: branch_val,
+                    tag: tag_val,
+                    rev: rev_val,
+                }
             } else {
                 return Err("usage: iris pkg add <name> --path <p> | --git <url>".into());
             };
@@ -892,7 +1027,8 @@ pub fn run_pkg_command(args: &[String]) -> Result<(), String> {
 
         other => Err(format!(
             "unknown pkg subcommand: '{}'\n\n{}",
-            other, pkg_help_text()
+            other,
+            pkg_help_text()
         )),
     }
 }

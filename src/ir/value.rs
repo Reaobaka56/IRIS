@@ -105,9 +105,7 @@ mod tests {
 
     #[test]
     fn value_def_block_param() {
-        let def = ValueDef::BlockParam {
-            block: BlockId(0),
-        };
+        let def = ValueDef::BlockParam { block: BlockId(0) };
         assert!(matches!(def, ValueDef::BlockParam { block } if block == BlockId(0)));
     }
 
@@ -117,6 +115,8 @@ mod tests {
             block: BlockId(1),
             instr: InstrId(3),
         };
-        assert!(matches!(def, ValueDef::InstrResult { block, instr } if block == BlockId(1) && instr == InstrId(3)));
+        assert!(
+            matches!(def, ValueDef::InstrResult { block, instr } if block == BlockId(1) && instr == InstrId(3))
+        );
     }
 }

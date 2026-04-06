@@ -205,7 +205,12 @@ mod tests {
             },
             Some(i64_ty()),
         );
-        builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+        builder.push_instr(
+            IrInstr::Return {
+                values: vec![result],
+            },
+            None,
+        );
         m.add_function(builder.build()).unwrap();
 
         let mut pass = ValidatePass;
@@ -303,7 +308,10 @@ mod tests {
 
     #[test]
     fn contains_infer_compound_types() {
-        assert!(contains_infer(&IrType::Tuple(vec![i64_ty(), IrType::Infer])));
+        assert!(contains_infer(&IrType::Tuple(vec![
+            i64_ty(),
+            IrType::Infer
+        ])));
         assert!(!contains_infer(&IrType::Tuple(vec![i64_ty(), IrType::Str])));
         assert!(contains_infer(&IrType::List(Box::new(IrType::Infer))));
         assert!(!contains_infer(&IrType::List(Box::new(i64_ty()))));

@@ -82,6 +82,10 @@ def sigmoid_deriv(x : f64) -> f64 {
     val s = sigmoid(x)s * (1.0 - s)
 }
 pub
+def sigmoid_deriv_from_output(y : f64) -> f64 {
+    y * (1.0 - y)
+}
+pub
 def relu(x : f64) -> f64 {
     if x>0.0 {
         x
@@ -118,6 +122,10 @@ def tanh_act(x : f64) -> f64 {
 pub
 def tanh_deriv(x : f64) -> f64 {
     val t = tanh_act(x)1.0 - t * t
+}
+pub
+def tanh_deriv_from_output(y : f64) -> f64 {
+    1.0 - y * y
 }
 pub
 def softmax(v : list<f64>) -> list<f64> {
@@ -476,6 +484,13 @@ def adam_update(params : list<f64>, grads : list<f64>, m1 : list<f64>, m2 : list
         list_push(new_params, list_get(params, i) - lr * m_hat / (sqrt(v_hat) + eps))
     }
     (new_params, new_m1, new_m2)
+}
+pub
+def zeros_like(v : list<f64>) -> list<f64> {
+    val n = list_len(v)val out : list<f64> = list()for i in 0 .. n {
+        list_push(out, 0.0)
+    }
+    out
 }
 pub
 def dense_forward(weights : list<f64>, biases : list<f64>, inp : list<f64>, n_in : i64, n_out : i64) -> list<f64> {

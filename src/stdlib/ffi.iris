@@ -71,3 +71,31 @@ pub def rust_i64(handle: i64, func_name: str, a1: i64) -> i64 {
 pub def rust_f64(handle: i64, func_name: str, a1: i64) -> f64 {
     rust_call_f64(handle, func_name, a1)
 }
+
+// ── Two-argument convenience wrappers ──
+// These cover the most common BLAS / LAPACK calling patterns.
+
+// Call a C function with two i64 arguments, returning i64.
+pub def call_i64_2(handle: i64, func_name: str, a1: i64, a2: i64) -> i64 {
+    ffi_call_i64(handle, func_name, a1, a2)
+}
+
+// Call a C function with three i64 arguments, returning i64.
+pub def call_i64_3(handle: i64, func_name: str, a1: i64, a2: i64, a3: i64) -> i64 {
+    ffi_call_i64(handle, func_name, a1, a2, a3)
+}
+
+// Call a C function with two i64 arguments, returning f64.
+pub def call_f64_2(handle: i64, func_name: str, a1: i64, a2: i64) -> f64 {
+    ffi_call_f64(handle, func_name, a1, a2)
+}
+
+// Execute a shell command, returning its stdout as a string.
+pub def shell(cmd: str) -> str {
+    exec_cmd(cmd)
+}
+
+// Convenience: call a Python module function with a single string argument.
+pub def py_call1(module: str, func: str, arg: str) -> str {
+    python_call(module, func, arg)
+}

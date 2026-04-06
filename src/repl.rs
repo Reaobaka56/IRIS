@@ -477,7 +477,11 @@ mod tests {
         assert!(out.contains("std.math"), "expected 'std.math' in: {}", out);
         // After bring, stdlib functions must be callable
         let result = r.eval("gcd(12, 8)");
-        assert!(result.is_ok(), "gcd unavailable after :bring std.math: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "gcd unavailable after :bring std.math: {:?}",
+            result
+        );
     }
 
     #[test]
@@ -506,7 +510,8 @@ mod tests {
     #[test]
     fn multiline_def_via_eval() {
         let mut r = repl();
-        r.eval("def add(a: i64, b: i64) -> i64 {\n    a + b\n}").unwrap();
+        r.eval("def add(a: i64, b: i64) -> i64 {\n    a + b\n}")
+            .unwrap();
         assert_eq!(r.eval("add(3, 4)").unwrap(), "7");
     }
 }

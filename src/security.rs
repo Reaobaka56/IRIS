@@ -129,20 +129,44 @@ pub enum SecurityError {
 impl std::fmt::Display for SecurityError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::FsReadDenied { path } => write!(f, "security: filesystem read denied for '{}'", path),
-            Self::FsWriteDenied { path } => write!(f, "security: filesystem write denied for '{}'", path),
-            Self::NetworkDenied { host } => write!(f, "security: network access denied for '{}'", host),
-            Self::FfiDenied { library } => write!(f, "security: FFI access denied for library '{}'", library),
-            Self::ProcessDenied { command } => write!(f, "security: process execution denied for '{}'", command),
-            Self::PathTraversal { path } => write!(f, "security: path traversal attempt detected in '{}'", path),
+            Self::FsReadDenied { path } => {
+                write!(f, "security: filesystem read denied for '{}'", path)
+            }
+            Self::FsWriteDenied { path } => {
+                write!(f, "security: filesystem write denied for '{}'", path)
+            }
+            Self::NetworkDenied { host } => {
+                write!(f, "security: network access denied for '{}'", host)
+            }
+            Self::FfiDenied { library } => {
+                write!(f, "security: FFI access denied for library '{}'", library)
+            }
+            Self::ProcessDenied { command } => {
+                write!(f, "security: process execution denied for '{}'", command)
+            }
+            Self::PathTraversal { path } => {
+                write!(f, "security: path traversal attempt detected in '{}'", path)
+            }
             Self::FileSizeLimitExceeded { size, limit } => {
-                write!(f, "security: file write size {} exceeds limit {}", size, limit)
+                write!(
+                    f,
+                    "security: file write size {} exceeds limit {}",
+                    size, limit
+                )
             }
             Self::TooManyOpenFiles { current, limit } => {
-                write!(f, "security: open file limit reached ({}/{})", current, limit)
+                write!(
+                    f,
+                    "security: open file limit reached ({}/{})",
+                    current, limit
+                )
             }
             Self::TooManyConnections { current, limit } => {
-                write!(f, "security: connection limit reached ({}/{})", current, limit)
+                write!(
+                    f,
+                    "security: connection limit reached ({}/{})",
+                    current, limit
+                )
             }
         }
     }
@@ -288,9 +312,8 @@ pub fn validate_path(raw: &str) -> Result<PathBuf, SecurityError> {
             .unwrap_or("")
             .to_uppercase();
         let devices = [
-            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5",
-            "COM6", "COM7", "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4",
-            "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+            "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
+            "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
         ];
         if devices.contains(&stem.as_str()) {
             return Err(SecurityError::PathTraversal {
@@ -439,7 +462,10 @@ pub fn check_ffi(library_path: &str) -> Result<(), SecurityError> {
 
     // Check allowlist (if non-empty).
     if !policy.ffi_allowlist.is_empty() {
-        let allowed = policy.ffi_allowlist.iter().any(|a| validated.starts_with(a));
+        let allowed = policy
+            .ffi_allowlist
+            .iter()
+            .any(|a| validated.starts_with(a));
         if !allowed {
             log_audit(AuditOp::FfiLoad, false, library_path.to_string());
             return Err(SecurityError::FfiDenied {

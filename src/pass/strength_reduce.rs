@@ -214,17 +214,31 @@ mod tests {
 
         let x = builder.fresh_value(); // %0
         builder.push_instr(
-            IrInstr::ConstInt { result: x, value: 7, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: x,
+                value: 7,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let c = builder.fresh_value(); // %1
         builder.push_instr(
-            IrInstr::ConstInt { result: c, value: rhs_val, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: c,
+                value: rhs_val,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let r = builder.fresh_value(); // %2
         builder.push_instr(
-            IrInstr::BinOp { result: r, op: BinOp::Mul, lhs: x, rhs: c, ty: i64_ty() },
+            IrInstr::BinOp {
+                result: r,
+                op: BinOp::Mul,
+                lhs: x,
+                rhs: c,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         builder.push_instr(IrInstr::Return { values: vec![r] }, None);
@@ -241,17 +255,31 @@ mod tests {
 
         let x = builder.fresh_value();
         builder.push_instr(
-            IrInstr::ConstInt { result: x, value: 100, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: x,
+                value: 100,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let c = builder.fresh_value();
         builder.push_instr(
-            IrInstr::ConstInt { result: c, value: rhs_val, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: c,
+                value: rhs_val,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let r = builder.fresh_value();
         builder.push_instr(
-            IrInstr::BinOp { result: r, op: BinOp::Div, lhs: x, rhs: c, ty: i64_ty() },
+            IrInstr::BinOp {
+                result: r,
+                op: BinOp::Div,
+                lhs: x,
+                rhs: c,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         builder.push_instr(IrInstr::Return { values: vec![r] }, None);
@@ -268,12 +296,22 @@ mod tests {
 
         let x = builder.fresh_value();
         builder.push_instr(
-            IrInstr::ConstInt { result: x, value: 42, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: x,
+                value: 42,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let r = builder.fresh_value();
         builder.push_instr(
-            IrInstr::BinOp { result: r, op: BinOp::Sub, lhs: x, rhs: x, ty: i64_ty() },
+            IrInstr::BinOp {
+                result: r,
+                op: BinOp::Sub,
+                lhs: x,
+                rhs: x,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         builder.push_instr(IrInstr::Return { values: vec![r] }, None);
@@ -294,13 +332,15 @@ mod tests {
 
         let block = &m.functions()[0].blocks()[0];
         // Should have: ConstInt(7), ConstInt(8), ConstInt(3), Shl, Return
-        let has_shl = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Shl, .. })
-        });
+        let has_shl = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Shl, .. }));
         assert!(has_shl, "mul by 8 should be reduced to shl");
-        let no_mul = !block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Mul, .. })
-        });
+        let no_mul = !block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Mul, .. }));
         assert!(no_mul, "mul should be removed");
     }
 
@@ -310,9 +350,10 @@ mod tests {
         StrengthReducePass.run(&mut m).unwrap();
 
         let block = &m.functions()[0].blocks()[0];
-        let has_mul = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Mul, .. })
-        });
+        let has_mul = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Mul, .. }));
         assert!(has_mul, "mul by 7 should NOT be reduced");
     }
 
@@ -323,9 +364,10 @@ mod tests {
         StrengthReducePass.run(&mut m).unwrap();
 
         let block = &m.functions()[0].blocks()[0];
-        let has_shl = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Shl, .. })
-        });
+        let has_shl = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Shl, .. }));
         assert!(has_shl, "mul by 1 is 2^0, should become shl by 0");
     }
 
@@ -335,9 +377,10 @@ mod tests {
         StrengthReducePass.run(&mut m).unwrap();
 
         let block = &m.functions()[0].blocks()[0];
-        let has_shr = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Shr, .. })
-        });
+        let has_shr = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Shr, .. }));
         assert!(has_shr, "div by 4 should be reduced to shr");
     }
 
@@ -347,9 +390,10 @@ mod tests {
         StrengthReducePass.run(&mut m).unwrap();
 
         let block = &m.functions()[0].blocks()[0];
-        let has_div = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Div, .. })
-        });
+        let has_div = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Div, .. }));
         assert!(has_div, "div by 3 should NOT be reduced");
     }
 
@@ -360,14 +404,16 @@ mod tests {
 
         let block = &m.functions()[0].blocks()[0];
         // x - x should become ConstInt(0)
-        let no_sub = !block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Sub, .. })
-        });
+        let no_sub = !block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Sub, .. }));
         assert!(no_sub, "sub self should be removed");
         // Should have a ConstInt with value 0 for the result
-        let has_zero = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::ConstInt { value: 0, .. })
-        });
+        let has_zero = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::ConstInt { value: 0, .. }));
         assert!(has_zero, "sub self should produce const 0");
     }
 
@@ -402,17 +448,31 @@ mod tests {
 
         let a = builder.fresh_value();
         builder.push_instr(
-            IrInstr::ConstInt { result: a, value: 3, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: a,
+                value: 3,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let b = builder.fresh_value();
         builder.push_instr(
-            IrInstr::ConstInt { result: b, value: 4, ty: i64_ty() },
+            IrInstr::ConstInt {
+                result: b,
+                value: 4,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         let r = builder.fresh_value();
         builder.push_instr(
-            IrInstr::BinOp { result: r, op: BinOp::Add, lhs: a, rhs: b, ty: i64_ty() },
+            IrInstr::BinOp {
+                result: r,
+                op: BinOp::Add,
+                lhs: a,
+                rhs: b,
+                ty: i64_ty(),
+            },
             Some(i64_ty()),
         );
         builder.push_instr(IrInstr::Return { values: vec![r] }, None);
@@ -421,9 +481,10 @@ mod tests {
         StrengthReducePass.run(&mut m).unwrap();
 
         let block = &m.functions()[0].blocks()[0];
-        let has_add = block.instrs.iter().any(|i| {
-            matches!(i, IrInstr::BinOp { op: BinOp::Add, .. })
-        });
+        let has_add = block
+            .instrs
+            .iter()
+            .any(|i| matches!(i, IrInstr::BinOp { op: BinOp::Add, .. }));
         assert!(has_add, "add should be preserved");
     }
 }

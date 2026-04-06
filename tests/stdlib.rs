@@ -36,35 +36,52 @@ fn eval_raw(src: &str) -> String {
 
 #[test]
 fn math_gcd() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.math
         def main() -> i64 { gcd(48, 18) }
-    "#), "6");
+    "#
+        ),
+        "6"
+    );
 }
 
 #[test]
 fn math_lcm() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.math
         def main() -> i64 { lcm(4, 6) }
-    "#), "12");
+    "#
+        ),
+        "12"
+    );
 }
 
 #[test]
 fn math_is_even_odd() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.math
         def main() -> i64 {
             val e = if is_even(10) { 1 } else { 0 }
             val o = if is_odd(7) { 1 } else { 0 }
             e + o
         }
-    "#), "2");
+    "#
+        ),
+        "2"
+    );
 }
 
 #[test]
 fn math_clamp() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.math
         def main() -> i64 {
             val lo  = clamp_i64(0 - 5, 0, 10)
@@ -72,23 +89,36 @@ fn math_clamp() {
             val mid = clamp_i64(5, 0, 10)
             lo + hi + mid
         }
-    "#), "15");
+    "#
+        ),
+        "15"
+    );
 }
 
 #[test]
 fn math_abs() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.math
         def main() -> i64 { abs_i64(0 - 42) }
-    "#), "42");
+    "#
+        ),
+        "42"
+    );
 }
 
 #[test]
 fn math_min_max() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.math
         def main() -> i64 { min_i64(3, 7) + max_i64(3, 7) }
-    "#), "10");
+    "#
+        ),
+        "10"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -97,7 +127,9 @@ fn math_min_max() {
 
 #[test]
 fn iter_sum() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 {
             val xs: list<i64> = list()
@@ -108,12 +140,17 @@ fn iter_sum() {
             val _ = list_push(xs, 5)
             sum(xs)
         }
-    "#), "15");
+    "#
+        ),
+        "15"
+    );
 }
 
 #[test]
 fn iter_product() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 {
             val xs: list<i64> = list()
@@ -123,33 +160,48 @@ fn iter_product() {
             val _ = list_push(xs, 4)
             product(xs)
         }
-    "#), "24");
+    "#
+        ),
+        "24"
+    );
 }
 
 #[test]
 fn iter_range() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 { sum(range(1, 6)) }
-    "#), "15");
+    "#
+        ),
+        "15"
+    );
 }
 
 /// iter.min / iter.max conflict with the 2-arg builtin min/max.
 /// Verify semantics by accessing first/last element of a range directly.
 #[test]
 fn iter_range_first_last() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 {
             val xs = range(3, 8)
             list_get(xs, 0) + list_get(xs, list_len(xs) - 1)
         }
-    "#), "10");   // 3 + 7
+    "#
+        ),
+        "10"
+    ); // 3 + 7
 }
 
 #[test]
 fn iter_take_drop() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 {
             val xs = range(0, 10)
@@ -157,24 +209,34 @@ fn iter_take_drop() {
             val d = drop(xs, 7)
             sum(t) + sum(d)
         }
-    "#), "27");   // take=[0,1,2]=3; drop=[7,8,9]=24
+    "#
+        ),
+        "27"
+    ); // take=[0,1,2]=3; drop=[7,8,9]=24
 }
 
 #[test]
 fn iter_reverse() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 {
             val rev = reverse(range(1, 4))
             list_get(rev, 0)
         }
-    "#), "3");
+    "#
+        ),
+        "3"
+    );
 }
 
 /// Use builtin list_contains to avoid name conflict with string `contains`.
 #[test]
 fn iter_list_contains() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 {
             val xs = range(0, 5)
@@ -182,23 +244,36 @@ fn iter_list_contains() {
             val not = if list_contains(xs, 9) { 0 } else { 1 }
             has + not
         }
-    "#), "2");
+    "#
+        ),
+        "2"
+    );
 }
 
 #[test]
 fn iter_count() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 { count(range(0, 5), 3) }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 #[test]
 fn iter_index_of() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         def main() -> i64 { index_of(range(10, 15), 12) }
-    "#), "2");
+    "#
+        ),
+        "2"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -207,45 +282,64 @@ fn iter_index_of() {
 
 #[test]
 fn string_is_empty() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.string
         def main() -> i64 {
             val e  = if is_empty("") { 1 } else { 0 }
             val ne = if is_empty("hi") { 0 } else { 1 }
             e + ne
         }
-    "#), "2");
+    "#
+        ),
+        "2"
+    );
 }
 
 #[test]
 fn string_pad_left_length() {
     // Verify via len() — leading spaces would be stripped by trim().
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.string
         def main() -> i64 { len(pad_left("42", 5, "0")) }
-    "#), "5");
+    "#
+        ),
+        "5"
+    );
 }
 
 #[test]
 fn string_pad_left_value() {
-    let out = eval_raw(r#"
+    let out = eval_raw(
+        r#"
         bring std.string
         def main() -> str { pad_left("42", 5, "0") }
-    "#);
+    "#,
+    );
     assert_eq!(out.trim(), "00042");
 }
 
 #[test]
 fn string_pad_right() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.string
         def main() -> str { pad_right("hi", 5, "-") }
-    "#), "hi---");
+    "#
+        ),
+        "hi---"
+    );
 }
 
 #[test]
 fn string_str_join() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.string
         def main() -> str {
             val parts: list<str> = list()
@@ -254,15 +348,23 @@ fn string_str_join() {
             val _ = list_push(parts, "c")
             str_join(parts, "-")
         }
-    "#), "a-b-c");
+    "#
+        ),
+        "a-b-c"
+    );
 }
 
 #[test]
 fn string_repeat() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.string
         def main() -> str { str_repeat("ab", 3) }
-    "#), "ababab");
+    "#
+        ),
+        "ababab"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -271,64 +373,94 @@ fn string_repeat() {
 
 #[test]
 fn fmt_pad_int_length() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.fmt
         def main() -> i64 { len(pad_int(7, 4)) }
-    "#), "4");
+    "#
+        ),
+        "4"
+    );
 }
 
 #[test]
 fn fmt_zero_pad_int() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.fmt
         def main() -> str { zero_pad_int(42, 6) }
-    "#), "000042");
+    "#
+        ),
+        "000042"
+    );
 }
 
 #[test]
 fn fmt_left_right_align_lengths() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.fmt
         def main() -> i64 {
             len(left_align("hi", 5)) + len(right_align("hi", 5))
         }
-    "#), "10");
+    "#
+        ),
+        "10"
+    );
 }
 
 #[test]
 fn fmt_sprintf_d() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.fmt
         def main() -> str {
             val args: list<str> = list()
             val _ = list_push(args, to_str(42))
             sprintf("val=%d", args)
         }
-    "#), "val=42");
+    "#
+        ),
+        "val=42"
+    );
 }
 
 #[test]
 fn fmt_sprintf_zero_pad() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.fmt
         def main() -> str {
             val args: list<str> = list()
             val _ = list_push(args, to_str(7))
             sprintf("%05d", args)
         }
-    "#), "00007");
+    "#
+        ),
+        "00007"
+    );
 }
 
 #[test]
 fn fmt_sprintf_string_arg() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.fmt
         def main() -> str {
             val args: list<str> = list()
             val _ = list_push(args, "world")
             sprintf("hello %s!", args)
         }
-    "#), "hello world!");
+    "#
+        ),
+        "hello world!"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -337,7 +469,9 @@ fn fmt_sprintf_string_arg() {
 
 #[test]
 fn set_add_contains_len() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.set
         def main() -> i64 {
             var s = set_new()
@@ -346,12 +480,17 @@ fn set_add_contains_len() {
             s = set_add(s, "apple")
             set_len(s) + if set_contains(s, "banana") { 1 } else { 0 }
         }
-    "#), "3");
+    "#
+        ),
+        "3"
+    );
 }
 
 #[test]
 fn set_remove() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.set
         def main() -> i64 {
             var s = set_new()
@@ -360,12 +499,17 @@ fn set_remove() {
             s = set_remove(s, "x")
             set_len(s)
         }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 #[test]
 fn set_union_intersection() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.set
         def main() -> i64 {
             var a = set_new()
@@ -376,12 +520,17 @@ fn set_union_intersection() {
             b = set_add(b, "c")
             set_len(set_union(a, b)) + set_len(set_intersection(a, b))
         }
-    "#), "4");
+    "#
+        ),
+        "4"
+    );
 }
 
 #[test]
 fn set_difference() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.set
         def main() -> i64 {
             var a = set_new()
@@ -392,7 +541,10 @@ fn set_difference() {
             b = set_add(b, "y")
             set_len(set_difference(a, b))
         }
-    "#), "2");
+    "#
+        ),
+        "2"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -401,7 +553,9 @@ fn set_difference() {
 
 #[test]
 fn queue_enqueue_dequeue() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.queue
         def main() -> i64 {
             var q = queue_new()
@@ -410,12 +564,17 @@ fn queue_enqueue_dequeue() {
             q = enqueue(q, 30)
             dequeue_val(q) + queue_len(q)
         }
-    "#), "13");
+    "#
+        ),
+        "13"
+    );
 }
 
 #[test]
 fn queue_peek_is_empty() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.queue
         def main() -> i64 {
             var q = queue_new()
@@ -425,7 +584,10 @@ fn queue_peek_is_empty() {
             val e2 = if queue_is_empty(q) { 1 } else { 0 }
             e1 + pk + e2
         }
-    "#), "100");
+    "#
+        ),
+        "100"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -434,7 +596,9 @@ fn queue_peek_is_empty() {
 
 #[test]
 fn heap_push_peek_len() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.heap
         def main() -> i64 {
             var h = heap_new()
@@ -443,12 +607,17 @@ fn heap_push_peek_len() {
             h = heap_push(h, 3)
             heap_peek(h) + heap_len(h)
         }
-    "#), "4");
+    "#
+        ),
+        "4"
+    );
 }
 
 #[test]
 fn heap_sorted_pops() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.heap
         def main() -> i64 {
             var h = heap_new()
@@ -460,7 +629,10 @@ fn heap_sorted_pops() {
             val b = heap_pop_val(h)
             a + b
         }
-    "#), "7");
+    "#
+        ),
+        "7"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -469,38 +641,55 @@ fn heap_sorted_pops() {
 
 #[test]
 fn time_format_ms() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.time
         def main() -> str { format_duration(450) }
-    "#), "450ms");
+    "#
+        ),
+        "450ms"
+    );
 }
 
 #[test]
 fn time_format_seconds() {
-    let out = eval(r#"
+    let out = eval(
+        r#"
         bring std.time
         def main() -> str { format_duration(2500) }
-    "#);
+    "#,
+    );
     assert!(out.contains('s'), "should contain 's': {}", out);
 }
 
 #[test]
 fn time_now_ms_positive() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.time
         def main() -> i64 { if now_ms() > 0 { 1 } else { 0 } }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 #[test]
 fn time_elapsed_non_negative() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.time
         def main() -> i64 {
             val start = now_ms()
             if elapsed_ms(start) >= 0 { 1 } else { 0 }
         }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -509,43 +698,65 @@ fn time_elapsed_non_negative() {
 
 #[test]
 fn testing_assert_eq_pass() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.testing
         def main() -> bool { assert_eq(6, 6, "ok") }
-    "#), "true");
+    "#
+        ),
+        "true"
+    );
 }
 
 #[test]
 fn testing_assert_eq_fail() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.testing
         def main() -> bool { assert_eq(5, 6, "fail") }
-    "#), "false");
+    "#
+        ),
+        "false"
+    );
 }
 
 #[test]
 fn testing_assert_str_eq() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.testing
         def main() -> bool { assert_str_eq("hello", "hello", "match") }
-    "#), "true");
+    "#
+        ),
+        "true"
+    );
 }
 
 #[test]
 fn testing_assert_true_false() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.testing
         def main() -> bool {
             val t = assert_true(1 < 2, "1 < 2")
             val f = assert_false(2 < 1, "2 not < 1")
             if t { if f { true } else { false } } else { false }
         }
-    "#), "true");
+    "#
+        ),
+        "true"
+    );
 }
 
 #[test]
 fn testing_assert_list_eq() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.testing
         def main() -> bool {
             val a: list<i64> = list()
@@ -558,7 +769,10 @@ fn testing_assert_list_eq() {
             val _ = list_push(b, 3)
             assert_list_eq(a, b, "equal")
         }
-    "#), "true");
+    "#
+        ),
+        "true"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -567,7 +781,9 @@ fn testing_assert_list_eq() {
 
 #[test]
 fn ml_sigmoid_bounds() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.ml
         def main() -> i64 {
             val z  = sigmoid(0.0)
@@ -578,12 +794,34 @@ fn ml_sigmoid_bounds() {
             val ok_lo = if lo < 0.01 { 1 } else { 0 }
             ok_z + ok_hi + ok_lo
         }
-    "#), "3");
+    "#
+        ),
+        "3"
+    );
+}
+
+#[test]
+fn ml_sigmoid_deriv_from_output() {
+    let out = eval(
+        r#"
+        bring std.ml
+        def main() -> f64 {
+            sigmoid_deriv_from_output(0.5)
+        }
+    "#,
+    );
+    let v: f64 = out.parse().expect("f64");
+    assert!(
+        (v - 0.25).abs() < 1e-9,
+        "sigmoid_deriv_from_output = {} expected 0.25",
+        v
+    );
 }
 
 #[test]
 fn ml_dot_product() {
-    let out = eval(r#"
+    let out = eval(
+        r#"
         bring std.ml
         def main() -> f64 {
             val a: list<f64> = list()
@@ -596,14 +834,17 @@ fn ml_dot_product() {
             val _ = list_push(b, 6.0)
             dot(a, b)
         }
-    "#);
+    "#,
+    );
     let v: f64 = out.parse().expect("f64");
     assert!((v - 32.0).abs() < 1e-9, "dot = {} expected 32", v);
 }
 
 #[test]
 fn ml_vec_mean() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.ml
         def main() -> i64 {
             val xs: list<f64> = list()
@@ -613,12 +854,17 @@ fn ml_vec_mean() {
             val m = vec_mean(xs)
             if m > 3.9 { if m < 4.1 { 1 } else { 0 } } else { 0 }
         }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 #[test]
 fn ml_standardize_zero_mean() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.ml
         def main() -> i64 {
             val xs: list<f64> = list()
@@ -630,7 +876,10 @@ fn ml_standardize_zero_mean() {
             val neg_tol = 0.0 - tol
             if m > neg_tol { if m < tol { 1 } else { 0 } } else { 0 }
         }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -639,7 +888,9 @@ fn ml_standardize_zero_mean() {
 
 #[test]
 fn nn_mlp_weight_count() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.nn
         def main() -> i64 {
             val sizes: list<i64> = list()
@@ -651,12 +902,17 @@ fn nn_mlp_weight_count() {
             val nb = list_len(net.1)
             if nw == 12 { if nb == 5 { 1 } else { 0 } } else { 0 }
         }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
 }
 
 #[test]
 fn nn_mlp_forward_range() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.nn
         def main() -> i64 {
             val sizes: list<i64> = list()
@@ -671,7 +927,208 @@ fn nn_mlp_forward_range() {
             val y = list_get(list_get(acts, list_len(acts) - 1), 0)
             if y > 0.0 { if y < 1.0 { 1 } else { 0 } } else { 0 }
         }
-    "#), "1");
+    "#
+        ),
+        "1"
+    );
+}
+
+#[test]
+fn nn_mlp_backward_single_neuron_gradient() {
+    let out = eval(
+        r#"
+        bring std.nn
+        def main() -> f64 {
+            val weights: list<f64> = list()
+            val _ = list_push(weights, 0.0)
+            val biases: list<f64> = list()
+            val _ = list_push(biases, 0.0)
+            val shapes: list<i64> = list()
+            val _ = list_push(shapes, encode_shape(1, 1))
+            val x: list<f64> = list()
+            val _ = list_push(x, 1.0)
+            val y: list<f64> = list()
+            val _ = list_push(y, 1.0)
+            val acts = mlp_forward(weights, biases, shapes, x, 0)
+            val grads = mlp_backward(weights, shapes, acts, y, 0)
+            list_get(grads.0, 0)
+        }
+    "#,
+    );
+    let v: f64 = out.parse().expect("f64");
+    assert!(
+        (v + 0.125).abs() < 1e-9,
+        "weight gradient = {} expected -0.125",
+        v
+    );
+}
+
+#[test]
+fn nn_mlp_train_step_adam_reduces_loss() {
+    assert_eq!(
+        eval(
+            r#"
+        bring std.nn
+        def main() -> i64 {
+            val weights: list<f64> = list()
+            val _ = list_push(weights, 0.0)
+            val biases: list<f64> = list()
+            val _ = list_push(biases, 0.0)
+            val shapes: list<i64> = list()
+            val _ = list_push(shapes, encode_shape(1, 1))
+            val x: list<f64> = list()
+            val _ = list_push(x, 1.0)
+            val y: list<f64> = list()
+            val _ = list_push(y, 1.0)
+
+            val x_flat: list<f64> = list()
+            val _ = list_push(x_flat, 1.0)
+            val y_flat: list<f64> = list()
+            val _ = list_push(y_flat, 1.0)
+
+            val before = mlp_eval_loss(weights, biases, shapes, x_flat, y_flat, 1, 1, 1, 0)
+            val state = mlp_adam_state(weights, biases)
+            val updated = mlp_train_step_adam(weights, biases, shapes, x, y, state.0, state.1, state.2, state.3, 0.1, 0.9, 0.999, 0.00000001, 1, 0)
+            val after = mlp_eval_loss(updated.0, updated.1, shapes, x_flat, y_flat, 1, 1, 1, 0)
+            if after < before { 1 } else { 0 }
+        }
+    "#
+        ),
+        "1"
+    );
+}
+
+#[test]
+fn reverse_mode_square_plus_linear_grad() {
+    let out = eval(
+        r#"
+        def main() -> f64 {
+            val x = tape(3.0)
+            val y = x * x + 2.0 * x
+            val _ = backward(y)
+            grad(x)
+        }
+    "#,
+    );
+    let v: f64 = out.parse().expect("f64");
+    assert!((v - 8.0).abs() < 1e-9, "grad(x) = {} expected 8.0", v);
+}
+
+#[test]
+fn reverse_mode_leaf_grad() {
+    let out = eval(
+        r#"
+        def main() -> f64 {
+            val x = tape(3.0)
+            val _ = backward(x)
+            grad(x)
+        }
+    "#,
+    );
+    let v: f64 = out.parse().expect("f64");
+    assert!((v - 1.0).abs() < 1e-9, "grad(x) = {} expected 1.0", v);
+}
+
+#[test]
+fn reverse_mode_exp_grad() {
+    let out = eval(
+        r#"
+        def main() -> f64 {
+            val x = tape(0.0)
+            val y = exp(x)
+            val _ = backward(y)
+            grad(x)
+        }
+    "#,
+    );
+    let v: f64 = out.parse().expect("f64");
+    assert!((v - 1.0).abs() < 1e-9, "grad(x) = {} expected 1.0", v);
+}
+
+#[test]
+fn tensor_matmul2_values() {
+    assert_eq!(
+        eval(
+            r#"
+        bring std.tensorx
+        def main() -> i64 {
+            val a_shape: list<i64> = list()
+            val _ = list_push(a_shape, 2)
+            val _ = list_push(a_shape, 2)
+            val a_data: list<f64> = list()
+            val _ = list_push(a_data, 1.0)
+            val _ = list_push(a_data, 2.0)
+            val _ = list_push(a_data, 3.0)
+            val _ = list_push(a_data, 4.0)
+
+            val b_shape: list<i64> = list()
+            val _ = list_push(b_shape, 2)
+            val _ = list_push(b_shape, 2)
+            val b_data: list<f64> = list()
+            val _ = list_push(b_data, 5.0)
+            val _ = list_push(b_data, 6.0)
+            val _ = list_push(b_data, 7.0)
+            val _ = list_push(b_data, 8.0)
+
+            val out = tensor_matmul2(tensor_from_data(a_data, a_shape), tensor_from_data(b_data, b_shape), 2, 2, 2)
+            val data = tensor_data(out)
+            if list_len(data) == 4
+                && list_get(data, 0) == 19.0
+                && list_get(data, 1) == 22.0
+                && list_get(data, 2) == 43.0
+                && list_get(data, 3) == 50.0 {
+                1
+            } else {
+                0
+            }
+        }
+    "#
+        ),
+        "1"
+    );
+}
+
+#[test]
+fn tensor_batch_matmul_values() {
+    assert_eq!(
+        eval(
+            r#"
+        bring std.tensorx
+        def main() -> i64 {
+            val a_shape: list<i64> = list()
+            val _ = list_push(a_shape, 2)
+            val _ = list_push(a_shape, 1)
+            val _ = list_push(a_shape, 2)
+            val a_data: list<f64> = list()
+            val _ = list_push(a_data, 1.0)
+            val _ = list_push(a_data, 2.0)
+            val _ = list_push(a_data, 3.0)
+            val _ = list_push(a_data, 4.0)
+
+            val b_shape: list<i64> = list()
+            val _ = list_push(b_shape, 2)
+            val _ = list_push(b_shape, 2)
+            val _ = list_push(b_shape, 1)
+            val b_data: list<f64> = list()
+            val _ = list_push(b_data, 5.0)
+            val _ = list_push(b_data, 6.0)
+            val _ = list_push(b_data, 7.0)
+            val _ = list_push(b_data, 8.0)
+
+            val out = tensor_batch_matmul(tensor_from_data(a_data, a_shape), tensor_from_data(b_data, b_shape), 2, 1, 2, 1)
+            val data = tensor_data(out)
+            if list_len(data) == 2
+                && list_get(data, 0) == 17.0
+                && list_get(data, 1) == 53.0 {
+                1
+            } else {
+                0
+            }
+        }
+    "#
+        ),
+        "1"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -680,7 +1137,9 @@ fn nn_mlp_forward_range() {
 
 #[test]
 fn cross_iter_testing() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.iter
         bring std.testing
         def main() -> bool {
@@ -693,7 +1152,10 @@ fn cross_iter_testing() {
             val _ = list_push(expected, 5)
             assert_list_eq(xs, expected, "range(1,6)")
         }
-    "#), "true");
+    "#
+        ),
+        "true"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -702,34 +1164,51 @@ fn cross_iter_testing() {
 
 #[test]
 fn path_basename() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.path
         def main() -> str { basename("/home/user/file.iris") }
-    "#), "file.iris");
+    "#
+        ),
+        "file.iris"
+    );
 }
 
 #[test]
 fn path_dirname() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.path
         def main() -> str { dirname("/home/user/file.iris") }
-    "#), "/home/user");
+    "#
+        ),
+        "/home/user"
+    );
 }
 
 #[test]
 fn path_extension() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.path
         def main() -> str { extension("notes.txt") }
-    "#), "txt");
+    "#
+        ),
+        "txt"
+    );
 }
 
 #[test]
 fn path_join_path() {
-    let out = eval(r#"
+    let out = eval(
+        r#"
         bring std.path
         def main() -> str { join_path("/usr", "local") }
-    "#);
+    "#,
+    );
     assert!(out.contains("local"), "join_path: {}", out);
 }
 
@@ -739,18 +1218,28 @@ fn path_join_path() {
 
 #[test]
 fn log_info_returns_true() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.log
         def main() -> bool { info("hello log") }
-    "#), "true");
+    "#
+        ),
+        "true"
+    );
 }
 
 #[test]
 fn log_at_level_filter() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.log
         def main() -> bool { log_at(0, 2, "debug suppressed") }
-    "#), "false");
+    "#
+        ),
+        "false"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -759,7 +1248,9 @@ fn log_at_level_filter() {
 
 #[test]
 fn deque_push_peek() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.deque
         def main() -> i64 {
             val dq  = deque_create()
@@ -768,7 +1259,10 @@ fn deque_push_peek() {
             val dq4 = push_front(dq3, 5)
             peek_front(dq4) + peek_back(dq4)
         }
-    "#), "25");
+    "#
+        ),
+        "25"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -777,7 +1271,9 @@ fn deque_push_peek() {
 
 #[test]
 fn bitset_set_get() {
-    assert_eq!(eval(r#"
+    assert_eq!(
+        eval(
+            r#"
         bring std.bitset
         def main() -> i64 {
             val bs  = bitset_new(64)
@@ -788,5 +1284,8 @@ fn bitset_set_get() {
             val no5  = if bitset_get(bs3, 5) { 0 } else { 1 }
             has3 + has7 + no5
         }
-    "#), "3");
+    "#
+        ),
+        "3"
+    );
 }

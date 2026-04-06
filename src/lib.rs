@@ -55,8 +55,8 @@ pub use ir::module::IrModule;
 pub use lsp::{LspDiagnostic, LspState};
 pub use parser::ast::{AstBring, BringPath};
 pub use pass::{
-    CopyPropPass, ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning,
-    LicmPass, LoopUnrollPass, StrengthReducePass,
+    CopyPropPass, ExhaustivePass, GcAnnotatePass, HmTypeInferPass, InlinePass, IrWarning, LicmPass,
+    LoopUnrollPass, StrengthReducePass,
 };
 pub use repl::ReplState;
 
@@ -106,9 +106,11 @@ pub enum EmitKind {
     LlvmComplete,
     /// CUDA/NVPTX LLVM IR: kernel functions, thread/block IDs, !nvvm.annotations.
     Cuda,
+    /// Compiled PTX text generated from the CUDA/NVPTX backend via clang.
+    CudaPtx,
     /// SIMD-annotated LLVM IR: <N x T> vector types, AVX2 target, !llvm.loop metadata.
     Simd,
-    /// JIT compilation: compile via clang subprocess (or interpreter fallback) and run.
+    /// JIT compilation: compile via LLVM/clang and run natively.
     Jit,
     /// PGO instrumented IR: block counters, @__llvm_profile_instrument_target.
     PgoInstrument,
@@ -286,8 +288,8 @@ fn compile_ast(
     ast_module: &crate::parser::ast::AstModule,
     module_name: &str,
     emit: EmitKind,
-    max_steps: usize,
-    max_depth: usize,
+    _max_steps: usize,
+    _max_depth: usize,
     dump_ir_after: Option<&str>,
 ) -> Result<String, Error> {
     use crate::codegen::cuda::emit_cuda;
@@ -376,43 +378,13 @@ fn compile_ast(
         EmitKind::Ir => Ok(emit_ir_text(&ir_module)?),
         EmitKind::Llvm | EmitKind::LlvmComplete | EmitKind::Binary => Ok(emit_llvm_ir(&ir_module)?),
         EmitKind::Cuda => Ok(emit_cuda(&ir_module)?),
+        EmitKind::CudaPtx => Ok(crate::codegen::cuda::emit_cuda_ptx(&ir_module)?),
         EmitKind::Simd => Ok(emit_simd(&ir_module)?),
         EmitKind::Jit => Ok(emit_jit(&ir_module)?),
         EmitKind::PgoInstrument => Ok(emit_pgo_instrument(&ir_module)?),
         EmitKind::PgoOptimize => Ok(emit_pgo_optimize(&ir_module, "")?),
         EmitKind::Graph | EmitKind::Onnx | EmitKind::OnnxBinary => unreachable!(),
-        EmitKind::Eval => {
-            // Prefer a function named "main"; fall back to the first zero-arg fn.
-            let func = ir_module
-                .functions()
-                .iter()
-                .find(|f| f.name == "main" && f.params.is_empty())
-                .or_else(|| ir_module.functions().iter().find(|f| f.params.is_empty()))
-                .ok_or_else(|| {
-                    Error::Interp(crate::error::InterpError::Unsupported {
-                        detail: "no zero-argument function in module to evaluate".into(),
-                    })
-                })?;
-            let opts = interp::InterpOptions {
-                max_steps,
-                max_depth,
-            };
-            let results = interp::eval_function_in_module_opts(&ir_module, func, &[], opts)?;
-            let mut out = String::new();
-            for val in &results {
-                // Skip unit/sentinel returns — programs that use print() for output
-                // shouldn't also emit a spurious "0" from a `main() -> i64` sentinel.
-                if matches!(val, interp::IrValue::Unit) {
-                    continue;
-                }
-                // Str values are printed without surrounding quotes in eval output.
-                match val {
-                    interp::IrValue::Str(s) => out.push_str(&format!("{}\n", s)),
-                    _ => out.push_str(&format!("{}\n", val)),
-                }
-            }
-            Ok(out)
-        }
+        EmitKind::Eval => codegen::execute_binary_for_eval(&ir_module).map_err(Error::Codegen),
     }
 }
 
@@ -454,29 +426,10 @@ pub fn compile_to_module(source: &str, module_name: &str) -> Result<IrModule, Er
 
 /// Evaluates a pre-built `IrModule` without re-running passes.
 ///
-/// Finds the first zero-argument function and runs the interpreter on it.
+/// Finds the first zero-argument function and executes it via the native LLVM
+/// pipeline, capturing stdout.
 pub fn eval_ir_module(module: &IrModule) -> Result<String, Error> {
-    let func = module
-        .functions()
-        .iter()
-        .find(|f| f.params.is_empty())
-        .ok_or_else(|| {
-            Error::Interp(crate::error::InterpError::Unsupported {
-                detail: "no zero-argument function in module".into(),
-            })
-        })?;
-    let opts = interp::InterpOptions {
-        max_steps: 1_000_000,
-        max_depth: 500,
-    };
-    let results = interp::eval_function_in_module_opts(module, func, &[], opts)?;
-    let mut out = String::new();
-    for val in &results {
-        if !matches!(val, interp::IrValue::Unit) {
-            out.push_str(&format!("{}\n", val));
-        }
-    }
-    Ok(out)
+    codegen::execute_binary_for_eval(module).map_err(Error::Codegen)
 }
 
 /// Parse source text with full error recovery, printing all errors to stderr
@@ -499,7 +452,12 @@ fn parse_recovering(source: &str) -> Result<crate::parser::ast::AstModule, Error
             errors.len()
         );
     }
-    Err(Error::Parse(errors.into_iter().next().unwrap()))
+    Err(Error::Parse(
+        errors
+            .into_iter()
+            .next()
+            .expect("errors is non-empty, checked above"),
+    ))
 }
 
 /// Compiles an IRIS source string through the full pipeline.
@@ -525,7 +483,8 @@ pub fn compile_with_warnings(
     Ok((output, warnings))
 }
 
-/// Like [`compile`] but with configurable interpreter limits for `--emit eval`.
+/// Like [`compile`] but with legacy execution guardrails for interpreter-based
+/// tooling. Native outputs ignore `max_steps` and `max_depth`.
 pub fn compile_with_opts(
     source: &str,
     module_name: &str,

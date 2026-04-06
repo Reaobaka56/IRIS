@@ -319,8 +319,8 @@ impl ProfileResult {
 
         // Color palette: warm colours for hot functions.
         let colors = [
-            "#ff6633", "#ff9933", "#ffcc33", "#ccff33", "#66ff33", "#33ff99",
-            "#33ccff", "#6699ff", "#9966ff", "#cc66ff",
+            "#ff6633", "#ff9933", "#ffcc33", "#ccff33", "#66ff33", "#33ff99", "#33ccff", "#6699ff",
+            "#9966ff", "#cc66ff",
         ];
 
         for frame in &svg_frames {
@@ -386,9 +386,7 @@ pub fn run_profile_command(args: &[String]) -> Result<(), String> {
         match args[i].as_str() {
             "--svg" | "-s" => {
                 i += 1;
-                output_svg = Some(PathBuf::from(
-                    args.get(i).ok_or("--svg requires a path")?,
-                ));
+                output_svg = Some(PathBuf::from(args.get(i).ok_or("--svg requires a path")?));
             }
             "--folded" | "-f" => {
                 i += 1;
@@ -428,14 +426,10 @@ fn profile_file(
         .and_then(|s| s.to_str())
         .unwrap_or("profile");
 
-    eprintln!(
-        "\x1b[1;35mProfiling\x1b[0m {}",
-        path.display()
-    );
+    eprintln!("\x1b[1;35mProfiling\x1b[0m {}", path.display());
 
     // Compile to IrModule.
-    let ir_module =
-        crate::compile_to_module(&source, module_name).map_err(|e| format!("{}", e))?;
+    let ir_module = crate::compile_to_module(&source, module_name).map_err(|e| format!("{}", e))?;
 
     // Run with profiling.
     let mut profiler = Profiler::new();
@@ -478,8 +472,7 @@ fn profile_file(
     // Write SVG flame graph.
     if let Some(svg_path) = output_svg {
         let svg = result.to_flame_svg();
-        std::fs::write(svg_path, &svg)
-            .map_err(|e| format!("cannot write SVG: {}", e))?;
+        std::fs::write(svg_path, &svg).map_err(|e| format!("cannot write SVG: {}", e))?;
         eprintln!("  Flame graph written to {}", svg_path.display());
     }
 

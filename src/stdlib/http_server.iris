@@ -1,0 +1,120 @@
+// src/stdlib/http_server.iris -- IRIS HTTP/1.1 server primitives.
+//
+// Provides a simple single-threaded HTTP server built on tcp_listen/tcp_accept,
+// plus a multi-threaded variant using spawn.
+//
+// Usage:
+//   bring std.http_server
+//   bring std.http
+//
+//   def handle(req: str) -> str {
+//       val path = http_request_path(req)
+//       if path == "/health" {
+//           http_response(200, "OK", "{\"status\":\"ok\"}")
+//       } else {
+//           http_response(404, "Not Found", "not found")
+//       }
+//   }
+//
+//   def main() -> i64 {
+//       http_serve(8080, |req: str| handle(req))
+//   }
+
+// ── Core server loop ─────────────────────────────────────────────────────────
+
+// Start an HTTP/1.1 server on `port`.
+// `handler` is called with the raw request string and must return a raw
+// HTTP response string (use http_response() from std.http to build one).
+// This call blocks indefinitely (single-threaded accept loop).
+pub def http_serve(port: i64, handler: |str| -> str) -> i64 {
+    val listener = tcp_listen(port)
+    loop {
+        val conn = tcp_accept(listener)
+        val req = tcp_read(conn)
+        val resp = handler(req)
+        val _ = tcp_write(conn, resp)
+        val _ = tcp_close(conn)
+    }
+}
+
+// Multi-threaded HTTP server: each connection is handled in a new thread.
+pub def http_serve_mt(port: i64, handler: |str| -> str) -> i64 {
+    val listener = tcp_listen(port)
+    loop {
+        val conn = tcp_accept(listener)
+        spawn {
+            val req = tcp_read(conn)
+            val resp = handler(req)
+            val _ = tcp_write(conn, resp)
+            val _ = tcp_close(conn)
+        };
+    }
+}
+
+// ── Response helpers ─────────────────────────────────────────────────────────
+
+// Build a 200 OK response with a JSON body.
+pub def json_ok(body: str) -> str {
+    val len_str = to_str(len(body))
+    concat(concat(concat(concat(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: ",
+        len_str), "\r\n\r\n"), body), "")
+}
+
+// Build a 200 OK response with a plain-text body.
+pub def text_ok(body: str) -> str {
+    val len_str = to_str(len(body))
+    concat(concat(concat(concat(
+        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: ",
+        len_str), "\r\n\r\n"), body), "")
+}
+
+// Build a 400 Bad Request response.
+pub def bad_request(body: str) -> str {
+    val len_str = to_str(len(body))
+    concat(concat(concat(concat(
+        "HTTP/1.1 400 Bad Request\r\nContent-Type: text/plain\r\nContent-Length: ",
+        len_str), "\r\n\r\n"), body), "")
+}
+
+// Build a 500 Internal Server Error response.
+pub def internal_error(body: str) -> str {
+    val len_str = to_str(len(body))
+    concat(concat(concat(concat(
+        "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: ",
+        len_str), "\r\n\r\n"), body), "")
+}
+
+// ── Simple router ─────────────────────────────────────────────────────────────
+//
+// A router is a flat list<str> of [method0, path0, tag0, method1, path1, tag1, ...]
+// where tag is an arbitrary string you use to identify the handler.
+// Use router_match(router, method, path) to look up the tag.
+
+pub def router_new() -> list<str> {
+    val r: list<str> = list()
+    r
+}
+
+// Add a route: method (e.g. "GET"), path (e.g. "/api/predict"), tag.
+pub def router_add(router: list<str>, method: str, path: str, tag: str) -> list<str> {
+    push(router, method);
+    push(router, path);
+    push(router, tag);
+    router
+}
+
+// Look up a route by method + exact path. Returns tag string or "" if not found.
+pub def router_match(router: list<str>, method: str, path: str) -> str {
+    val n = list_len(router)
+    var result = ""
+    var i = 0
+    while (i + 2) < n {
+        val m = list_get(router, i)
+        val p = list_get(router, i + 1)
+        val t = list_get(router, i + 2)
+        result = if m == method && p == path { t } else { result }
+        i = i + 3
+    }
+    result
+}

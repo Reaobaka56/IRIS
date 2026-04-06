@@ -1,6 +1,6 @@
 # IRIS Stability Policy
 
-> **Current version: 0.2.0** — IRIS is pre-1.0 and evolving rapidly.
+> **Current version: 0.3.0** — IRIS is pre-1.0 and evolving rapidly.
 
 This document defines the stability guarantees, deprecation process, and
 versioning discipline the project follows on the path to 1.0 and beyond.
@@ -25,9 +25,9 @@ MAJOR.MINOR.PATCH
 
 While the version is `0.x.y`:
 
-- **MINOR** bumps (`0.2 → 0.3`) may include breaking changes but must be
+- **MINOR** bumps (`0.3 → 0.4`) may include breaking changes but must be
   documented in `CHANGELOG.md` under a **Breaking** section.
-- **PATCH** bumps (`0.2.0 → 0.2.1`) are always backward-compatible.
+- **PATCH** bumps (`0.3.0 → 0.3.1`) are always backward-compatible.
 - Migration guides are provided for any breaking change.
 
 ### Post-1.0 Rules
@@ -146,4 +146,4 @@ If you believe a release introduced an unintentional breaking change:
 
 ---
 
-*This policy is itself versioned alongside the project. Last updated: 2026-03-04.*
+*This policy is itself versioned alongside the project. Last updated: 2026-03-13.*

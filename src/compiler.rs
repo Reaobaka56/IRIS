@@ -181,9 +181,17 @@ impl FileCompiler {
             eprintln!("\x1b[1;31merror\x1b[0m: {}", e);
         }
         if errors.len() > 1 {
-            eprintln!("\x1b[1;31merror\x1b[0m: aborting due to {} parse error(s)", errors.len());
+            eprintln!(
+                "\x1b[1;31merror\x1b[0m: aborting due to {} parse error(s)",
+                errors.len()
+            );
         }
-        Err(Error::Parse(errors.into_iter().next().unwrap()))
+        Err(Error::Parse(
+            errors
+                .into_iter()
+                .next()
+                .expect("errors is non-empty, checked above"),
+        ))
     }
 
     /// Parse source text, using the build cache to skip re-parsing when the
@@ -225,7 +233,10 @@ impl FileCompiler {
         for func in dep.functions {
             if func.is_pub {
                 // Warn if a function with the same name is already defined.
-                let collision = main_ast.functions.iter().any(|f| f.name.name == func.name.name);
+                let collision = main_ast
+                    .functions
+                    .iter()
+                    .any(|f| f.name.name == func.name.name);
                 if collision {
                     eprintln!(
                         "\x1b[1;33mwarning\x1b[0m: function '{}' is defined in multiple \

@@ -332,7 +332,11 @@ impl<'src> Lexer<'src> {
 
     fn next_token(&mut self) -> Result<Spanned<Token>, ParseError> {
         let start = self.pos as u32;
-        let ch = self.peek().unwrap();
+        let Some(ch) = self.peek() else {
+            return Err(ParseError::UnexpectedEof {
+                context: "lexer: unexpected end of input".into(),
+            });
+        };
 
         // Two-character tokens
         if ch == b'-' && self.peek2() == Some(b'>') {

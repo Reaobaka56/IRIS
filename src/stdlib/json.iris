@@ -1,8 +1,34 @@
-// src/stdlib/json.iris -- IRIS JSON emitter and simple flat-object parser.
+// src/stdlib/json.iris -- IRIS JSON emitter, simple flat-object parser,
+// and native serialisation wrappers.
 //
 // Representation: a JSON object is stored as a flat list<str>:
 //   [key0, val0, key1, val1, ...]
 // Use json_get / json_set to work with this flat-pair representation.
+//
+// For ML pipelines that exchange data with external services, prefer
+// json_stringify / json_encode over the manual emitter functions.
+
+// ── Native serialisation / deserialisation ───────────────────────────────────
+
+// Serialise any IRIS value to a JSON string using the C runtime (serde-backed).
+pub def json_stringify(v: str) -> str {
+    json_stringify(v)
+}
+
+// Encode a flat-pair list<str> as a JSON object string.
+// E.g. ["name","Alice","age","30"] → {"name":"Alice","age":"30"}
+pub def json_encode(pairs: list<str>) -> str {
+    val n = list_len(pairs)
+    var parts: list<str> = list()
+    var i = 0
+    while (i + 1) < n {
+        val k = json_str(list_get(pairs, i))
+        val v = json_str(list_get(pairs, i + 1))
+        push(parts, concat(concat(k, ":"), v));
+        i = i + 2
+    }
+    concat(concat("{", join(parts, ",")), "}")
+}
 
 // ── Emitter ──────────────────────────────────────────────────────────────────
 

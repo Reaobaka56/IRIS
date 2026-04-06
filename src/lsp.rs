@@ -494,10 +494,7 @@ impl LspState {
                         .as_ref()
                         .and_then(|p| p.canonicalize().ok())
                         .and_then(|p| p.to_str().map(|s| s.to_owned()));
-                    let brought_uri = abs_str
-                        .as_deref()
-                        .map(fs_path_to_uri)
-                        .unwrap_or_default();
+                    let brought_uri = abs_str.as_deref().map(fs_path_to_uri).unwrap_or_default();
                     // Prefer open document; fall back to disk.
                     let src = if let Some(s) = self.documents.get(&brought_uri) {
                         s.clone()
@@ -510,9 +507,7 @@ impl LspState {
                 }
                 crate::parser::ast::BringPath::Stdlib(name) => {
                     // For stdlib brings, search the embedded stdlib source.
-                    let src = crate::stdlib::stdlib_source(name)
-                        .unwrap_or("")
-                        .to_owned();
+                    let src = crate::stdlib::stdlib_source(name).unwrap_or("").to_owned();
                     let brought_uri = format!("iris-stdlib:{}", name);
                     (brought_uri, src)
                 }
@@ -522,16 +517,9 @@ impl LspState {
             }
             if let Some(brought_ast) = parse_source(&brought_source_owned) {
                 if let Some(def_byte) = definition_byte_of(&brought_ast, ident) {
-                    let (start_line, start_char) =
-                        byte_to_lsp_pos(&brought_source_owned, def_byte);
+                    let (start_line, start_char) = byte_to_lsp_pos(&brought_source_owned, def_byte);
                     let end_char = start_char + ident.len() as u32;
-                    return Some((
-                        brought_uri,
-                        start_line,
-                        start_char,
-                        start_line,
-                        end_char,
-                    ));
+                    return Some((brought_uri, start_line, start_char, start_line, end_char));
                 }
             }
         }
@@ -1228,7 +1216,11 @@ mod tests {
         let result = s.hover(URI, 0, 21); // cursor on 'print'
         assert!(result.is_some(), "expected hover for builtin 'print'");
         let text = result.unwrap();
-        assert!(text.contains("print"), "expected 'print' in hover: {}", text);
+        assert!(
+            text.contains("print"),
+            "expected 'print' in hover: {}",
+            text
+        );
     }
 
     #[test]
@@ -1290,28 +1282,36 @@ mod tests {
     fn document_symbols_finds_function() {
         let s = state_with("def my_fn() -> i64 { 0 }");
         let syms = s.document_symbols(URI);
-        assert!(syms.iter().any(|(name, kind, ..)| name == "my_fn" && *kind == 12));
+        assert!(syms
+            .iter()
+            .any(|(name, kind, ..)| name == "my_fn" && *kind == 12));
     }
 
     #[test]
     fn document_symbols_finds_struct() {
         let s = state_with("record Point { x: i64, y: i64 }");
         let syms = s.document_symbols(URI);
-        assert!(syms.iter().any(|(name, kind, ..)| name == "Point" && *kind == 23));
+        assert!(syms
+            .iter()
+            .any(|(name, kind, ..)| name == "Point" && *kind == 23));
     }
 
     #[test]
     fn document_symbols_finds_enum() {
         let s = state_with("choice Color { Red, Green, Blue }");
         let syms = s.document_symbols(URI);
-        assert!(syms.iter().any(|(name, kind, ..)| name == "Color" && *kind == 10));
+        assert!(syms
+            .iter()
+            .any(|(name, kind, ..)| name == "Color" && *kind == 10));
     }
 
     #[test]
     fn document_symbols_finds_const() {
         let s = state_with("const MAX: i64 = 100");
         let syms = s.document_symbols(URI);
-        assert!(syms.iter().any(|(name, kind, ..)| name == "MAX" && *kind == 14));
+        assert!(syms
+            .iter()
+            .any(|(name, kind, ..)| name == "MAX" && *kind == 14));
     }
 
     #[test]
@@ -1385,7 +1385,7 @@ mod tests {
         let src = "def foo() -> i64 { 0 }\ndef bar() -> i64 { foo() + foo() }";
         let s = state_with(src);
         let refs = s.references(URI, 0, 4); // cursor on 'foo' in definition
-        // Should find at least the definition + 2 call sites
+                                            // Should find at least the definition + 2 call sites
         assert!(refs.len() >= 3, "expected >=3 refs, got {}", refs.len());
     }
 
@@ -1406,7 +1406,10 @@ mod tests {
     fn inlay_hints_for_untyped_bindings() {
         let s = state_with("def f() -> i64 {\n    val x = 5\n    x\n}");
         let hints = s.inlay_hints(URI);
-        assert!(!hints.is_empty(), "expected inlay hint for untyped val binding");
+        assert!(
+            !hints.is_empty(),
+            "expected inlay hint for untyped val binding"
+        );
         assert!(hints.iter().any(|h| h.kind == 1));
     }
 
@@ -1415,7 +1418,11 @@ mod tests {
         let s = state_with("def f() -> i64 {\n    val x: i64 = 5\n    x\n}");
         let hints = s.inlay_hints(URI);
         // Typed binding should produce no inlay hint
-        assert!(hints.is_empty(), "unexpected hint for typed binding: {:?}", hints);
+        assert!(
+            hints.is_empty(),
+            "unexpected hint for typed binding: {:?}",
+            hints
+        );
     }
 
     // ── code actions ─────────────────────────────────────────────────────────
@@ -1433,8 +1440,11 @@ mod tests {
         let s = state_with(src);
         let actions = s.code_actions(URI, 0, 4, 0, 9);
         assert!(
-            actions.iter().any(|a| a.title.contains("placeholder") || a.title.contains("empty")),
-            "expected placeholder quickfix, got: {:?}", actions.iter().map(|a| &a.title).collect::<Vec<_>>()
+            actions
+                .iter()
+                .any(|a| a.title.contains("placeholder") || a.title.contains("empty")),
+            "expected placeholder quickfix, got: {:?}",
+            actions.iter().map(|a| &a.title).collect::<Vec<_>>()
         );
     }
 
@@ -1447,9 +1457,10 @@ mod tests {
         s.close_document(URI);
         // After close, hover/completions should return nothing
         assert!(s.hover(URI, 0, 0).is_none());
-        assert!(s.completions(URI)
-            .iter()
-            .all(|c| c != "f"), "user-defined fn should be gone after close");
+        assert!(
+            s.completions(URI).iter().all(|c| c != "f"),
+            "user-defined fn should be gone after close"
+        );
     }
 }
 
@@ -2280,6 +2291,13 @@ fn token_to_str(tok: &crate::parser::lexer::Token, _source: &str) -> String {
 /// responses to stdout. Blocks until the client sends `exit`.
 pub fn run_lsp_server() -> std::io::Result<()> {
     use std::io::Read;
+    use std::thread;
+    use std::time::Duration;
+
+    // Cold-start delay: wait 5 seconds to allow editor/client to fully initialize
+    // and avoid race conditions with file system and other initialization tasks.
+    thread::sleep(Duration::from_secs(5));
+
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
     let mut state = LspState::new();

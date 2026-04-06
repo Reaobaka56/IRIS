@@ -258,6 +258,7 @@ char* iris_str_concat(const char* a, const char* b) {
     return r;
 }
 
+int iris_str_eq(const char* a, const char* b)            { return strcmp(a, b) == 0; }
 int iris_str_contains(const char* s, const char* sub)    { return strstr(s, sub) != NULL; }
 int iris_str_starts_with(const char* s, const char* pfx) { return strncmp(s, pfx, strlen(pfx)) == 0; }
 int iris_str_ends_with(const char* s, const char* sfx) {
@@ -1172,11 +1173,224 @@ int64_t iris_sparse_nnz(IrisSparse* sp) {
 }
 
 // ---------------------------------------------------------------------------
-// Reverse-mode AD runtime stubs (tape managed by interpreter/codegen)
+// Reverse-mode AD runtime
 // ---------------------------------------------------------------------------
-void* iris_tape_record(void* value) { return value; }
-void* iris_backward(void* loss)     { (void)loss; return NULL; }
-double iris_tape_grad(void* node)   { (void)node; return 0.0; }
+#if defined(_MSC_VER)
+  #define IRIS_THREAD_LOCAL __declspec(thread)
+#elif defined(__STDC_VERSION__) && __STDC_VERSION__ >= 201112L
+  #define IRIS_THREAD_LOCAL _Thread_local
+#else
+  #define IRIS_THREAD_LOCAL __thread
+#endif
+
+#define IRIS_TAPE_MAGIC ((uint64_t)0x4952495354415045ULL)
+
+typedef struct IrisTapeNode {
+    uint64_t               magic;
+    double                 primal;
+    double                 grad;
+    char*                  op;
+    struct IrisTapeNode**  parents;
+    double*                parent_primals;
+    int64_t                parent_count;
+    uint64_t               grad_epoch;
+    uint64_t               visit_epoch;
+} IrisTapeNode;
+
+typedef struct {
+    IrisTapeNode** data;
+    size_t         len;
+    size_t         cap;
+} IrisTapeVec;
+
+static IRIS_THREAD_LOCAL uint64_t iris_tape_grad_epoch  = 0;
+static IRIS_THREAD_LOCAL uint64_t iris_tape_visit_epoch = 0;
+
+static int iris_is_tape_node(const void* ptr) {
+    if (!ptr) return 0;
+    return ((const IrisTapeNode*)ptr)->magic == IRIS_TAPE_MAGIC;
+}
+
+static uint64_t iris_tape_next_epoch(uint64_t* epoch) {
+    (*epoch)++;
+    if (*epoch == 0) (*epoch)++;
+    return *epoch;
+}
+
+static void iris_tape_vec_push(IrisTapeVec* vec, IrisTapeNode* node) {
+    if (vec->len == vec->cap) {
+        vec->cap = vec->cap ? (vec->cap * 2) : 8;
+        vec->data = xrealloc(vec->data, vec->cap * sizeof(IrisTapeNode*));
+    }
+    vec->data[vec->len++] = node;
+}
+
+static void iris_tape_collect_topo(IrisTapeNode* node, uint64_t visit_epoch, IrisTapeVec* topo) {
+    if (!iris_is_tape_node(node) || node->visit_epoch == visit_epoch) return;
+    node->visit_epoch = visit_epoch;
+    for (int64_t i = 0; i < node->parent_count; i++) {
+        iris_tape_collect_topo(node->parents[i], visit_epoch, topo);
+    }
+    iris_tape_vec_push(topo, node);
+}
+
+static double iris_tape_parent_primal(IrisTapeNode* node, int64_t idx) {
+    IrisTapeNode* parent = node->parents[idx];
+    return parent ? parent->primal : node->parent_primals[idx];
+}
+
+static void iris_tape_accumulate(IrisTapeNode* parent, double delta, uint64_t grad_epoch) {
+    if (!iris_is_tape_node(parent)) return;
+    if (parent->grad_epoch != grad_epoch) {
+        parent->grad_epoch = grad_epoch;
+        parent->grad = 0.0;
+    }
+    parent->grad += delta;
+}
+
+void* iris_tape_record(double value, const char* op, int64_t parent_count,
+                       void* const* parents, const double* parent_primals) {
+    IrisTapeNode* node = xcalloc(1, sizeof(IrisTapeNode));
+    node->magic = IRIS_TAPE_MAGIC;
+    node->primal = value;
+    node->op = xstrdup(op ? op : "");
+    node->parent_count = parent_count > 0 ? parent_count : 0;
+
+    if (node->parent_count > 0) {
+        node->parents = xcalloc((size_t)node->parent_count, sizeof(IrisTapeNode*));
+        node->parent_primals = xcalloc((size_t)node->parent_count, sizeof(double));
+        for (int64_t i = 0; i < node->parent_count; i++) {
+            const void* parent = parents ? parents[i] : NULL;
+            node->parents[i] = iris_is_tape_node(parent) ? (IrisTapeNode*)parent : NULL;
+            if (parent_primals) {
+                node->parent_primals[i] = parent_primals[i];
+            } else if (node->parents[i]) {
+                node->parent_primals[i] = node->parents[i]->primal;
+            } else {
+                node->parent_primals[i] = 0.0;
+            }
+        }
+    }
+
+    return node;
+}
+
+void iris_backward(void* loss) {
+    IrisTapeNode* loss_node = iris_is_tape_node(loss) ? (IrisTapeNode*)loss : NULL;
+    if (!loss_node) return;
+
+    IrisTapeVec topo = {0};
+    uint64_t visit_epoch = iris_tape_next_epoch(&iris_tape_visit_epoch);
+    uint64_t grad_epoch = iris_tape_next_epoch(&iris_tape_grad_epoch);
+
+    iris_tape_collect_topo(loss_node, visit_epoch, &topo);
+    for (size_t i = 0; i < topo.len; i++) {
+        topo.data[i]->grad = 0.0;
+        topo.data[i]->grad_epoch = grad_epoch;
+    }
+    loss_node->grad = 1.0;
+
+    for (size_t i = topo.len; i > 0; i--) {
+        IrisTapeNode* node = topo.data[i - 1];
+        double grad = node->grad_epoch == grad_epoch ? node->grad : 0.0;
+        if (!node->op) continue;
+
+        if (strcmp(node->op, "add") == 0) {
+            for (int64_t p = 0; p < node->parent_count; p++) {
+                iris_tape_accumulate(node->parents[p], grad, grad_epoch);
+            }
+        } else if (strcmp(node->op, "sub") == 0) {
+            if (node->parent_count >= 1) iris_tape_accumulate(node->parents[0], grad, grad_epoch);
+            if (node->parent_count >= 2) iris_tape_accumulate(node->parents[1], -grad, grad_epoch);
+        } else if (strcmp(node->op, "mul") == 0) {
+            if (node->parent_count >= 2) {
+                double a = iris_tape_parent_primal(node, 0);
+                double b = iris_tape_parent_primal(node, 1);
+                iris_tape_accumulate(node->parents[0], grad * b, grad_epoch);
+                iris_tape_accumulate(node->parents[1], grad * a, grad_epoch);
+            }
+        } else if (strcmp(node->op, "div") == 0) {
+            if (node->parent_count >= 2) {
+                double a = iris_tape_parent_primal(node, 0);
+                double b = iris_tape_parent_primal(node, 1);
+                iris_tape_accumulate(node->parents[0], grad / b, grad_epoch);
+                iris_tape_accumulate(node->parents[1], -grad * a / (b * b), grad_epoch);
+            }
+        } else if (strcmp(node->op, "neg") == 0) {
+            if (node->parent_count >= 1) iris_tape_accumulate(node->parents[0], -grad, grad_epoch);
+        } else if (strcmp(node->op, "sin") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], grad * cos(x), grad_epoch);
+            }
+        } else if (strcmp(node->op, "cos") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], -grad * sin(x), grad_epoch);
+            }
+        } else if (strcmp(node->op, "exp") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], grad * exp(x), grad_epoch);
+            }
+        } else if (strcmp(node->op, "log") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], grad / x, grad_epoch);
+            }
+        } else if (strcmp(node->op, "sqrt") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], grad / (2.0 * sqrt(x)), grad_epoch);
+            }
+        } else if (strcmp(node->op, "relu") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], x > 0.0 ? grad : 0.0, grad_epoch);
+            }
+        } else if (strcmp(node->op, "sigmoid") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                double s = 1.0 / (1.0 + exp(-x));
+                iris_tape_accumulate(node->parents[0], grad * s * (1.0 - s), grad_epoch);
+            }
+        } else if (strcmp(node->op, "tanh") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                double t = tanh(x);
+                iris_tape_accumulate(node->parents[0], grad * (1.0 - t * t), grad_epoch);
+            }
+        } else if (strcmp(node->op, "pow") == 0) {
+            if (node->parent_count >= 2) {
+                double base = iris_tape_parent_primal(node, 0);
+                double exponent = iris_tape_parent_primal(node, 1);
+                iris_tape_accumulate(
+                    node->parents[0],
+                    grad * exponent * pow(base, exponent - 1.0),
+                    grad_epoch
+                );
+                iris_tape_accumulate(
+                    node->parents[1],
+                    grad * pow(base, exponent) * log(base),
+                    grad_epoch
+                );
+            }
+        } else if (strcmp(node->op, "abs") == 0) {
+            if (node->parent_count >= 1) {
+                double x = iris_tape_parent_primal(node, 0);
+                iris_tape_accumulate(node->parents[0], grad * (x >= 0.0 ? 1.0 : -1.0), grad_epoch);
+            }
+        }
+    }
+
+    free(topo.data);
+}
+
+double iris_tape_grad(void* node) {
+    IrisTapeNode* tape_node = iris_is_tape_node(node) ? (IrisTapeNode*)node : NULL;
+    if (!tape_node || tape_node->grad_epoch != iris_tape_grad_epoch) return 0.0;
+    return tape_node->grad;
+}
 
 // ---------------------------------------------------------------------------
 // Non-scalar array fallback (for complex / mixed-type arrays)
@@ -2082,6 +2296,10 @@ char* iris_http_post(const char* url, const char* body, const char* content_type
         return result;
     }
     return resp;
+}
+
+char* iris_http_post_json(const char* url, const char* json_body) {
+    return iris_http_post(url, json_body, "application/json");
 }
 
 /* ======================================================================== */

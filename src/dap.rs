@@ -231,8 +231,9 @@ pub fn run_dap_server() -> std::io::Result<()> {
                         }
 
                         // Stop-on-entry: pause at the very first trace entry.
-                        if stop_on_entry && session.current_frame().is_some() {
-                            let frame = session.current_frame().unwrap();
+                        if let Some(frame) =
+                            stop_on_entry.then(|| session.current_frame()).flatten()
+                        {
                             send(serde_json::json!({
                                 "seq": seq, "type": "event", "event": "stopped",
                                 "body": {
@@ -257,7 +258,7 @@ pub fn run_dap_server() -> std::io::Result<()> {
                                 seq += 1;
                             }
                             if hit {
-                                let frame = session.current_frame().unwrap();
+                                let frame = session.current_frame().expect("current_frame present: guaranteed by is_some() check above or hit flag");
                                 send(serde_json::json!({
                                     "seq": seq, "type": "event", "event": "stopped",
                                     "body": {
@@ -321,7 +322,9 @@ pub fn run_dap_server() -> std::io::Result<()> {
                     seq += 1;
                 }
                 if hit {
-                    let frame = session.current_frame().unwrap();
+                    let frame = session.current_frame().expect(
+                        "current_frame present: guaranteed by is_some() check above or hit flag",
+                    );
                     send(serde_json::json!({
                         "seq": seq, "type": "event", "event": "stopped",
                         "body": {
@@ -599,7 +602,7 @@ pub fn run_dap_server() -> std::io::Result<()> {
                 match session.start() {
                     Ok(()) => {
                         if stop_on_entry && session.current_frame().is_some() {
-                            let frame = session.current_frame().unwrap();
+                            let frame = session.current_frame().expect("current_frame present: guaranteed by is_some() check above or hit flag");
                             send(serde_json::json!({
                                 "seq": seq, "type": "event", "event": "stopped",
                                 "body": { "reason": "entry", "threadId": 1, "line": frame.line }
@@ -615,7 +618,7 @@ pub fn run_dap_server() -> std::io::Result<()> {
                                 seq += 1;
                             }
                             if hit {
-                                let frame = session.current_frame().unwrap();
+                                let frame = session.current_frame().expect("current_frame present: guaranteed by is_some() check above or hit flag");
                                 send(serde_json::json!({
                                     "seq": seq, "type": "event", "event": "stopped",
                                     "body": { "reason": "breakpoint", "threadId": 1, "line": frame.line }

@@ -210,14 +210,8 @@ mod tests {
     fn dim_equality() {
         assert_eq!(Dim::Literal(5), Dim::Literal(5));
         assert_ne!(Dim::Literal(5), Dim::Literal(6));
-        assert_eq!(
-            Dim::Symbolic("N".into()),
-            Dim::Symbolic("N".into())
-        );
-        assert_ne!(
-            Dim::Symbolic("M".into()),
-            Dim::Symbolic("N".into())
-        );
+        assert_eq!(Dim::Symbolic("N".into()), Dim::Symbolic("N".into()));
+        assert_ne!(Dim::Symbolic("M".into()), Dim::Symbolic("N".into()));
     }
 
     // -- Shape ------------------------------------------------------------
@@ -244,7 +238,10 @@ mod tests {
     fn shape_display() {
         assert_eq!(format!("{}", Shape(vec![])), "[]");
         assert_eq!(
-            format!("{}", Shape(vec![Dim::Literal(3), Dim::Symbolic("K".into())])),
+            format!(
+                "{}",
+                Shape(vec![Dim::Literal(3), Dim::Symbolic("K".into())])
+            ),
             "[3, K]"
         );
     }
@@ -296,10 +293,7 @@ mod tests {
         assert_eq!(
             format!(
                 "{}",
-                IrType::ResultType(
-                    Box::new(IrType::Scalar(DType::I64)),
-                    Box::new(IrType::Str)
-                )
+                IrType::ResultType(Box::new(IrType::Scalar(DType::I64)), Box::new(IrType::Str))
             ),
             "result<i64,str>"
         );

@@ -427,8 +427,12 @@ mod tests {
     #[test]
     fn enum_def_lookup() {
         let mut m = IrModule::new("test");
-        m.add_enum_def("Color", vec!["Red".into(), "Blue".into()], vec![vec![], vec![]])
-            .unwrap();
+        m.add_enum_def(
+            "Color",
+            vec!["Red".into(), "Blue".into()],
+            vec![vec![], vec![]],
+        )
+        .unwrap();
         let variants = m.enum_def("Color").unwrap();
         assert_eq!(variants.len(), 2);
         assert_eq!(variants[0], "Red");
@@ -440,10 +444,7 @@ mod tests {
         m.add_enum_def(
             "Result",
             vec!["Ok".into(), "Err".into()],
-            vec![
-                vec![IrType::Scalar(DType::I64)],
-                vec![IrType::Str],
-            ],
+            vec![vec![IrType::Scalar(DType::I64)], vec![IrType::Str]],
         )
         .unwrap();
         let fields = m.enum_variant_fields("Result").unwrap();
@@ -482,14 +483,10 @@ mod tests {
     // -- Function management --------------------------------------------------
 
     fn make_simple_func(name: &str) -> IrFunction {
-        let mut builder =
-            IrFunctionBuilder::new(name, vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new(name, vec![], IrType::Scalar(DType::I64));
         let entry = builder.create_block(Some("entry"));
         builder.set_current_block(entry);
-        builder.push_instr(
-            crate::ir::instr::IrInstr::Return { values: vec![] },
-            None,
-        );
+        builder.push_instr(crate::ir::instr::IrInstr::Return { values: vec![] }, None);
         builder.build()
     }
 
@@ -535,8 +532,7 @@ mod tests {
 
     #[test]
     fn builder_create_block() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         let b0 = builder.create_block(Some("entry"));
         let b1 = builder.create_block(Some("body"));
         assert_eq!(b0.0, 0);
@@ -545,8 +541,7 @@ mod tests {
 
     #[test]
     fn builder_add_block_param() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         let b0 = builder.create_block(Some("entry"));
         let v = builder.add_block_param(b0, Some("x"), IrType::Scalar(DType::I64));
         assert_eq!(v.0, 0);
@@ -554,14 +549,10 @@ mod tests {
 
     #[test]
     fn builder_push_instr_and_build() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         let b0 = builder.create_block(Some("entry"));
         builder.set_current_block(b0);
-        builder.push_instr(
-            crate::ir::instr::IrInstr::Return { values: vec![] },
-            None,
-        );
+        builder.push_instr(crate::ir::instr::IrInstr::Return { values: vec![] }, None);
         let func = builder.build();
         assert_eq!(func.blocks().len(), 1);
         assert!(func.entry_block().is_sealed());
@@ -569,22 +560,17 @@ mod tests {
 
     #[test]
     fn builder_is_current_block_terminated() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         let b0 = builder.create_block(Some("entry"));
         builder.set_current_block(b0);
         assert!(!builder.is_current_block_terminated());
-        builder.push_instr(
-            crate::ir::instr::IrInstr::Return { values: vec![] },
-            None,
-        );
+        builder.push_instr(crate::ir::instr::IrInstr::Return { values: vec![] }, None);
         assert!(builder.is_current_block_terminated());
     }
 
     #[test]
     fn builder_seal_unterminated_blocks() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         builder.create_block(Some("entry"));
         builder.create_block(Some("orphan"));
         builder.seal_unterminated_blocks();
@@ -594,8 +580,7 @@ mod tests {
 
     #[test]
     fn builder_emit_const_str() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Str);
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Str);
         let b0 = builder.create_block(Some("entry"));
         builder.set_current_block(b0);
         let v = builder.emit_const_str("hello".into());
@@ -604,8 +589,7 @@ mod tests {
 
     #[test]
     fn builder_fresh_value() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         let v0 = builder.fresh_value();
         let v1 = builder.fresh_value();
         assert_ne!(v0, v1);
@@ -613,15 +597,11 @@ mod tests {
 
     #[test]
     fn builder_span_table() {
-        let mut builder =
-            IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
+        let mut builder = IrFunctionBuilder::new("test", vec![], IrType::Scalar(DType::I64));
         let b0 = builder.create_block(Some("entry"));
         builder.set_current_block(b0);
         builder.set_span_byte(42);
-        builder.push_instr(
-            crate::ir::instr::IrInstr::Return { values: vec![] },
-            None,
-        );
+        builder.push_instr(crate::ir::instr::IrInstr::Return { values: vec![] }, None);
         let func = builder.build();
         assert_eq!(func.span_table.get(0, 0), Some(42));
     }

@@ -124,6 +124,46 @@ sleep(100)                      // sleep 100ms
 
 ---
 
+## tensorx
+
+Dense tensor helpers over flat `list<f64>` storage plus shape metadata.
+
+```iris
+bring std.tensorx
+
+val shape = list();
+val _ = list_push(shape, 2);
+val _ = list_push(shape, 2);
+val data = list();
+val _ = list_push(data, 1.0);
+val _ = list_push(data, 2.0);
+val _ = list_push(data, 3.0);
+val _ = list_push(data, 4.0);
+val t = tensor_from_data(data, shape)
+val r = tensor_relu(t)
+```
+
+**Functions:** `tensor_numel`, `tensor_full`, `tensor_zeros`, `tensor_from_data`, `tensor_get`, `tensor_set`, `tensor_data`, `tensor_shape`, `tensor_add`, `tensor_relu`, `tensor_sigmoid`, `tensor_matmul2`, `tensor_batch_matmul`
+
+---
+
+## reverse-mode builtins
+
+Interpreter-backed reverse-mode autodiff is available through builtins:
+
+```iris
+def main() -> f64 {
+    val x = tape(3.0)
+    val y = x * x + 2.0 * x
+    val _ = backward(y)
+    grad(x)
+}
+```
+
+**Builtins:** `tape`, `backward`, `grad`
+
+---
+
 ## testing
 
 Test assertion helpers.

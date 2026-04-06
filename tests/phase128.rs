@@ -4,8 +4,7 @@
 //! colored rendering, and help hints.
 
 use iris::diagnostics::{
-    render_error, render_error_colored, render_error_colored_with_file,
-    render_error_with_file,
+    render_error, render_error_colored, render_error_colored_with_file, render_error_with_file,
 };
 use iris::{compile, EmitKind};
 

@@ -4,7 +4,8 @@ def fib(n: i64) -> i64 {
 def main() -> i64 {
     val result = fib(10);
     for i in 0..5 { print(to_str(i)); }
-    while result > 0 { val _x = result; }
+    var countdown = result;
+    while countdown > 0 { countdown = countdown - 1; }
     print(result);
     0
 }

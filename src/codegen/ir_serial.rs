@@ -1406,7 +1406,11 @@ impl<'a> Reader<'a> {
         if self.pos + 4 > self.data.len() {
             return Err("truncated u32".into());
         }
-        let v = u32::from_le_bytes(self.data[self.pos..self.pos + 4].try_into().unwrap());
+        let v = u32::from_le_bytes(
+            self.data[self.pos..self.pos + 4]
+                .try_into()
+                .expect("bounds checked above"),
+        );
         self.pos += 4;
         Ok(v)
     }
@@ -1414,7 +1418,11 @@ impl<'a> Reader<'a> {
         if self.pos + 8 > self.data.len() {
             return Err("truncated u64".into());
         }
-        let v = u64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
+        let v = u64::from_le_bytes(
+            self.data[self.pos..self.pos + 8]
+                .try_into()
+                .expect("bounds checked above"),
+        );
         self.pos += 8;
         Ok(v)
     }
@@ -1422,7 +1430,11 @@ impl<'a> Reader<'a> {
         if self.pos + 8 > self.data.len() {
             return Err("truncated i64".into());
         }
-        let v = i64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
+        let v = i64::from_le_bytes(
+            self.data[self.pos..self.pos + 8]
+                .try_into()
+                .expect("bounds checked above"),
+        );
         self.pos += 8;
         Ok(v)
     }
@@ -1430,7 +1442,11 @@ impl<'a> Reader<'a> {
         if self.pos + 8 > self.data.len() {
             return Err("truncated f64".into());
         }
-        let v = f64::from_le_bytes(self.data[self.pos..self.pos + 8].try_into().unwrap());
+        let v = f64::from_le_bytes(
+            self.data[self.pos..self.pos + 8]
+                .try_into()
+                .expect("bounds checked above"),
+        );
         self.pos += 8;
         Ok(v)
     }

@@ -31,19 +31,24 @@ iris build hello.iris        # produces hello.exe (Windows) or ./hello
 iris --version
 ```
 
+`iris run`, `--emit eval`, and `--emit jit` execute through the LLVM/native
+pipeline. There is no silent interpreter fallback in those user-facing paths.
+`iris build --target <preset>` can now emit cross-target binaries when the
+matching clang/sysroot toolchain is installed.
+
 **Output of `iris --version`:**
 
 ```
-iris 0.2.0 (abc1234 2026-03-02)
+iris 0.3.0 (abc1234 2026-03-13)
 IRIS — Intermediate Representation for Intelligent Systems
 Copyright (C) 2024-2026 Moon & IRIS Project Contributors
 License: GPL-2.0-or-later <https://www.gnu.org/licenses/old-licenses/gpl-2.0.html>
 
 Compiler:
-  Version:       0.2.0
+  Version:       0.3.0
   Git commit:    abc1234567890abcdef1234567890abcdef123456
   Git branch:    main
-  Build date:    2026-03-02
+  Build date:    2026-03-13
 
 Platform:
   Target:        x86_64-pc-windows-msvc
@@ -233,7 +238,7 @@ def f() -> i64 { math.square(5) }
                                                                 │
                                     ┌───────────────────────────┤
                                     ▼               ▼           ▼
-                                 Interpreter    LLVM IR      ONNX binary
+                                 Native exec    LLVM IR      ONNX binary
                                                    │
                                                  clang
                                                    │

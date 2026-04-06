@@ -454,7 +454,9 @@ impl<'t> Parser<'t> {
             while !matches!(self.peek_tok(), Token::RParen | Token::Eof) {
                 let pname = self.expect_ident()?;
                 // Allow bare `self` without type annotation.
-                let pty = if pname.name == "self" && matches!(self.peek_tok(), Token::Comma | Token::RParen) {
+                let pty = if pname.name == "self"
+                    && matches!(self.peek_tok(), Token::Comma | Token::RParen)
+                {
                     AstType::Named("self".to_string(), self.current_span())
                 } else {
                     self.expect(&Token::Colon)?;
@@ -1174,35 +1176,45 @@ impl<'t> Parser<'t> {
             // `while` statement
             if matches!(self.peek_tok(), Token::While) {
                 stmts.push(self.parse_while_stmt()?);
-                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
+                if matches!(self.peek_tok(), Token::Semi) {
+                    self.advance();
+                }
                 continue;
             }
 
             // `for` range loop
             if matches!(self.peek_tok(), Token::For) {
                 stmts.push(self.parse_for_stmt()?);
-                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
+                if matches!(self.peek_tok(), Token::Semi) {
+                    self.advance();
+                }
                 continue;
             }
 
             // `par for` parallel range loop
             if matches!(self.peek_tok(), Token::Par) {
                 stmts.push(self.parse_par_for_stmt()?);
-                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
+                if matches!(self.peek_tok(), Token::Semi) {
+                    self.advance();
+                }
                 continue;
             }
 
             // `spawn { }` concurrent task
             if matches!(self.peek_tok(), Token::Spawn) {
                 stmts.push(self.parse_spawn_stmt()?);
-                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
+                if matches!(self.peek_tok(), Token::Semi) {
+                    self.advance();
+                }
                 continue;
             }
 
             // `loop` statement
             if matches!(self.peek_tok(), Token::Loop) {
                 stmts.push(self.parse_loop_stmt()?);
-                if matches!(self.peek_tok(), Token::Semi) { self.advance(); }
+                if matches!(self.peek_tok(), Token::Semi) {
+                    self.advance();
+                }
                 continue;
             }
 
@@ -1265,8 +1277,10 @@ impl<'t> Parser<'t> {
             } else if matches!(self.peek_tok(), Token::Semi) {
                 self.advance(); // consume `;`
                 stmts.push(AstStmt::Expr(Box::new(expr)));
-            } else if matches!(&expr, AstExpr::If { .. } | AstExpr::When { .. } | AstExpr::Block(_))
-                && !matches!(self.peek_tok(), Token::RBrace | Token::Eof)
+            } else if matches!(
+                &expr,
+                AstExpr::If { .. } | AstExpr::When { .. } | AstExpr::Block(_)
+            ) && !matches!(self.peek_tok(), Token::RBrace | Token::Eof)
             {
                 // Block-type expressions (if, when, block literal) act as implicit statements
                 // when not at block end — no `;` required after their closing `}`.
@@ -2178,7 +2192,7 @@ impl<'t> Parser<'t> {
         }
 
         // Build right-to-left concat chain.
-        let mut expr = make_part(parts.last().unwrap());
+        let mut expr = make_part(parts.last().expect("parts is non-empty, checked above"));
         for p in parts[..parts.len() - 1].iter().rev() {
             let left = make_part(p);
             expr = AstExpr::Call {
@@ -2208,11 +2222,7 @@ mod tests {
         let tokens = Lexer::new(src).tokenize().expect("lex failed");
         let mut parser = Parser::new(&tokens);
         let (module, errors) = parser.parse_module_recovering();
-        assert!(
-            errors.is_empty(),
-            "unexpected parse errors: {:?}",
-            errors
-        );
+        assert!(errors.is_empty(), "unexpected parse errors: {:?}", errors);
         module
     }
 

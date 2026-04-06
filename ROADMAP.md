@@ -1,9 +1,9 @@
 # IRIS Roadmap
 
-> **Current version: 0.5.0** — Pre-1.0, evolving rapidly.
+> **Current version: 0.3.0** — Pre-1.0, evolving rapidly.
 
-This document outlines the planned milestones for IRIS from the current state
-through the stable 1.0 release and beyond.
+This document outlines the planned milestones for IRIS from the current release
+line through the stable 1.0 release and beyond.
 
 ---
 
@@ -19,6 +19,9 @@ through the stable 1.0 release and beyond.
 - Package manager: `iris pkg init/add/install/update/list/check/build/run` (local + git deps, lockfile)
 - CHANGELOG.md, ROADMAP.md, SPEC.md, docs/ — all present and current
 - Tensor/ONNX/CUDA/SIMD backends functional; security audit and profiler added
+
+Note: Some items below are marked as completed on `main` but are not part of
+the latest tagged release yet.
 
 ---
 
@@ -61,6 +64,8 @@ through the stable 1.0 release and beyond.
 
 **Goal:** Make the ML headline features real, not stubs.
 
+Release status: Unreleased. Items listed as done reflect implementation status on `main`.
+
 | # | Task | Priority | Status |
 |---|------|----------|--------|
 | 1 | Tensor runtime — replace shape-tracking stubs with real compute | Critical | **Done** |
@@ -76,6 +81,8 @@ through the stable 1.0 release and beyond.
 ## v0.6.0 — Performance & Security
 
 **Goal:** Production-grade performance and trustworthy FFI.
+
+Release status: Unreleased. Items listed as done reflect implementation status on `main`.
 
 | # | Task | Priority | Status |
 |---|------|----------|--------|
@@ -116,4 +123,4 @@ through the stable 1.0 release and beyond.
 
 ---
 
-*Last updated: 2026-03-08*
+*Last updated: 2026-03-13*

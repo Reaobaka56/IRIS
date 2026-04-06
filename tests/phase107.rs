@@ -25,7 +25,11 @@ def f() -> i64 {
 "#;
     let result = compile(src, "test", EmitKind::Eval).unwrap();
     let n: i64 = result.trim().parse().unwrap();
-    assert!(n >= 3, "to_str(3.14) should have at least 3 chars, got {}", n);
+    assert!(
+        n >= 3,
+        "to_str(3.14) should have at least 3 chars, got {}",
+        n
+    );
 }
 
 // ── 3. to_str converts bool to string ───────────────────────────────────────

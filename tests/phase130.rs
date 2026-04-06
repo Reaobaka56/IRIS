@@ -161,7 +161,12 @@ fn test_reverse_ad_add() {
         Some(f64_ty()),
     );
 
-    builder.push_instr(IrInstr::Return { values: vec![grad_a] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![grad_a],
+        },
+        None,
+    );
     let func = builder.build();
 
     let result = eval_function(&func, &[IrValue::F64(3.0), IrValue::F64(5.0)]).expect("eval");
@@ -243,7 +248,12 @@ fn test_reverse_ad_mul() {
     );
 
     // Return grad_a (we'll test grad_b in a separate assertion)
-    builder.push_instr(IrInstr::Return { values: vec![grad_a, grad_b] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![grad_a, grad_b],
+        },
+        None,
+    );
     let func = builder.build();
 
     let result = eval_function(&func, &[IrValue::F64(3.0), IrValue::F64(5.0)]).expect("eval");
@@ -295,15 +305,38 @@ fn test_reverse_ad_sub() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_c }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_c,
+        },
+        Some(unit_ty()),
+    );
 
     let grad_a = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_a, tape_node: a }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_a,
+            tape_node: a,
+        },
+        Some(f64_ty()),
+    );
 
     let grad_b = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_b, tape_node: b }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_b,
+            tape_node: b,
+        },
+        Some(f64_ty()),
+    );
 
-    builder.push_instr(IrInstr::Return { values: vec![grad_a, grad_b] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![grad_a, grad_b],
+        },
+        None,
+    );
     let func = builder.build();
 
     let result = eval_function(&func, &[IrValue::F64(7.0), IrValue::F64(2.0)]).expect("eval");
@@ -316,8 +349,14 @@ fn test_reverse_ad_sub() {
 #[test]
 fn test_reverse_ad_div() {
     let params = vec![
-        Param { name: "a".into(), ty: f64_ty() },
-        Param { name: "b".into(), ty: f64_ty() },
+        Param {
+            name: "a".into(),
+            ty: f64_ty(),
+        },
+        Param {
+            name: "b".into(),
+            ty: f64_ty(),
+        },
     ];
     let mut builder = IrFunctionBuilder::new("rev_div", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
@@ -349,15 +388,38 @@ fn test_reverse_ad_div() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_c }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_c,
+        },
+        Some(unit_ty()),
+    );
 
     let grad_a = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_a, tape_node: a }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_a,
+            tape_node: a,
+        },
+        Some(f64_ty()),
+    );
 
     let grad_b = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_b, tape_node: b }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_b,
+            tape_node: b,
+        },
+        Some(f64_ty()),
+    );
 
-    builder.push_instr(IrInstr::Return { values: vec![grad_a, grad_b] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![grad_a, grad_b],
+        },
+        None,
+    );
     let func = builder.build();
 
     // a=6, b=3: da = 1/3, db = -6/9 = -2/3
@@ -370,7 +432,10 @@ fn test_reverse_ad_div() {
 
 #[test]
 fn test_reverse_ad_sin() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_sin", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -379,7 +444,11 @@ fn test_reverse_ad_sin() {
     // sin_x = sin(x) — we just use the primal value directly
     let sin_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: sin_val, value: 1.0_f64.sin(), ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: sin_val,
+            value: 1.0_f64.sin(),
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -395,10 +464,22 @@ fn test_reverse_ad_sin() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_sin }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_sin,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -412,7 +493,10 @@ fn test_reverse_ad_sin() {
 
 #[test]
 fn test_reverse_ad_exp() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_exp", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -420,7 +504,11 @@ fn test_reverse_ad_exp() {
 
     let exp_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: exp_val, value: 2.0_f64.exp(), ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: exp_val,
+            value: 2.0_f64.exp(),
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -436,10 +524,22 @@ fn test_reverse_ad_exp() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_exp }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_exp,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -453,7 +553,10 @@ fn test_reverse_ad_exp() {
 
 #[test]
 fn test_reverse_ad_log() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_log", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -461,7 +564,11 @@ fn test_reverse_ad_log() {
 
     let log_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: log_val, value: 3.0_f64.ln(), ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: log_val,
+            value: 3.0_f64.ln(),
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -477,10 +584,22 @@ fn test_reverse_ad_log() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_log }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_log,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -494,7 +613,10 @@ fn test_reverse_ad_log() {
 
 #[test]
 fn test_reverse_ad_sqrt() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_sqrt", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -502,7 +624,11 @@ fn test_reverse_ad_sqrt() {
 
     let sqrt_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: sqrt_val, value: 4.0_f64.sqrt(), ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: sqrt_val,
+            value: 4.0_f64.sqrt(),
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -518,10 +644,22 @@ fn test_reverse_ad_sqrt() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_sqrt }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_sqrt,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -535,7 +673,10 @@ fn test_reverse_ad_sqrt() {
 
 #[test]
 fn test_reverse_ad_relu() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_relu", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -543,7 +684,11 @@ fn test_reverse_ad_relu() {
 
     let relu_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: relu_val, value: 3.0, ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: relu_val,
+            value: 3.0,
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -559,10 +704,22 @@ fn test_reverse_ad_relu() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_relu }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_relu,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -580,7 +737,10 @@ fn test_reverse_ad_relu() {
 
 #[test]
 fn test_reverse_ad_sigmoid() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_sigmoid", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -590,7 +750,11 @@ fn test_reverse_ad_sigmoid() {
     let sig = 1.0 / (1.0 + (-x_val).exp());
     let sig_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: sig_val, value: sig, ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: sig_val,
+            value: sig,
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -606,10 +770,22 @@ fn test_reverse_ad_sigmoid() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_sig }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_sig,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -624,7 +800,10 @@ fn test_reverse_ad_sigmoid() {
 
 #[test]
 fn test_reverse_ad_tanh() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_tanh", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -634,7 +813,11 @@ fn test_reverse_ad_tanh() {
     let th = x_val.tanh();
     let tanh_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: tanh_val, value: th, ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: tanh_val,
+            value: th,
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -650,10 +833,22 @@ fn test_reverse_ad_tanh() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_tanh }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_tanh,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -668,8 +863,14 @@ fn test_reverse_ad_tanh() {
 #[test]
 fn test_reverse_ad_chain_rule() {
     let params = vec![
-        Param { name: "a".into(), ty: f64_ty() },
-        Param { name: "b".into(), ty: f64_ty() },
+        Param {
+            name: "a".into(),
+            ty: f64_ty(),
+        },
+        Param {
+            name: "b".into(),
+            ty: f64_ty(),
+        },
     ];
     let mut builder = IrFunctionBuilder::new("rev_chain", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
@@ -726,17 +927,40 @@ fn test_reverse_ad_chain_rule() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_d }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_d,
+        },
+        Some(unit_ty()),
+    );
 
     // grad(a): d(a*b + a)/da = b + 1
     let grad_a = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_a, tape_node: a }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_a,
+            tape_node: a,
+        },
+        Some(f64_ty()),
+    );
 
     // grad(b): d(a*b + a)/db = a
     let grad_b = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_b, tape_node: b }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_b,
+            tape_node: b,
+        },
+        Some(f64_ty()),
+    );
 
-    builder.push_instr(IrInstr::Return { values: vec![grad_a, grad_b] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![grad_a, grad_b],
+        },
+        None,
+    );
     let func = builder.build();
 
     // a=2, b=3: da = 3+1 = 4, db = 2
@@ -749,7 +973,10 @@ fn test_reverse_ad_chain_rule() {
 
 #[test]
 fn test_reverse_ad_cos() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_cos", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -758,7 +985,11 @@ fn test_reverse_ad_cos() {
     let x_val: f64 = 1.5;
     let cos_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: cos_val, value: x_val.cos(), ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: cos_val,
+            value: x_val.cos(),
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -774,10 +1005,22 @@ fn test_reverse_ad_cos() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_cos }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_cos,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -790,7 +1033,10 @@ fn test_reverse_ad_cos() {
 
 #[test]
 fn test_reverse_ad_abs() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_abs", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -798,7 +1044,11 @@ fn test_reverse_ad_abs() {
 
     let abs_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: abs_val, value: 5.0, ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: abs_val,
+            value: 5.0,
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -814,10 +1064,22 @@ fn test_reverse_ad_abs() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_abs }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_abs,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -835,7 +1097,10 @@ fn test_reverse_ad_abs() {
 
 #[test]
 fn test_reverse_ad_neg() {
-    let params = vec![Param { name: "x".into(), ty: f64_ty() }];
+    let params = vec![Param {
+        name: "x".into(),
+        ty: f64_ty(),
+    }];
     let mut builder = IrFunctionBuilder::new("rev_neg", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
     let x = builder.add_block_param(entry, Some("x"), f64_ty());
@@ -843,7 +1108,11 @@ fn test_reverse_ad_neg() {
 
     let neg_val = builder.fresh_value();
     builder.push_instr(
-        IrInstr::ConstFloat { result: neg_val, value: -4.0, ty: f64_ty() },
+        IrInstr::ConstFloat {
+            result: neg_val,
+            value: -4.0,
+            ty: f64_ty(),
+        },
         Some(f64_ty()),
     );
 
@@ -859,10 +1128,22 @@ fn test_reverse_ad_neg() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_neg }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_neg,
+        },
+        Some(unit_ty()),
+    );
 
     let grad = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad, tape_node: x }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad,
+            tape_node: x,
+        },
+        Some(f64_ty()),
+    );
 
     builder.push_instr(IrInstr::Return { values: vec![grad] }, None);
     let func = builder.build();
@@ -878,8 +1159,14 @@ fn test_reverse_ad_zero_grad_untaped() {
     // If we ask for gradient of a value that wasn't involved in the tape,
     // we should get 0.0
     let params = vec![
-        Param { name: "a".into(), ty: f64_ty() },
-        Param { name: "b".into(), ty: f64_ty() },
+        Param {
+            name: "a".into(),
+            ty: f64_ty(),
+        },
+        Param {
+            name: "b".into(),
+            ty: f64_ty(),
+        },
     ];
     let mut builder = IrFunctionBuilder::new("rev_zero", params, f64_ty());
     let entry = builder.create_block(Some("entry"));
@@ -900,13 +1187,30 @@ fn test_reverse_ad_zero_grad_untaped() {
     );
 
     let bw = builder.fresh_value();
-    builder.push_instr(IrInstr::Backward { result: bw, loss: tape_a }, Some(unit_ty()));
+    builder.push_instr(
+        IrInstr::Backward {
+            result: bw,
+            loss: tape_a,
+        },
+        Some(unit_ty()),
+    );
 
     // b was never in the tape
     let grad_b = builder.fresh_value();
-    builder.push_instr(IrInstr::TapeGrad { result: grad_b, tape_node: b }, Some(f64_ty()));
+    builder.push_instr(
+        IrInstr::TapeGrad {
+            result: grad_b,
+            tape_node: b,
+        },
+        Some(f64_ty()),
+    );
 
-    builder.push_instr(IrInstr::Return { values: vec![grad_b] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![grad_b],
+        },
+        None,
+    );
     let func = builder.build();
 
     let result = eval_function(&func, &[IrValue::F64(5.0), IrValue::F64(7.0)]).expect("eval");

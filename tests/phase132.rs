@@ -14,16 +14,14 @@ use iris::ir::function::Param;
 use iris::ir::instr::{BinOp, IrInstr};
 use iris::ir::module::{IrFunctionBuilder, IrModule};
 use iris::ir::types::{DType, IrType};
-use iris::pass::validate::ValidatePass;
 use iris::pass::type_infer::TypeInferPass;
+use iris::pass::validate::ValidatePass;
 use iris::pass::{
     ConstFoldPass, CopyPropPass, CsePass, DcePass, LicmPass, OpExpandPass, PassManager,
     ShapeCheckPass, StrengthReducePass,
 };
 use iris::profiler::{ProfileResult, Profiler};
-use iris::security::{
-    self, SecurityError, SecurityPolicy, AuditOp,
-};
+use iris::security::{self, AuditOp, SecurityError, SecurityPolicy};
 
 fn scalar_i64() -> IrType {
     IrType::Scalar(DType::I64)
@@ -96,12 +94,25 @@ fn test_security_error_variants_exhaustive() {
         SecurityError::FsReadDenied { path: "a".into() },
         SecurityError::FsWriteDenied { path: "b".into() },
         SecurityError::NetworkDenied { host: "c".into() },
-        SecurityError::FfiDenied { library: "d".into() },
-        SecurityError::ProcessDenied { command: "e".into() },
+        SecurityError::FfiDenied {
+            library: "d".into(),
+        },
+        SecurityError::ProcessDenied {
+            command: "e".into(),
+        },
         SecurityError::PathTraversal { path: "f".into() },
-        SecurityError::FileSizeLimitExceeded { size: 100, limit: 50 },
-        SecurityError::TooManyOpenFiles { current: 10, limit: 5 },
-        SecurityError::TooManyConnections { current: 8, limit: 4 },
+        SecurityError::FileSizeLimitExceeded {
+            size: 100,
+            limit: 50,
+        },
+        SecurityError::TooManyOpenFiles {
+            current: 10,
+            limit: 5,
+        },
+        SecurityError::TooManyConnections {
+            current: 8,
+            limit: 4,
+        },
     ];
     for err in &errors {
         let msg = format!("{}", err);
@@ -248,7 +259,11 @@ fn test_profiler_flame_svg_generation() {
 
     let result = profiler.finalize();
     let svg = result.to_flame_svg();
-    assert!(svg.contains("<svg"), "SVG should contain <svg tag: {}", &svg[..svg.len().min(200)]);
+    assert!(
+        svg.contains("<svg"),
+        "SVG should contain <svg tag: {}",
+        &svg[..svg.len().min(200)]
+    );
     assert!(svg.contains("</svg>"), "SVG should be well-formed");
 }
 
@@ -348,7 +363,13 @@ fn test_copy_prop_dedup_constants() {
     let mut found_add = false;
     for block in func.blocks() {
         for instr in &block.instrs {
-            if let IrInstr::BinOp { op: BinOp::Add, lhs, rhs, .. } = instr {
+            if let IrInstr::BinOp {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+                ..
+            } = instr
+            {
                 // Both should now reference c1 (the first const).
                 assert_eq!(lhs, rhs, "CopyProp should make both operands the same");
                 found_add = true;
@@ -410,7 +431,13 @@ fn test_copy_prop_no_change_on_distinct_constants() {
     let func = &module.functions()[0];
     for block in func.blocks() {
         for instr in &block.instrs {
-            if let IrInstr::BinOp { op: BinOp::Add, lhs, rhs, .. } = instr {
+            if let IrInstr::BinOp {
+                op: BinOp::Add,
+                lhs,
+                rhs,
+                ..
+            } = instr
+            {
                 assert_ne!(lhs, rhs, "Distinct constants should not be merged");
             }
         }
@@ -468,7 +495,13 @@ fn test_copy_prop_float_dedup() {
     let func = &module.functions()[0];
     for block in func.blocks() {
         for instr in &block.instrs {
-            if let IrInstr::BinOp { op: BinOp::Mul, lhs, rhs, .. } = instr {
+            if let IrInstr::BinOp {
+                op: BinOp::Mul,
+                lhs,
+                rhs,
+                ..
+            } = instr
+            {
                 assert_eq!(lhs, rhs, "Duplicate floats should be merged");
             }
         }
@@ -525,14 +558,19 @@ fn test_licm_no_crash_simple_function() {
     module.add_function(builder.build()).unwrap();
 
     let mut pass = LicmPass;
-    iris::pass::Pass::run(&mut pass, &mut module).expect("LicmPass should not crash on non-loop code");
+    iris::pass::Pass::run(&mut pass, &mut module)
+        .expect("LicmPass should not crash on non-loop code");
 
     // Verify function still has the return.
     let func = &module.functions()[0];
-    let has_return = func.blocks().iter().any(|b| {
-        b.instrs.iter().any(|i| matches!(i, IrInstr::Return { .. }))
-    });
-    assert!(has_return, "Function should still have a return instruction");
+    let has_return = func
+        .blocks()
+        .iter()
+        .any(|b| b.instrs.iter().any(|i| matches!(i, IrInstr::Return { .. })));
+    assert!(
+        has_return,
+        "Function should still have a return instruction"
+    );
 }
 
 #[test]
@@ -558,7 +596,11 @@ def add_constants() -> i64 {
 }
 "#;
     let ir = iris::compile(src, "test", iris::EmitKind::Ir).expect("compile");
-    assert!(ir.contains("add_constants"), "IR should contain the function: {}", ir);
+    assert!(
+        ir.contains("add_constants"),
+        "IR should contain the function: {}",
+        ir
+    );
 }
 
 #[test]
@@ -571,7 +613,11 @@ def compute(x: i64) -> i64 {
 }
 "#;
     let ir = iris::compile(src, "test", iris::EmitKind::Ir).expect("compile");
-    assert!(ir.contains("compute"), "IR should contain the function: {}", ir);
+    assert!(
+        ir.contains("compute"),
+        "IR should contain the function: {}",
+        ir
+    );
 }
 
 #[test]
@@ -583,7 +629,10 @@ def identity(x: i64) -> i64 {
 }
 "#;
     let module = iris::compile_to_module(src, "test").expect("compile_to_module");
-    assert!(!module.functions().is_empty(), "Module should have functions");
+    assert!(
+        !module.functions().is_empty(),
+        "Module should have functions"
+    );
     assert_eq!(module.functions()[0].name, "identity");
 }
 
@@ -647,7 +696,12 @@ fn test_pass_manager_with_all_v060_passes() {
         Some(scalar_i64()),
     );
 
-    builder.push_instr(IrInstr::Return { values: vec![result] }, None);
+    builder.push_instr(
+        IrInstr::Return {
+            values: vec![result],
+        },
+        None,
+    );
 
     let mut module = IrModule::new("test");
     module.add_function(builder.build()).unwrap();

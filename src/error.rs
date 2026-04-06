@@ -9,8 +9,11 @@ fn format_undef(name: &str, suggestion: Option<&str>) -> String {
         name
     );
     if let Some(s) = suggestion {
-        format!("{}
-  help: did you mean '{}'?", base, s)
+        format!(
+            "{}
+  help: did you mean '{}'?",
+            base, s
+        )
     } else {
         base
     }
@@ -94,7 +97,11 @@ pub enum ParseError {
 #[derive(Debug, Error)]
 pub enum LowerError {
     #[error("{}", format_undef(name, suggestion.as_deref()))]
-    UndefinedVariable { name: String, span: Span, suggestion: Option<String> },
+    UndefinedVariable {
+        name: String,
+        span: Span,
+        suggestion: Option<String>,
+    },
 
     #[error("type mismatch — expected '{expected}' but found '{found}'. The types on both sides of this expression must agree")]
     TypeMismatch {
@@ -176,6 +183,9 @@ pub enum InterpError {
 
     #[error("program panicked: {msg}")]
     Panic { msg: String },
+
+    #[error("{0}")]
+    SecurityViolation(#[from] crate::security::SecurityError),
 
     /// Wraps any runtime error with the source byte offset of the instruction
     /// that triggered it, enabling source-excerpt rendering in diagnostics.
@@ -259,6 +269,7 @@ impl Error {
                     InterpError::TypeError { .. } => "E0404",
                     InterpError::Unsupported { .. } => "E0405",
                     InterpError::Panic { .. } => "E0406",
+                    InterpError::SecurityViolation(_) => "E0407",
                     InterpError::Located { .. } => "E0400",
                 }
             }
@@ -532,10 +543,7 @@ mod tests {
             "E0005"
         );
         assert_eq!(
-            Error::Parse(ParseError::UnexpectedEof {
-                context: "".into()
-            })
-            .diagnostic_code(),
+            Error::Parse(ParseError::UnexpectedEof { context: "".into() }).diagnostic_code(),
             "E0006"
         );
     }

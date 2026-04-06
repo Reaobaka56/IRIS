@@ -13,14 +13,18 @@ pub struct CliArgs {
     pub output: Option<PathBuf>,
     /// If true, after building a binary run it (used with `iris run`).
     pub run_after_build: bool,
+    /// Optional target preset/triple for LLVM and native builds.
+    pub target: Option<String>,
     /// Dump IR to stderr immediately after this pass completes.
     pub dump_ir_after: Option<String>,
-    /// Maximum interpreter step count before aborting (default: 1 000 000).
+    /// Legacy execution guardrail for interpreter-based tooling (default: 1 000 000).
     pub max_steps: usize,
-    /// Maximum interpreter call depth before aborting (default: 500).
+    /// Legacy execution guardrail for interpreter-based tooling (default: 500).
     pub max_depth: usize,
     /// Disable the incremental compilation cache.
     pub no_cache: bool,
+    /// Run with sandboxed security policy (deny fs/network/process/ffi).
+    pub sandbox: bool,
 }
 
 /// Result of `parse_args`.
@@ -54,10 +58,12 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
     let mut path: Option<PathBuf> = None;
     let mut output: Option<PathBuf> = None;
     let mut run_after_build = false;
+    let mut target: Option<String> = None;
     let mut dump_ir_after: Option<String> = None;
     let mut max_steps: usize = 1_000_000;
     let mut max_depth: usize = 500;
     let mut no_cache = false;
+    let mut sandbox = false;
     let mut i = 1usize;
 
     if let Some(first) = args.get(i) {
@@ -96,6 +102,7 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
                     "llvm" => EmitKind::Llvm,
                     "llvm-complete" => EmitKind::LlvmComplete,
                     "cuda" => EmitKind::Cuda,
+                    "cuda-ptx" => EmitKind::CudaPtx,
                     "simd" => EmitKind::Simd,
                     "jit" => EmitKind::Jit,
                     "pgo-instrument" => EmitKind::PgoInstrument,
@@ -107,7 +114,7 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
                     "binary" => EmitKind::Binary,
                     other => {
                         return Err(format!(
-                            "unknown emit kind: '{}' (valid: ir, llvm, llvm-complete, cuda, simd, jit, pgo-instrument, pgo-optimize, graph, onnx, onnx-binary, eval, binary)",
+                            "unknown emit kind: '{}' (valid: ir, llvm, llvm-complete, cuda, cuda-ptx, simd, jit, pgo-instrument, pgo-optimize, graph, onnx, onnx-binary, eval, binary)",
                             other
                         ))
                     }
@@ -119,6 +126,13 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
                     .get(i)
                     .ok_or_else(|| "-o requires an argument".to_owned())?;
                 output = Some(PathBuf::from(file));
+            }
+            "--target" => {
+                i += 1;
+                let triple = args
+                    .get(i)
+                    .ok_or_else(|| "--target requires an argument".to_owned())?;
+                target = Some(triple.clone());
             }
             "--dump-ir-after" => {
                 i += 1;
@@ -148,6 +162,9 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
             "--no-cache" => {
                 no_cache = true;
             }
+            "--sandbox" => {
+                sandbox = true;
+            }
             arg if !arg.starts_with('-') => {
                 path = Some(PathBuf::from(arg));
             }
@@ -162,10 +179,12 @@ pub fn parse_args(args: &[String]) -> Result<ParseArgsResult, String> {
         emit,
         output,
         run_after_build,
+        target,
         dump_ir_after,
         max_steps,
         max_depth,
         no_cache,
+        sandbox,
     }))
 }
 
@@ -252,14 +271,16 @@ pub fn help_text() -> &'static str {
        bench <file.iris>     Run performance benchmarks on a file\n\
      \n\
      Options:\n\
-       --emit <kind>         Output kind: ir (default), llvm, llvm-complete, cuda, simd,\n\
+    --emit <kind>         Output kind: ir (default), llvm, llvm-complete, cuda, cuda-ptx, simd,\n\
                              jit, pgo-instrument, pgo-optimize, graph, onnx, onnx-binary,\n\
                              eval, binary\n\
        -o <file>             Write output to <file> instead of stdout\n\
+       --target <triple>     Target preset/triple for llvm/binary outputs (e.g. linux-arm64)\n\
        --dump-ir-after <p>   Dump IR to stderr after pass <p> completes\n\
-       --max-steps <n>       Max interpreter steps before abort (default: 1000000)\n\
-       --max-depth <n>       Max call depth before abort (default: 500)\n\
+       --max-steps <n>       Legacy interpreter guardrail (ignored for native build/run/eval/jit)\n\
+       --max-depth <n>       Legacy call-depth guardrail (ignored for native build/run/eval/jit)\n\
        --no-cache            Disable incremental compilation cache\n\
+       --sandbox             Run with sandboxed security (deny fs/network/ffi/process)\n\
        --help, -h            Print this help and exit\n\
        --version, -V         Print version and exit\n"
 }

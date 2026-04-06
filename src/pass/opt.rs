@@ -87,6 +87,7 @@ fn is_side_effecting(instr: &IrInstr) -> bool {
             | IrInstr::TcpClose { .. }
             | IrInstr::SleepMs { .. }
             | IrInstr::BuiltinCall { .. }
+            | IrInstr::Backward { .. }
     )
 }
 

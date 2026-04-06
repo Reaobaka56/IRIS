@@ -48,6 +48,18 @@ use isatty as libc_isatty;
 /// nested IRIS expressions during recursive IR lowering.
 const STACK_SIZE: usize = 64 * 1024 * 1024;
 
+fn resolved_target(target: Option<&str>) -> String {
+    match target {
+        Some(t) => iris::codegen::target_preset_to_triple(t).unwrap_or(t),
+        None => iris::codegen::native_target_triple(),
+    }
+    .to_owned()
+}
+
+fn is_native_run_target(target: Option<&str>) -> bool {
+    resolved_target(target) == iris::codegen::native_target_triple()
+}
+
 fn main() {
     let builder = std::thread::Builder::new().stack_size(STACK_SIZE);
     let handler = builder
@@ -111,6 +123,20 @@ fn run() {
             }
         }
         Ok(ParseArgsResult::Args(cli)) => {
+            if cli.sandbox {
+                iris::security::set_security_policy(iris::security::SecurityPolicy::sandboxed());
+            }
+            if cli.target.is_some()
+                && !matches!(
+                    cli.emit,
+                    iris::EmitKind::Binary | iris::EmitKind::Llvm | iris::EmitKind::LlvmComplete
+                )
+            {
+                eprintln!(
+                    "error: --target is currently supported only for native builds and LLVM IR emission"
+                );
+                process::exit(1);
+            }
             if cli.emit == iris::EmitKind::Binary {
                 let source = std::fs::read_to_string(&cli.path).unwrap_or_default();
                 let module = match iris::compile_file_to_module_with_opts(
@@ -120,7 +146,14 @@ fn run() {
                     Ok(m) => m,
                     Err(e) => {
                         if is_stderr_tty() {
-                            eprint!("{}", render_error_colored_with_file(&source, &e, &cli.path.display().to_string()));
+                            eprint!(
+                                "{}",
+                                render_error_colored_with_file(
+                                    &source,
+                                    &e,
+                                    &cli.path.display().to_string()
+                                )
+                            );
                         } else {
                             eprint!("{}", render_error(&source, &e));
                         }
@@ -135,10 +168,28 @@ fn run() {
                         .unwrap_or("iris_out");
                     PathBuf::from(format!("{}{}", stem, std::env::consts::EXE_SUFFIX))
                 });
-                match iris::codegen::build_binary(&module, &output_path) {
+                match iris::codegen::build_binary_with_target(
+                    &module,
+                    &output_path,
+                    cli.target.as_deref(),
+                ) {
                     Ok(path) => {
-                        eprintln!("wrote binary: {}", path.display());
+                        eprintln!(
+                            "wrote binary: {}{}",
+                            path.display(),
+                            cli.target
+                                .as_deref()
+                                .map(|t| format!(" (target: {})", resolved_target(Some(t))))
+                                .unwrap_or_default()
+                        );
                         if cli.run_after_build {
+                            if !is_native_run_target(cli.target.as_deref()) {
+                                eprintln!(
+                                    "error: cannot run cross-target binary locally (requested target: {})",
+                                    resolved_target(cli.target.as_deref())
+                                );
+                                process::exit(1);
+                            }
                             // Canonicalize so Command finds the binary in the
                             // current directory on Windows (relative paths
                             // without ".\" are not searched).
@@ -154,36 +205,36 @@ fn run() {
                         }
                     }
                     Err(e) => {
-                        // If clang is not available, fall back to the interpreter so
-                        // `iris run` remains functional on machines without a native toolchain.
-                        if std::env::var("IRIS_NO_INTERP_FALLBACK").is_ok() {
-                            eprintln!("error: {}", e);
-                            process::exit(1);
-                        }
-                        eprintln!(
-                            "\x1b[1;33mwarning\x1b[0m: native compiler not available ({}), falling back to interpreter",
-                            e
-                        );
-                        match iris::eval_ir_module(&module) {
-                            Ok(out) => print!("{}", out),
-                            Err(ie) => {
-                                eprintln!("error: {}", ie);
-                                process::exit(1);
-                            }
-                        }
+                        eprintln!("\x1b[1;31merror\x1b[0m: native compilation failed: {}", e);
+                        eprintln!("hint: ensure clang/LLVM is installed and on PATH (set IRIS_CLANG to override)");
+                        process::exit(1);
                     }
                 }
                 return;
             }
 
             let source = std::fs::read_to_string(&cli.path).unwrap_or_default();
-            match iris::compile_file_with_full_opts(
-                &cli.path,
+            let result = if matches!(
                 cli.emit,
-                cli.max_steps,
-                cli.max_depth,
-                cli.dump_ir_after.as_deref(),
-            ) {
+                iris::EmitKind::Llvm | iris::EmitKind::LlvmComplete
+            ) && cli.target.is_some()
+            {
+                let module =
+                    iris::compile_file_to_module_with_opts(&cli.path, cli.dump_ir_after.as_deref());
+                module.and_then(|m| {
+                    iris::codegen::emit_llvm_ir_with_target(&m, cli.target.as_deref())
+                        .map_err(iris::Error::Codegen)
+                })
+            } else {
+                iris::compile_file_with_full_opts(
+                    &cli.path,
+                    cli.emit,
+                    cli.max_steps,
+                    cli.max_depth,
+                    cli.dump_ir_after.as_deref(),
+                )
+            };
+            match result {
                 Ok(output) => {
                     if let Some(out_path) = cli.output {
                         if let Err(e) = std::fs::write(&out_path, &output) {
@@ -196,7 +247,14 @@ fn run() {
                 }
                 Err(e) => {
                     if is_stderr_tty() {
-                        eprint!("{}", render_error_colored_with_file(&source, &e, &cli.path.display().to_string()));
+                        eprint!(
+                            "{}",
+                            render_error_colored_with_file(
+                                &source,
+                                &e,
+                                &cli.path.display().to_string()
+                            )
+                        );
                     } else {
                         eprint!("{}", render_error(&source, &e));
                     }

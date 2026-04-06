@@ -1,6 +1,8 @@
 //! Phase 101 integration tests: cross-platform binary compilation target support.
 
-use iris::codegen::{emit_llvm_ir_with_target, target_data_layout, target_preset_to_triple};
+use iris::codegen::{
+    emit_llvm_ir_with_target, native_target_triple, target_data_layout, target_preset_to_triple,
+};
 use iris::compile_to_module;
 
 // ── 1. data_layout for x86_64 returns non-empty string ───────────────────────
@@ -66,6 +68,12 @@ fn test_emit_with_no_target() {
     let ir = emit_llvm_ir_with_target(&module, None).unwrap();
     assert!(!ir.is_empty());
     assert!(ir.contains("target triple"));
+    assert!(
+        ir.contains(native_target_triple()),
+        "default target should match host triple '{}':\n{}",
+        native_target_triple(),
+        ir
+    );
 }
 
 // ── 7. Preset "macos-arm64" resolves to the correct LLVM triple ──────────────

@@ -4,20 +4,13 @@
 //!
 //! Architecture
 //! ─────────────
-//! The JIT has three tiers:
+//! The JIT is native-only:
 //!
-//! 1. **Native tier** (preferred): emits LLVM IR text via the `LlvmComplete`
-//!    backend, then invokes an external `clang` process to compile it to a
-//!    shared library (`.so`/`.dll`). The library is loaded with `dlopen`/
-//!    `LoadLibrary` and the target function is called via `dlsym`/`GetProcAddress`.
-//!    This tier requires `clang` to be in `PATH`.
+//! 1. **Native tier**: emits LLVM IR text, compiles it with `clang`, and
+//!    executes the resulting native binary.
 //!
-//! 2. **Interpreter tier** (fallback): uses the IRIS tree-walking interpreter
-//!    directly. No native code is produced; pure Rust execution.
-//!
-//! 3. **Cached tier**: once a function has been JIT-compiled (either natively
-//!    or via interpreter), results are cached in a `JitCache` for reuse within
-//!    the same process.
+//! 2. **Cached tier**: once a function has been JIT-compiled natively, results
+//!    are cached in a `JitCache` for reuse within the same process.
 //!
 //! Usage
 //! ──────
@@ -25,16 +18,14 @@
 //! iris --emit jit program.iris
 //! ```
 //! This evaluates the first zero-argument function and prints the result,
-//! choosing the fastest available tier automatically.
+//! using the LLVM/native pipeline.
 //!
 //! JIT cache key: (module_name, function_name, ir_hash)
 
 use std::collections::HashMap;
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-use crate::codegen::build::{
-    find_clang, msys2_gcc_lib, msys2_ucrt64_include, msys2_ucrt64_lib, RUNTIME_C_SRC, RUNTIME_H_SRC,
-};
+use crate::codegen::build::{find_clang, msys2_gcc_lib, msys2_ucrt64_include, msys2_ucrt64_lib};
 use crate::error::CodegenError;
 use crate::ir::module::IrModule;
 
@@ -63,15 +54,12 @@ pub struct JitResult {
 pub enum JitTier {
     /// Native code via clang subprocess.
     Native,
-    /// IRIS tree-walking interpreter.
-    Interpreter,
 }
 
 impl std::fmt::Display for JitTier {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             JitTier::Native => f.write_str("native"),
-            JitTier::Interpreter => f.write_str("interpreter"),
         }
     }
 }
@@ -117,250 +105,27 @@ impl JitCompiler {
             return Ok(cached.clone());
         }
 
-        // Try native tier first (requires clang + full toolchain).
-        let result = if is_native_jit_available() {
-            self.compile_native(module, &func.name)?
-        } else {
-            self.compile_interpreter(module)?
-        };
+        if !is_native_jit_available() {
+            return Err(CodegenError::Unsupported {
+                backend: "jit".into(),
+                detail: "native JIT requires a working clang/LLVM toolchain; install clang or set IRIS_CLANG"
+                    .into(),
+            });
+        }
+
+        let result = self.compile_native(module)?;
 
         self.cache.insert(key, result.clone());
         Ok(result)
     }
 
-    /// Native tier: emit LLVM IR → compile runtime + module → link → run.
-    ///
-    /// Mirrors the full `iris build` pipeline from `codegen::build` but writes
-    /// output to a temp directory and executes the resulting binary, capturing
-    /// its stdout.
-    ///
-    /// Unlike `iris build`, the JIT wrapper's `main()` **prints** the entry
-    /// function's return value so stdout matches the interpreter tier.
-    fn compile_native(&self, module: &IrModule, fn_name: &str) -> Result<JitResult, CodegenError> {
-        use crate::codegen::llvm_ir::emit_llvm_ir;
-        use crate::ir::types::{DType, IrType};
-        use std::process::Command;
-
-        // Use emit_llvm_ir (no binary wrapper) so functions keep their names.
-        let mut ir_text = emit_llvm_ir(module)?;
-
-        // Find the entry function's return type to generate correct print call.
-        let entry_func = module
-            .functions()
-            .iter()
-            .find(|f| f.name == fn_name)
-            .or_else(|| module.functions().iter().find(|f| f.params.is_empty()));
-
-        // Append a JIT-specific main() that calls the entry, prints its result,
-        // and exits with code 0.
-        if let Some(func) = entry_func {
-            let (llvm_ret, print_call) = match &func.return_ty {
-                IrType::Scalar(DType::I64)
-                | IrType::Scalar(DType::I32)
-                | IrType::Scalar(DType::U32)
-                | IrType::Scalar(DType::U64)
-                | IrType::Scalar(DType::USize)
-                | IrType::Scalar(DType::I8)
-                | IrType::Scalar(DType::U8) => ("i64", "  call void @iris_print_i64(i64 %r)\n"),
-                IrType::Scalar(DType::F64) => {
-                    ("double", "  call void @iris_print_f64(double %r)\n")
-                }
-                IrType::Scalar(DType::F32) => {
-                    // Runtime prints f64; extend f32 → f64 first.
-                    ("float", "  %rd = fpext float %r to double\n  call void @iris_print_f64(double %rd)\n")
-                }
-                IrType::Scalar(DType::Bool) => ("i1", "  call void @iris_print_bool(i1 %r)\n"),
-                IrType::Str => ("ptr", "  call void @iris_print_str(ptr %r)\n"),
-                _ => ("i64", "  call void @iris_print_i64(i64 %r)\n"),
-            };
-
-            ir_text.push_str(&format!(
-                "\ndefine i32 @main(i32 %argc, ptr %argv) {{\n\
-                 {}\
-                 %r = call {} @{}()\n\
-                 {}\
-                 ret i32 0\n\
-                 }}\n",
-                "  call void @iris_set_argv(i32 %argc, ptr %argv)\n",
-                llvm_ret,
-                func.name,
-                print_call
-            ));
-        }
-
-        // Per-process + per-thread + per-hash directory so parallel tests don't collide.
-        let tid: String = format!("{:?}", std::thread::current().id())
-            .chars()
-            .filter(|c| c.is_ascii_digit())
-            .collect();
-        let unique = format!(
-            "iris_jit_{}_{}_{}",
-            std::process::id(),
-            hash_module(module),
-            tid
-        );
-        let tmp_dir = std::env::temp_dir().join(&unique);
-        let _ = std::fs::create_dir_all(&tmp_dir);
-
-        let ir_path = tmp_dir.join("module.ll");
-        let exe_ext = if cfg!(target_os = "windows") {
-            "exe"
-        } else {
-            "out"
-        };
-        let out_path = tmp_dir.join(format!("module.{}", exe_ext));
-
-        std::fs::write(&ir_path, &ir_text).map_err(|e| CodegenError::Unsupported {
-            backend: "jit-native".into(),
-            detail: format!("cannot write temp IR file: {}", e),
-        })?;
-
-        // Write the embedded IRIS runtime (iris_runtime.h + iris_runtime.c)
-        // which provides iris_print_i64, iris_set_argv, etc.
-        let h_path = tmp_dir.join("iris_runtime.h");
-        let c_path = tmp_dir.join("iris_runtime.c");
-        std::fs::write(&h_path, RUNTIME_H_SRC).map_err(|e| CodegenError::Unsupported {
-            backend: "jit-native".into(),
-            detail: format!("cannot write runtime header: {}", e),
-        })?;
-        std::fs::write(&c_path, RUNTIME_C_SRC).map_err(|e| CodegenError::Unsupported {
-            backend: "jit-native".into(),
-            detail: format!("cannot write runtime C source: {}", e),
-        })?;
-
-        // Locate clang and set up environment.
-        let clang = find_clang();
-        let msys2_lib = msys2_ucrt64_lib();
-        let msys2_inc = msys2_ucrt64_include();
-        let gcc_lib = msys2_gcc_lib();
-
-        // Common target triple for all clang invocations on Windows.
-        let target_args: Vec<&str> = if cfg!(target_os = "windows") {
-            vec!["-target", "x86_64-w64-windows-gnu"]
-        } else {
-            vec![]
-        };
-
-        // Step 1: Compile iris_runtime.c → iris_runtime.o (using clang).
-        let rt_obj = tmp_dir.join("iris_runtime.o");
-        let mut rt_cmd = Command::new(&clang);
-        rt_cmd.args(&target_args);
-        rt_cmd.args([
-            "-O2",
-            "-c",
-            c_path.to_str().unwrap_or(""),
-            "-o",
-            rt_obj.to_str().unwrap_or(""),
-            "-I",
-            tmp_dir.to_str().unwrap_or(""),
-            "-Wno-pragma-pack",
-        ]);
-        if let Some(ref inc) = msys2_inc {
-            rt_cmd.arg("-I").arg(inc);
-        }
-        let rt_result = rt_cmd.stderr(std::process::Stdio::null()).output();
-        if !matches!(&rt_result, Ok(o) if o.status.success()) {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            return self.compile_interpreter(module);
-        }
-
-        // Step 2: Compile LLVM IR → module.o (using clang).
-        let mod_obj = tmp_dir.join("module.o");
-        let mut ir_cmd = Command::new(&clang);
-        ir_cmd.args(&target_args);
-        ir_cmd.args([
-            "-O2",
-            "-c",
-            ir_path.to_str().unwrap_or(""),
-            "-o",
-            mod_obj.to_str().unwrap_or(""),
-            "-Wno-override-module",
-        ]);
-        let ir_result = ir_cmd.stderr(std::process::Stdio::null()).output();
-        if !matches!(&ir_result, Ok(o) if o.status.success()) {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            return self.compile_interpreter(module);
-        }
-
-        // Step 3: Link module.o + iris_runtime.o → executable (using clang + lld).
-        let mut link_cmd = Command::new(&clang);
-        link_cmd.args(&target_args);
-        link_cmd.args([
-            "-fuse-ld=lld",
-            "-O2",
-            mod_obj.to_str().unwrap_or(""),
-            rt_obj.to_str().unwrap_or(""),
-            "-o",
-            out_path.to_str().unwrap_or(""),
-            "-lm",
-            "-lpthread",
-        ]);
-        // Windows: link WinSock2 for TCP/HTTP builtins
-        #[cfg(target_os = "windows")]
-        link_cmd.arg("-lws2_32");
-        if let Some(ref lib) = msys2_lib {
-            link_cmd.arg(format!("-L{}", lib));
-        }
-        if let Some(ref lib) = gcc_lib {
-            link_cmd.arg(format!("-L{}", lib));
-        }
-        let link_output = link_cmd.stderr(std::process::Stdio::null()).output();
-        if !matches!(&link_output, Ok(o) if o.status.success()) {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            return self.compile_interpreter(module);
-        }
-
-        // Step 4: Run the compiled executable and capture stdout.
-        let run_path = if cfg!(target_os = "windows") {
-            std::fs::canonicalize(&out_path).unwrap_or_else(|_| out_path.clone())
-        } else {
-            out_path.clone()
-        };
-
-        let run_output =
-            Command::new(&run_path)
-                .output()
-                .map_err(|e| CodegenError::Unsupported {
-                    backend: "jit-native".into(),
-                    detail: format!("cannot run compiled binary: {}", e),
-                })?;
-
-        let stdout = String::from_utf8_lossy(&run_output.stdout).to_string();
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-
+    /// Native tier: compile and execute using the same LLVM pipeline as
+    /// `EmitKind::Eval`, capturing stdout.
+    fn compile_native(&self, module: &IrModule) -> Result<JitResult, CodegenError> {
+        let stdout = crate::codegen::execute_binary_for_eval(module)?;
         Ok(JitResult {
             output: stdout,
             tier: JitTier::Native,
-        })
-    }
-
-    /// Interpreter tier: use the IRIS tree-walking interpreter.
-    fn compile_interpreter(&self, module: &IrModule) -> Result<JitResult, CodegenError> {
-        use crate::interp::eval_function_in_module;
-
-        let func = module
-            .functions()
-            .iter()
-            .find(|f| f.params.is_empty())
-            .ok_or_else(|| CodegenError::Unsupported {
-                backend: "jit-interp".into(),
-                detail: "no zero-argument function found".into(),
-            })?;
-
-        let results =
-            eval_function_in_module(module, func, &[]).map_err(|e| CodegenError::Unsupported {
-                backend: "jit-interp".into(),
-                detail: format!("interpreter error: {:?}", e),
-            })?;
-
-        let mut output = String::new();
-        for val in &results {
-            output.push_str(&format!("{}\n", val));
-        }
-
-        Ok(JitResult {
-            output,
-            tier: JitTier::Interpreter,
         })
     }
 }
@@ -392,7 +157,11 @@ pub fn emit_jit(module: &IrModule) -> Result<String, CodegenError> {
     writeln!(out, "; Module: {}", module.name)?;
     writeln!(out, "; IR hash: {:016x}", hash_module(module))?;
     writeln!(out, "; Execution tier: {}", result.tier)?;
-    writeln!(out, "; clang available: {}", is_native_jit_available())?;
+    writeln!(
+        out,
+        "; native toolchain available: {}",
+        is_native_jit_available()
+    )?;
     writeln!(out, ";")?;
     writeln!(out, "; Functions available for JIT:")?;
     for func in module.functions() {
@@ -439,17 +208,16 @@ pub fn emit_jit_plan(module: &IrModule) -> Result<String, CodegenError> {
     let tier_str = if is_native_jit_available() {
         "native (clang subprocess)"
     } else {
-        "interpreter (fallback)"
+        "native unavailable"
     };
     writeln!(out, "; Preferred tier: {}", tier_str)?;
     writeln!(out)?;
 
     writeln!(out, "; JIT pipeline:")?;
-    writeln!(out, ";   1. IRIS IR → LLVM IR (emit_llvm_ir)")?;
-    writeln!(out, ";   2. LLVM IR → machine code (clang -O2)")?;
-    writeln!(out, ";   3. Load shared library (dlopen)")?;
-    writeln!(out, ";   4. dlsym(entry_fn) → call with zero args")?;
-    writeln!(out, ";   5. Capture stdout → return as string")?;
+    writeln!(out, ";   1. IRIS IR → LLVM IR (eval wrapper)")?;
+    writeln!(out, ";   2. LLVM IR → native binary (clang)")?;
+    writeln!(out, ";   3. Execute native binary")?;
+    writeln!(out, ";   4. Capture stdout → return as string")?;
     writeln!(out)?;
 
     writeln!(out, "; Cache key:")?;
@@ -496,9 +264,9 @@ fn is_native_jit_available() -> bool {
         return false;
     }
     // On Windows the JIT targets x86_64-w64-windows-gnu and therefore needs
-    // the MSYS2/MinGW ucrt64 toolchain (headers + libraries + GCC CRT).  If
+    // the MSYS2/MinGW ucrt64 toolchain (headers + libraries + GCC CRT). If
     // any of those paths are missing the native tier cannot link a runnable
-    // binary, so we fall back to the interpreter tier up-front.
+    // binary.
     #[cfg(target_os = "windows")]
     {
         if msys2_ucrt64_include().is_none()

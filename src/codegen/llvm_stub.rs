@@ -9,14 +9,14 @@
 //! A pre-pass collects which predecessor blocks pass which values to each
 //! block param, then emits `phi` instructions at the start of non-entry blocks.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::Write;
 
+use super::llvm_ir::is_matmul_notation;
 use crate::error::CodegenError;
 use crate::ir::block::BlockId;
 use crate::ir::function::IrFunction;
 use crate::ir::instr::{BinOp, IrInstr, ScalarUnaryOp, TensorOp};
-use super::llvm_ir::is_matmul_notation;
 use crate::ir::module::IrModule;
 use crate::ir::types::{DType, IrType};
 use crate::ir::value::ValueId;
@@ -105,17 +105,21 @@ fn emit_llvm_body(
     // Constants are never emitted as LLVM instructions; they are used as
     // literal operands wherever the ValueId is referenced.
     let mut consts: HashMap<ValueId, String> = HashMap::new();
+    let mut const_llvm_types: HashMap<ValueId, &str> = HashMap::new();
     for block in func.blocks() {
         for instr in &block.instrs {
             match instr {
                 IrInstr::ConstFloat { result, value, .. } => {
                     consts.insert(*result, fmt_float(*value));
+                    const_llvm_types.insert(*result, "double");
                 }
                 IrInstr::ConstInt { result, value, .. } => {
                     consts.insert(*result, value.to_string());
+                    const_llvm_types.insert(*result, "i64");
                 }
                 IrInstr::ConstBool { result, value } => {
                     consts.insert(*result, if *value { "true" } else { "false" }.to_owned());
+                    const_llvm_types.insert(*result, "i1");
                 }
                 _ => {}
             }
@@ -165,7 +169,41 @@ fn emit_llvm_body(
 
     let mut gep_counter: u32 = 0;
 
+    // Compute reachable blocks from entry so we skip dead blocks left by
+    // loop unrolling (unreachable blocks may reference undefined values).
+    let reachable: HashSet<BlockId> = {
+        let mut visited = HashSet::new();
+        let mut stack = vec![entry_id];
+        while let Some(bid) = stack.pop() {
+            if !visited.insert(bid) {
+                continue;
+            }
+            if let Some(b) = func.blocks().iter().find(|b| b.id == bid) {
+                for instr in &b.instrs {
+                    match instr {
+                        IrInstr::Br { target, .. } => {
+                            stack.push(*target);
+                        }
+                        IrInstr::CondBr {
+                            then_block,
+                            else_block,
+                            ..
+                        } => {
+                            stack.push(*then_block);
+                            stack.push(*else_block);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        visited
+    };
+
     for block in func.blocks() {
+        if !reachable.contains(&block.id) {
+            continue;
+        }
         // Block label
         let blabel = block_label(block.name.as_deref(), block.id);
         writeln!(out, "{}:", blabel)?;
@@ -193,7 +231,15 @@ fn emit_llvm_body(
 
         // Instructions
         for instr in &block.instrs {
-            emit_llvm_instr(instr, &consts, func, &mut gep_counter, str_table, out)?;
+            emit_llvm_instr(
+                instr,
+                &consts,
+                &const_llvm_types,
+                func,
+                &mut gep_counter,
+                str_table,
+                out,
+            )?;
         }
     }
     Ok(())
@@ -202,6 +248,7 @@ fn emit_llvm_body(
 fn emit_llvm_instr(
     instr: &IrInstr,
     consts: &HashMap<ValueId, String>,
+    const_llvm_types: &HashMap<ValueId, &str>,
     func: &IrFunction,
     gep_counter: &mut u32,
     str_table: &HashMap<String, usize>,
@@ -515,7 +562,9 @@ fn emit_llvm_instr(
             }
         }
 
-        IrInstr::TensorOp { result, op, inputs, .. } => {
+        IrInstr::TensorOp {
+            result, op, inputs, ..
+        } => {
             match op {
                 TensorOp::Einsum { notation } => {
                     if inputs.len() == 2 && is_matmul_notation(notation) {
@@ -527,7 +576,14 @@ fn emit_llvm_instr(
                             val(inputs[1])
                         )?;
                     } else {
-                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                        return Err(CodegenError::Unsupported {
+                            backend: "llvm-stub".into(),
+                            detail: format!(
+                                "unsupported einsum notation '{}' with {} inputs",
+                                notation,
+                                inputs.len()
+                            ),
+                        });
                     }
                 }
                 TensorOp::Unary { op: unary_op } => {
@@ -541,50 +597,65 @@ fn emit_llvm_instr(
                             "log" => "iris_tensor_log",
                             "sqrt" => "iris_tensor_sqrt",
                             "abs" => "iris_tensor_abs",
-                            _ => "iris_tensor_op",
+                            _ => {
+                                return Err(CodegenError::Unsupported {
+                                    backend: "llvm-stub".into(),
+                                    detail: format!("unsupported tensor unary op '{}'", unary_op),
+                                });
+                            }
                         };
-                        if fn_name == "iris_tensor_op" {
-                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
-                        } else {
-                            writeln!(
-                                out,
-                                "  %v{} = call ptr @{}(ptr {})",
-                                result.0,
-                                fn_name,
-                                val(inputs[0])
-                            )?;
-                        }
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @{}(ptr {})",
+                            result.0,
+                            fn_name,
+                            val(inputs[0])
+                        )?;
                     } else {
-                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                        return Err(CodegenError::Unsupported {
+                            backend: "llvm-stub".into(),
+                            detail: "tensor unary op requires exactly 1 input".into(),
+                        });
                     }
                 }
-                TensorOp::Reduce { op: reduce_op, axes, keepdims } => {
+                TensorOp::Reduce {
+                    op: reduce_op,
+                    axes,
+                    keepdims,
+                } => {
                     if inputs.len() == 1 && axes.len() == 1 {
                         let fn_name = match reduce_op.as_str() {
                             "sum" => "iris_tensor_reduce_sum",
                             "max" => "iris_tensor_reduce_max",
                             "mean" => "iris_tensor_reduce_mean",
-                            _ => "iris_tensor_op",
+                            _ => {
+                                return Err(CodegenError::Unsupported {
+                                    backend: "llvm-stub".into(),
+                                    detail: format!("unsupported tensor reduce op '{}'", reduce_op),
+                                });
+                            }
                         };
-                        if fn_name == "iris_tensor_op" {
-                            writeln!(out, "  %v{} = call ptr @{}()", result.0, fn_name)?;
-                        } else {
-                            writeln!(
-                                out,
-                                "  %v{} = call ptr @{}(ptr {}, i32 {}, i32 {})",
-                                result.0,
-                                fn_name,
-                                val(inputs[0]),
-                                axes[0],
-                                if *keepdims { 1 } else { 0 }
-                            )?;
-                        }
+                        writeln!(
+                            out,
+                            "  %v{} = call ptr @{}(ptr {}, i32 {}, i32 {})",
+                            result.0,
+                            fn_name,
+                            val(inputs[0]),
+                            axes[0],
+                            if *keepdims { 1 } else { 0 }
+                        )?;
                     } else {
-                        writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                        return Err(CodegenError::Unsupported {
+                            backend: "llvm-stub".into(),
+                            detail: format!("tensor reduce requires 1 input and 1 axis, got {} inputs and {} axes", inputs.len(), axes.len()),
+                        });
                     }
                 }
                 _ => {
-                    writeln!(out, "  %v{} = call ptr @iris_tensor_op()", result.0)?;
+                    return Err(CodegenError::Unsupported {
+                        backend: "llvm-stub".into(),
+                        detail: format!("unsupported tensor operation {:?}", op),
+                    });
                 }
             }
         }
@@ -850,7 +921,11 @@ fn emit_llvm_instr(
                 val(*value)
             )?;
         }
-        IrInstr::ChanRecv { result, chan, elem_ty } => {
+        IrInstr::ChanRecv {
+            result,
+            chan,
+            elem_ty,
+        } => {
             // iris_chan_recv returns IrisVal* (boxed); unbox to the element type.
             let raw = format!("%raw_recv{}", gep_counter);
             *gep_counter += 1;
@@ -908,7 +983,11 @@ fn emit_llvm_instr(
         }
         IrInstr::Spawn { body_fn, args } => {
             if args.is_empty() {
-                writeln!(out, "  call void @iris_spawn_fn(ptr @{}, ptr null)", body_fn)?;
+                writeln!(
+                    out,
+                    "  call void @iris_spawn_fn(ptr @{}, ptr null)",
+                    body_fn
+                )?;
             } else {
                 writeln!(
                     out,
@@ -1075,16 +1154,25 @@ fn emit_llvm_instr(
             writeln!(out, "  %v{} = call ptr @iris_grad_tangent()", result.0)?;
         }
 
-        IrInstr::TapeRecord { result, .. } => {
-            writeln!(out, "  %v{} = call ptr @iris_tape_record()", result.0)?;
+        IrInstr::TapeRecord { .. } => {
+            return Err(CodegenError::Unsupported {
+                backend: "llvm-stub".into(),
+                detail: "reverse-mode AD (TapeRecord) is only supported in the interpreter".into(),
+            });
         }
 
-        IrInstr::Backward { result, .. } => {
-            writeln!(out, "  %v{} = call ptr @iris_backward()", result.0)?;
+        IrInstr::Backward { .. } => {
+            return Err(CodegenError::Unsupported {
+                backend: "llvm-stub".into(),
+                detail: "reverse-mode AD (Backward) is only supported in the interpreter".into(),
+            });
         }
 
-        IrInstr::TapeGrad { result, .. } => {
-            writeln!(out, "  %v{} = call ptr @iris_tape_grad()", result.0)?;
+        IrInstr::TapeGrad { .. } => {
+            return Err(CodegenError::Unsupported {
+                backend: "llvm-stub".into(),
+                detail: "reverse-mode AD (TapeGrad) is only supported in the interpreter".into(),
+            });
         }
 
         IrInstr::Sparsify { result, .. } => {
@@ -1101,7 +1189,47 @@ fn emit_llvm_instr(
         }
 
         IrInstr::Print { operand } => {
-            writeln!(out, "  call void @iris_print(ptr {})", val(*operand))?;
+            let oty = func.value_type(*operand);
+            match oty {
+                Some(IrType::Scalar(DType::I64)) => {
+                    writeln!(out, "  call void @iris_print_i64(i64 {})", val(*operand))?;
+                }
+                Some(IrType::Scalar(DType::I32)) => {
+                    writeln!(out, "  call void @iris_print_i32(i32 {})", val(*operand))?;
+                }
+                Some(IrType::Scalar(DType::F64)) => {
+                    writeln!(out, "  call void @iris_print_f64(double {})", val(*operand))?;
+                }
+                Some(IrType::Scalar(DType::F32)) => {
+                    writeln!(out, "  call void @iris_print_f32(float {})", val(*operand))?;
+                }
+                Some(IrType::Scalar(DType::Bool)) => {
+                    writeln!(out, "  call void @iris_print_bool(i1 {})", val(*operand))?;
+                }
+                Some(IrType::Str) => {
+                    writeln!(out, "  call void @iris_print_str(ptr {})", val(*operand))?;
+                }
+                _ => match const_llvm_types.get(operand).copied() {
+                    Some("i64") => {
+                        writeln!(out, "  call void @iris_print_i64(i64 {})", val(*operand))?;
+                    }
+                    Some("i32") => {
+                        writeln!(out, "  call void @iris_print_i32(i32 {})", val(*operand))?;
+                    }
+                    Some("double") => {
+                        writeln!(out, "  call void @iris_print_f64(double {})", val(*operand))?;
+                    }
+                    Some("float") => {
+                        writeln!(out, "  call void @iris_print_f32(float {})", val(*operand))?;
+                    }
+                    Some("i1") => {
+                        writeln!(out, "  call void @iris_print_bool(i1 {})", val(*operand))?;
+                    }
+                    _ => {
+                        writeln!(out, "  call void @iris_print(ptr {})", val(*operand))?;
+                    }
+                },
+            }
         }
 
         IrInstr::StrContains {
@@ -1187,12 +1315,110 @@ fn emit_llvm_instr(
         }
 
         IrInstr::ValueToStr { result, operand } => {
-            writeln!(
-                out,
-                "  %v{} = call ptr @iris_value_to_str(ptr {})",
-                result.0,
-                val(*operand)
-            )?;
+            let oty = func.value_type(*operand);
+            match oty {
+                Some(IrType::Scalar(DType::I64)) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_i64_to_str(i64 {})",
+                        result.0,
+                        val(*operand)
+                    )?;
+                }
+                Some(IrType::Scalar(DType::I32)) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_i32_to_str(i32 {})",
+                        result.0,
+                        val(*operand)
+                    )?;
+                }
+                Some(IrType::Scalar(DType::F64)) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_f64_to_str(double {})",
+                        result.0,
+                        val(*operand)
+                    )?;
+                }
+                Some(IrType::Scalar(DType::F32)) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_f32_to_str(float {})",
+                        result.0,
+                        val(*operand)
+                    )?;
+                }
+                Some(IrType::Scalar(DType::Bool)) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_bool_to_str(i1 {})",
+                        result.0,
+                        val(*operand)
+                    )?;
+                }
+                Some(IrType::Str) => {
+                    writeln!(
+                        out,
+                        "  %v{} = call ptr @iris_str_to_str(ptr {})",
+                        result.0,
+                        val(*operand)
+                    )?;
+                }
+                _ => {
+                    // Fall back to emitted const type info
+                    match const_llvm_types.get(operand).copied() {
+                        Some("i64") => {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_i64_to_str(i64 {})",
+                                result.0,
+                                val(*operand)
+                            )?;
+                        }
+                        Some("i32") => {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_i32_to_str(i32 {})",
+                                result.0,
+                                val(*operand)
+                            )?;
+                        }
+                        Some("double") => {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_f64_to_str(double {})",
+                                result.0,
+                                val(*operand)
+                            )?;
+                        }
+                        Some("float") => {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_f32_to_str(float {})",
+                                result.0,
+                                val(*operand)
+                            )?;
+                        }
+                        Some("i1") => {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_bool_to_str(i1 {})",
+                                result.0,
+                                val(*operand)
+                            )?;
+                        }
+                        _ => {
+                            writeln!(
+                                out,
+                                "  %v{} = call ptr @iris_value_to_str(ptr {})",
+                                result.0,
+                                val(*operand)
+                            )?;
+                        }
+                    }
+                }
+            }
         }
 
         IrInstr::ReadLine { result } => {

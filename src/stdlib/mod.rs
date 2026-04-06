@@ -33,8 +33,11 @@ pub fn stdlib_source(name: &str) -> Option<&'static str> {
         "testing" => Some(include_str!("testing.iris")),
         "log" => Some(include_str!("log.iris")),
         // ML / AI modules
-        "ml"  => Some(include_str!("ml.iris")),
-        "nn"  => Some(include_str!("nn.iris")),
+        "ml" => Some(include_str!("ml.iris")),
+        "nn" => Some(include_str!("nn.iris")),
+        "tensor" | "tensorx" => Some(include_str!("tensor.iris")),
+        // Networking
+        "http_server" => Some(include_str!("http_server.iris")),
         _ => None,
     }
 }

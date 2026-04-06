@@ -159,6 +159,7 @@ double  iris_read_f64(void);
 // ---------------------------------------------------------------------------
 int64_t  iris_str_len(const char* s);
 char*    iris_str_concat(const char* a, const char* b);
+int      iris_str_eq(const char* a, const char* b);
 int      iris_str_contains(const char* s, const char* sub);
 int      iris_str_starts_with(const char* s, const char* prefix);
 int      iris_str_ends_with(const char* s, const char* suffix);
@@ -322,10 +323,11 @@ double      iris_sparse_dot(IrisSparse* sp, IrisTensor* dense);
 int64_t     iris_sparse_nnz(IrisSparse* sp);
 
 // ---------------------------------------------------------------------------
-// Reverse-mode AD runtime stubs (tape managed by interpreter/codegen)
+// Reverse-mode AD runtime
 // ---------------------------------------------------------------------------
-void* iris_tape_record(void* value);
-void* iris_backward(void* loss);
+void*  iris_tape_record(double value, const char* op, int64_t parent_count,
+                        void* const* parents, const double* parent_primals);
+void   iris_backward(void* loss);
 double iris_tape_grad(void* tape_node);
 
 // ---------------------------------------------------------------------------
@@ -433,6 +435,7 @@ void    iris_tcp_close(int64_t conn);
 // ---------------------------------------------------------------------------
 char*   iris_http_get(const char* url);
 char*   iris_http_post(const char* url, const char* body, const char* content_type);
+char*   iris_http_post_json(const char* url, const char* json_body);
 
 // ---------------------------------------------------------------------------
 // JSON

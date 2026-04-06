@@ -518,7 +518,9 @@ mod tests {
         // Walk forward until we find a frame with variables.
         let has_vars = (0..s.trace_len()).any(|_| {
             s.step();
-            s.current_frame().map(|f| !f.variables.is_empty()).unwrap_or(false)
+            s.current_frame()
+                .map(|f| !f.variables.is_empty())
+                .unwrap_or(false)
         });
         if !has_vars {
             return; // No named variables in this trace — skip.
@@ -529,7 +531,15 @@ mod tests {
                 let ok = s.set_variable(&name, "999");
                 assert!(ok);
                 let updated = s.current_frame().unwrap();
-                assert_eq!(updated.variables.iter().find(|(n, _)| n == &name).unwrap().1, "999");
+                assert_eq!(
+                    updated
+                        .variables
+                        .iter()
+                        .find(|(n, _)| n == &name)
+                        .unwrap()
+                        .1,
+                    "999"
+                );
             }
         }
     }
@@ -570,8 +580,14 @@ mod tests {
     fn log_message_interpolation() {
         let vars = vec![("x".to_owned(), "42".to_owned())];
         assert_eq!(super::interpolate_log_message("x = {x}", &vars), "x = 42");
-        assert_eq!(super::interpolate_log_message("no vars here", &vars), "no vars here");
-        assert_eq!(super::interpolate_log_message("{unknown}", &vars), "{unknown}");
+        assert_eq!(
+            super::interpolate_log_message("no vars here", &vars),
+            "no vars here"
+        );
+        assert_eq!(
+            super::interpolate_log_message("{unknown}", &vars),
+            "{unknown}"
+        );
     }
 
     #[test]

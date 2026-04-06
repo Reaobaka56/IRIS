@@ -1,0 +1,104 @@
+// Benchmark: Dense batched matrix multiplication over flat tensor storage.
+
+type Tensor = (list<f64>, list<i64>)
+
+def tensor_shape_clone(shape: list<i64>) -> list<i64> {
+    val n = list_len(shape)
+    val out: list<i64> = list()
+    var i = 0
+    while i < n {
+        val _ = list_push(out, list_get(shape, i))
+        i = i + 1
+    }
+    out
+}
+
+def tensor_numel(shape: list<i64>) -> i64 {
+    var total = 1
+    var i = 0
+    while i < list_len(shape) {
+        total = total * list_get(shape, i)
+        i = i + 1
+    }
+    total
+}
+
+def tensor_zeros(shape: list<i64>) -> Tensor {
+    val out: list<f64> = list()
+    val total = tensor_numel(shape)
+    var i = 0
+    while i < total {
+        val _ = list_push(out, 0.0)
+        i = i + 1
+    }
+    (out, tensor_shape_clone(shape))
+}
+
+def tensor_from_data(data: list<f64>, shape: list<i64>) -> Tensor {
+    (data, tensor_shape_clone(shape))
+}
+
+def tensor_data(t: Tensor) -> list<f64> {
+    t.0
+}
+
+def tensor_batch_matmul(a: Tensor, b: Tensor, batch: i64, m: i64, k: i64, n: i64) -> Tensor {
+    val out_shape = build_shape3(batch, m, n)
+    val out = tensor_zeros(out_shape)
+
+    var batch_idx = 0
+    while batch_idx < batch {
+        var row = 0
+        while row < m {
+            var col = 0
+            while col < n {
+                var acc = 0.0
+                var inner = 0
+                while inner < k {
+                    val a_idx = ((batch_idx * m + row) * k) + inner
+                    val b_idx = ((batch_idx * k + inner) * n) + col
+                    acc = acc + list_get(a.0, a_idx) * list_get(b.0, b_idx)
+                    inner = inner + 1
+                }
+                val out_idx = ((batch_idx * m + row) * n) + col
+                val _ = list_set(out.0, out_idx, acc)
+                col = col + 1
+            }
+            row = row + 1
+        }
+        batch_idx = batch_idx + 1
+    }
+    out
+}
+
+def build_shape3(a: i64, b: i64, c: i64) -> list<i64> {
+    val shape: list<i64> = list()
+    val _ = list_push(shape, a)
+    val _ = list_push(shape, b)
+    val _ = list_push(shape, c)
+    shape
+}
+
+def build_data(total: i64, scale: f64) -> list<f64> {
+    val data: list<f64> = list()
+    for i in 0 .. total {
+        val _ = list_push(data, ((i % 13) to f64) * scale + 1.0)
+    }
+    data
+}
+
+def main() -> i64 {
+    val batch = 8
+    val m = 16
+    val k = 16
+    val n = 16
+
+    val a_shape = build_shape3(batch, m, k)
+    val b_shape = build_shape3(batch, k, n)
+    val a = tensor_from_data(build_data(batch * m * k, 0.5), a_shape)
+    val b = tensor_from_data(build_data(batch * k * n, 0.25), b_shape)
+    val out = tensor_batch_matmul(a, b, batch, m, k, n)
+    print(list_get(tensor_data(out), 0));
+    print(list_get(tensor_data(out), (batch * m * n) - 1));
+    0
+}

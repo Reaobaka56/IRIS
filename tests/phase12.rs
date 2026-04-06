@@ -104,7 +104,25 @@ fn test_output_flag() {
 }
 
 // ---------------------------------------------------------------------------
-// 8. span_to_line_col across multiple lines
+// 8. --target captures a target preset/triple
+// ---------------------------------------------------------------------------
+#[test]
+fn test_target_flag() {
+    let args: Vec<String> = ["iris", "--target", "linux-arm64", "file.iris"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+    let result = parse_args(&args).expect("parse_args should succeed");
+    if let ParseArgsResult::Args(cli) = result {
+        assert_eq!(cli.target.as_deref(), Some("linux-arm64"));
+        assert_eq!(cli.path, PathBuf::from("file.iris"));
+    } else {
+        panic!("expected Args variant");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 9. span_to_line_col across multiple lines
 // ---------------------------------------------------------------------------
 #[test]
 fn test_span_to_line_col_multiline() {

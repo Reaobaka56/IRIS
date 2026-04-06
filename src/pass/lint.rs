@@ -233,6 +233,28 @@ fn stmt_assigns_var(stmt: &AstStmt, name: &str) -> bool {
         | AstStmt::ForEach { body, .. }
         | AstStmt::ParFor { body, .. } => body_assigns_var(body, name),
         AstStmt::Spawn { body, .. } => body.iter().any(|s| stmt_assigns_var(s, name)),
+        // Assignments can live inside if/else or block expressions.
+        AstStmt::Expr(e) => expr_assigns_var(e, name),
+        _ => false,
+    }
+}
+
+/// Returns true if `expr` contains an assignment to `name` (recursing into
+/// if/else branches and blocks, which is where conditional mutations live).
+fn expr_assigns_var(expr: &AstExpr, name: &str) -> bool {
+    match expr {
+        AstExpr::If {
+            then_block,
+            else_block,
+            ..
+        } => {
+            body_assigns_var(then_block, name)
+                || else_block
+                    .as_ref()
+                    .is_some_and(|b| body_assigns_var(b, name))
+        }
+        AstExpr::Block(b) => body_assigns_var(b, name),
+        AstExpr::When { arms, .. } => arms.iter().any(|a| expr_assigns_var(&a.body, name)),
         _ => false,
     }
 }

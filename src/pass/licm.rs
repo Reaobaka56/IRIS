@@ -246,6 +246,13 @@ fn is_side_effecting_for_licm(instr: &IrInstr) -> bool {
             | IrInstr::Panic { .. }
             | IrInstr::ArrayStore { .. }
             | IrInstr::ArrayLoad { .. }
+            // Fresh allocations/resources must remain inside the loop so each
+            // iteration gets a distinct object identity.
+            | IrInstr::ListNew { .. }
+            | IrInstr::MapNew { .. }
+            | IrInstr::ChanNew { .. }
+            | IrInstr::AtomicNew { .. }
+            | IrInstr::MakeClosure { .. }
             | IrInstr::ChanSend { .. }
             | IrInstr::ChanRecv { .. }
             | IrInstr::Spawn { .. }
@@ -277,10 +284,31 @@ fn is_side_effecting_for_licm(instr: &IrInstr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{compile, EmitKind};
 
     #[test]
     fn test_licm_pass_name() {
         let pass = LicmPass;
         assert_eq!(pass.name(), "licm");
+    }
+
+    #[test]
+    fn fresh_loop_allocations_remain_per_iteration() {
+        let src = r#"
+            def main() -> i64 {
+                val rows: list<list<i64>> = list()
+                var i = 0
+                while i < 2 {
+                    val row: list<i64> = list()
+                    val _ = list_push(row, i)
+                    val _ = list_push(rows, row)
+                    i = i + 1
+                }
+                list_get(list_get(rows, 0), 0) * 10 + list_get(list_get(rows, 1), 0)
+            }
+        "#;
+
+        let out = compile(src, "test", EmitKind::Eval).expect("should compile and eval");
+        assert_eq!(out.trim(), "1");
     }
 }

@@ -1,0 +1,457 @@
+pub type Tensor = (list<f64>, list<i64>)
+
+pub def tensor_shape_clone(shape: list<i64>) -> list<i64> {
+    val n = list_len(shape)
+    val out: list<i64> = list()
+    var i = 0
+    while i < n {
+        val _ = list_push(out, list_get(shape, i))
+        i = i + 1
+    }
+    out
+}
+
+pub def tensor_numel(shape: list<i64>) -> i64 {
+    val n = list_len(shape)
+    if n == 0 {
+        0
+    } else {
+        var prod = 1
+        var i = 0
+        while i < n {
+            prod = prod * list_get(shape, i)
+            i = i + 1
+        }
+        prod
+    }
+}
+
+pub def tensor_full(shape: list<i64>, fill: f64) -> Tensor {
+    val out: list<f64> = list()
+    val total = tensor_numel(shape)
+    var i = 0
+    while i < total {
+        val _ = list_push(out, fill)
+        i = i + 1
+    }
+    (out, tensor_shape_clone(shape))
+}
+
+pub def tensor_zeros(shape: list<i64>) -> Tensor {
+    tensor_full(shape, 0.0)
+}
+
+pub def tensor_from_data(data: list<f64>, shape: list<i64>) -> Tensor {
+    (data, tensor_shape_clone(shape))
+}
+
+pub def tensor_offset(shape: list<i64>, indices: list<i64>) -> i64 {
+    val rank = list_len(shape)
+    var flat = 0
+    var i = 0
+    while i < rank {
+        flat = flat * list_get(shape, i) + list_get(indices, i)
+        i = i + 1
+    }
+    flat
+}
+
+pub def tensor_get(t: Tensor, indices: list<i64>) -> f64 {
+    list_get(t.0, tensor_offset(t.1, indices))
+}
+
+pub def tensor_set(t: Tensor, indices: list<i64>, value: f64) -> i64 {
+    list_set(t.0, tensor_offset(t.1, indices), value)
+}
+
+pub def tensor_data(t: Tensor) -> list<f64> {
+    t.0
+}
+
+pub def tensor_shape(t: Tensor) -> list<i64> {
+    t.1
+}
+
+pub def tensor_add(a: Tensor, b: Tensor) -> Tensor {
+    val total = list_len(a.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, list_get(a.0, i) + list_get(b.0, i))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(a.1))
+}
+
+pub def tensor_relu(t: Tensor) -> Tensor {
+    val total = list_len(t.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val x = list_get(t.0, i)
+        val _ = list_push(out, if x > 0.0 { x } else { 0.0 })
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+pub def tensor_sigmoid(t: Tensor) -> Tensor {
+    val total = list_len(t.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val x = list_get(t.0, i)
+        val _ = list_push(out, 1.0 / (1.0 + exp(0.0 - x)))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+pub def tensor_matmul2(a: Tensor, b: Tensor, m: i64, k: i64, n: i64) -> Tensor {
+    val out_shape: list<i64> = list()
+    val _ = list_push(out_shape, m)
+    val _ = list_push(out_shape, n)
+    val out = tensor_zeros(out_shape)
+
+    var row = 0
+    while row < m {
+        var col = 0
+        while col < n {
+            var acc = 0.0
+            var inner = 0
+            while inner < k {
+                acc = acc + list_get(a.0, row * k + inner) * list_get(b.0, inner * n + col)
+                inner = inner + 1
+            }
+            val idx: list<i64> = list()
+            val _ = list_push(idx, row)
+            val _ = list_push(idx, col)
+            val _ = tensor_set(out, idx, acc)
+            col = col + 1
+        }
+        row = row + 1
+    }
+    out
+}
+
+// ── Elementwise ops ──────────────────────────────────────────────────────────
+
+pub def tensor_sub(a: Tensor, b: Tensor) -> Tensor {
+    val total = list_len(a.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, list_get(a.0, i) - list_get(b.0, i))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(a.1))
+}
+
+pub def tensor_mul(a: Tensor, b: Tensor) -> Tensor {
+    val total = list_len(a.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, list_get(a.0, i) * list_get(b.0, i))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(a.1))
+}
+
+pub def tensor_div(a: Tensor, b: Tensor) -> Tensor {
+    val total = list_len(a.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, list_get(a.0, i) / list_get(b.0, i))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(a.1))
+}
+
+pub def tensor_scale(t: Tensor, s: f64) -> Tensor {
+    val total = list_len(t.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, list_get(t.0, i) * s)
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+pub def tensor_neg(t: Tensor) -> Tensor {
+    tensor_scale(t, -1.0)
+}
+
+pub def tensor_tanh(t: Tensor) -> Tensor {
+    val total = list_len(t.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val x = list_get(t.0, i)
+        val e2 = exp(x + x)
+        val _ = list_push(out, (e2 - 1.0) / (e2 + 1.0))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+pub def tensor_exp(t: Tensor) -> Tensor {
+    val total = list_len(t.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, exp(list_get(t.0, i)))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+pub def tensor_log(t: Tensor) -> Tensor {
+    val total = list_len(t.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, log(list_get(t.0, i)))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+// ── Reductions ───────────────────────────────────────────────────────────────
+
+pub def tensor_sum(t: Tensor) -> f64 {
+    val total = list_len(t.0)
+    var acc = 0.0
+    var i = 0
+    while i < total {
+        acc = acc + list_get(t.0, i)
+        i = i + 1
+    }
+    acc
+}
+
+pub def tensor_mean(t: Tensor) -> f64 {
+    val total = list_len(t.0)
+    if total == 0 { 0.0 } else { tensor_sum(t) / (total to f64) }
+}
+
+pub def tensor_max_val(t: Tensor) -> f64 {
+    val total = list_len(t.0)
+    if total == 0 {
+        0.0
+    } else {
+        var best = list_get(t.0, 0)
+        var i = 1
+        while i < total {
+            val v = list_get(t.0, i)
+            best = if v > best { v } else { best }
+            i = i + 1
+        }
+        best
+    }
+}
+
+pub def tensor_min_val(t: Tensor) -> f64 {
+    val total = list_len(t.0)
+    if total == 0 {
+        0.0
+    } else {
+        var best = list_get(t.0, 0)
+        var i = 1
+        while i < total {
+            val v = list_get(t.0, i)
+            best = if v < best { v } else { best }
+            i = i + 1
+        }
+        best
+    }
+}
+
+// ── Softmax (numerically stable) ─────────────────────────────────────────────
+
+pub def tensor_softmax(t: Tensor) -> Tensor {
+    val m = tensor_max_val(t)
+    val shifted = tensor_scale(t, 1.0)  // copy
+    val total = list_len(shifted.0)
+    val exps: list<f64> = list()
+    var i = 0
+    var sum_exp = 0.0
+    while i < total {
+        val e = exp(list_get(t.0, i) - m)
+        val _ = list_push(exps, e)
+        sum_exp = sum_exp + e
+        i = i + 1
+    }
+    val out: list<f64> = list()
+    i = 0
+    while i < total {
+        val _ = list_push(out, list_get(exps, i) / sum_exp)
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+// ── Layer normalisation ───────────────────────────────────────────────────────
+
+pub def tensor_layer_norm(t: Tensor, eps: f64) -> Tensor {
+    val mean = tensor_mean(t)
+    val total = list_len(t.0)
+    var var_acc = 0.0
+    var i = 0
+    while i < total {
+        val d = list_get(t.0, i) - mean
+        var_acc = var_acc + d * d
+        i = i + 1
+    }
+    val std = sqrt(var_acc / (total to f64) + eps)
+    val out: list<f64> = list()
+    i = 0
+    while i < total {
+        val _ = list_push(out, (list_get(t.0, i) - mean) / std)
+        i = i + 1
+    }
+    (out, tensor_shape_clone(t.1))
+}
+
+// ── Loss functions ────────────────────────────────────────────────────────────
+
+// Mean squared error between predictions and targets.
+pub def tensor_mse(pred: Tensor, target: Tensor) -> f64 {
+    val total = list_len(pred.0)
+    if total == 0 { 0.0 } else {
+        var acc = 0.0
+        var i = 0
+        while i < total {
+            val d = list_get(pred.0, i) - list_get(target.0, i)
+            acc = acc + d * d
+            i = i + 1
+        }
+        acc / (total to f64)
+    }
+}
+
+// Cross-entropy loss: -sum(target * log(pred + eps)).
+pub def tensor_cross_entropy(pred: Tensor, target: Tensor) -> f64 {
+    val total = list_len(pred.0)
+    if total == 0 { 0.0 } else {
+        var acc = 0.0
+        var i = 0
+        while i < total {
+            val p = list_get(pred.0, i) + 0.000000000000001
+            val t_val = list_get(target.0, i)
+            acc = acc - t_val * log(p)
+            i = i + 1
+        }
+        acc / (total to f64)
+    }
+}
+
+// MSE gradient: 2*(pred - target) / N.
+pub def tensor_mse_grad(pred: Tensor, target: Tensor) -> Tensor {
+    val total = list_len(pred.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val g = 2.0 * (list_get(pred.0, i) - list_get(target.0, i)) / (total to f64)
+        val _ = list_push(out, g)
+        i = i + 1
+    }
+    (out, tensor_shape_clone(pred.1))
+}
+
+// ── Gradient descent step ─────────────────────────────────────────────────────
+
+// params = params - lr * grad
+pub def tensor_sgd_step(params: Tensor, grad: Tensor, lr: f64) -> Tensor {
+    val total = list_len(params.0)
+    val out: list<f64> = list()
+    var i = 0
+    while i < total {
+        val _ = list_push(out, list_get(params.0, i) - lr * list_get(grad.0, i))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(params.1))
+}
+
+// ── Attention (scaled dot-product) ───────────────────────────────────────────
+
+// Computes Softmax(Q * K^T / sqrt(d_k)) * V
+// q, k, v are 1-D tensors of length d_k (single-head, single-token).
+pub def tensor_attention(q: Tensor, k: Tensor, v: Tensor) -> Tensor {
+    val d_k = list_len(q.0)
+    val scale = 1.0 / sqrt(d_k to f64)
+    // dot(q, k)
+    var score = 0.0
+    var i = 0
+    while i < d_k {
+        score = score + list_get(q.0, i) * list_get(k.0, i)
+        i = i + 1
+    }
+    val attn = exp(score * scale)
+    // weight * v (scalar weight since single head/token)
+    val out: list<f64> = list()
+    i = 0
+    while i < d_k {
+        val _ = list_push(out, attn * list_get(v.0, i))
+        i = i + 1
+    }
+    (out, tensor_shape_clone(q.1))
+}
+
+// ── Linear layer forward pass ─────────────────────────────────────────────────
+
+// y = x @ W^T + b  where x: [in_dim], W: [out_dim, in_dim], b: [out_dim]
+pub def linear_forward(x: Tensor, w: Tensor, b: Tensor, in_dim: i64, out_dim: i64) -> Tensor {
+    val out: list<f64> = list()
+    var row = 0
+    while row < out_dim {
+        var acc = 0.0
+        var col = 0
+        while col < in_dim {
+            acc = acc + list_get(x.0, col) * list_get(w.0, row * in_dim + col)
+            col = col + 1
+        }
+        val _ = list_push(out, acc + list_get(b.0, row))
+        row = row + 1
+    }
+    val shape: list<i64> = list()
+    val _ = list_push(shape, out_dim)
+    (out, shape)
+}
+
+pub def tensor_batch_matmul(a: Tensor, b: Tensor, batch: i64, m: i64, k: i64, n: i64) -> Tensor {
+    val out_shape: list<i64> = list()
+    val _ = list_push(out_shape, batch)
+    val _ = list_push(out_shape, m)
+    val _ = list_push(out_shape, n)
+    val out = tensor_zeros(out_shape)
+
+    var batch_idx = 0
+    while batch_idx < batch {
+        var row = 0
+        while row < m {
+            var col = 0
+            while col < n {
+                var acc = 0.0
+                var inner = 0
+                while inner < k {
+                    val a_idx = ((batch_idx * m + row) * k) + inner
+                    val b_idx = ((batch_idx * k + inner) * n) + col
+                    acc = acc + list_get(a.0, a_idx) * list_get(b.0, b_idx)
+                    inner = inner + 1
+                }
+                val idx: list<i64> = list()
+                val _ = list_push(idx, batch_idx)
+                val _ = list_push(idx, row)
+                val _ = list_push(idx, col)
+                val _ = tensor_set(out, idx, acc)
+                col = col + 1
+            }
+            row = row + 1
+        }
+        batch_idx = batch_idx + 1
+    }
+    out
+}

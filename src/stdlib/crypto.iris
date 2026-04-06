@@ -1,7 +1,13 @@
 // src/stdlib/crypto.iris -- IRIS standard crypto/hashing library
+// Provides hashing, encoding, and authentication helpers for ML services.
 
 // Generate a UUID v4 string.
 pub def generate_uuid() -> str {
+    uuid()
+}
+
+// Alias: uuid() is also exposed directly.
+pub def new_uuid() -> str {
     uuid()
 }
 
@@ -33,4 +39,26 @@ pub def to_base64(data: str) -> str {
 // Decode from base64.
 pub def from_base64(data: str) -> str {
     base64_decode(data)
+}
+
+// Compute a simple HMAC-like signature: sha256(key + ":" + data).
+// For a real HMAC use an external C library via FFI; this is a lightweight
+// substitute for request signing in trusted internal services.
+pub def hmac_simple(key: str, data: str) -> str {
+    sha256(concat(concat(key, ":"), data))
+}
+
+// Verify a simple signature produced by hmac_simple.
+pub def hmac_verify(key: str, data: str, signature: str) -> bool {
+    hmac_simple(key, data) == signature
+}
+
+// Build a Bearer-token Authorization header value.
+pub def bearer_token(token: str) -> str {
+    concat("Bearer ", token)
+}
+
+// Build a Basic-auth header value (base64(user:pass)).
+pub def basic_auth(user: str, pass: str) -> str {
+    concat("Basic ", to_base64(concat(concat(user, ":"), pass)))
 }

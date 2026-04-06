@@ -23,14 +23,18 @@ fn levenshtein(a: &str, b: &str) -> usize {
         return 5;
     }
     let mut dp = vec![vec![0usize; n + 1]; m + 1];
-    for i in 0..=m { dp[i][0] = i; }
-    for j in 0..=n { dp[0][j] = j; }
+    for i in 0..=m {
+        dp[i][0] = i;
+    }
+    for j in 0..=n {
+        dp[0][j] = j;
+    }
     for i in 1..=m {
         for j in 1..=n {
-            dp[i][j] = if a[i-1] == b[j-1] {
-                dp[i-1][j-1]
+            dp[i][j] = if a[i - 1] == b[j - 1] {
+                dp[i - 1][j - 1]
             } else {
-                1 + dp[i-1][j].min(dp[i][j-1]).min(dp[i-1][j-1])
+                1 + dp[i - 1][j].min(dp[i][j - 1]).min(dp[i - 1][j - 1])
             };
         }
     }
@@ -51,7 +55,7 @@ fn did_you_mean<'a>(name: &str, candidates: impl Iterator<Item = &'a str>) -> Op
     best.map(|(_, s)| s.to_owned())
 }
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use crate::error::LowerError;
 use crate::ir::block::BlockId;
@@ -152,19 +156,45 @@ pub fn lower(ast: &AstModule, module_name: &str) -> Result<IrModule, LowerError>
 
     // Pre-populate built-in / runtime function return types so call sites
     // get concrete types instead of Infer.
-    fn_sigs.entry("println".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("print".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("eprintln".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("eprint".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("sleep_ms".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("random_i64".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("random_f64".into()).or_insert(IrType::Scalar(DType::F64));
-    fn_sigs.entry("time_ms".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("exit".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("len".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("str_len".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("assert".into()).or_insert(IrType::Scalar(DType::I64));
-    fn_sigs.entry("assert_eq".into()).or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("println".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("print".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("eprintln".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("eprint".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("sleep_ms".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("random_i64".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("random_f64".into())
+        .or_insert(IrType::Scalar(DType::F64));
+    fn_sigs
+        .entry("time_ms".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("exit".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("len".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("str_len".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("assert".into())
+        .or_insert(IrType::Scalar(DType::I64));
+    fn_sigs
+        .entry("assert_eq".into())
+        .or_insert(IrType::Scalar(DType::I64));
 
     // 3b. Collect global const declarations as named expressions.
     let const_defs_map: HashMap<String, AstExpr> = ast
@@ -324,6 +354,10 @@ struct Lowerer<'m> {
     /// Expected type from a `val x: T = expr` annotation — used by collection
     /// constructors (e.g. `list()`, `map()`) to infer the element/key/value type.
     binding_ty: Option<IrType>,
+    /// Primal SSA values that participate in source-level reverse-mode AD.
+    taped_values: HashSet<ValueId>,
+    /// Mapping from primal SSA values to their tape-node SSA values.
+    tape_nodes: HashMap<ValueId, ValueId>,
 }
 
 impl<'m> Lowerer<'m> {
@@ -382,7 +416,84 @@ impl<'m> Lowerer<'m> {
             trait_dispatch,
             fn_defaults,
             binding_ty: None,
+            taped_values: HashSet::new(),
+            tape_nodes: HashMap::new(),
         }
+    }
+
+    fn is_reverse_diff_scalar(ty: &IrType) -> bool {
+        matches!(
+            ty,
+            IrType::Scalar(
+                DType::F32
+                    | DType::F64
+                    | DType::I32
+                    | DType::I64
+                    | DType::U8
+                    | DType::I8
+                    | DType::U32
+                    | DType::U64
+                    | DType::USize
+            )
+        )
+    }
+
+    fn tape_ref_for(&self, value: ValueId) -> ValueId {
+        self.tape_nodes.get(&value).copied().unwrap_or(value)
+    }
+
+    fn ensure_taped_leaf(&mut self, value: ValueId, ty: &IrType) {
+        if self.tape_nodes.contains_key(&value) {
+            self.taped_values.insert(value);
+            return;
+        }
+
+        let tape_result = self.builder.fresh_value();
+        self.builder.push_instr(
+            IrInstr::TapeRecord {
+                result: tape_result,
+                value,
+                op: "leaf".to_owned(),
+                parents: vec![],
+            },
+            Some(ty.clone()),
+        );
+        self.taped_values.insert(value);
+        self.tape_nodes.insert(value, tape_result);
+    }
+
+    fn maybe_record_tape_result(
+        &mut self,
+        primal_result: ValueId,
+        primal_ty: &IrType,
+        op: &str,
+        parents: &[ValueId],
+    ) {
+        if !Self::is_reverse_diff_scalar(primal_ty)
+            || !parents
+                .iter()
+                .any(|parent| self.taped_values.contains(parent))
+        {
+            return;
+        }
+
+        let tape_result = self.builder.fresh_value();
+        let tape_parents = parents
+            .iter()
+            .copied()
+            .map(|parent| self.tape_ref_for(parent))
+            .collect();
+        self.builder.push_instr(
+            IrInstr::TapeRecord {
+                result: tape_result,
+                value: primal_result,
+                op: op.to_owned(),
+                parents: tape_parents,
+            },
+            Some(primal_ty.clone()),
+        );
+        self.taped_values.insert(primal_result);
+        self.tape_nodes.insert(primal_result, tape_result);
     }
 
     /// Resolves an AstType, applying type-parameter substitutions first.
@@ -397,21 +508,18 @@ impl<'m> Lowerer<'m> {
 
     /// Looks up a variable and returns its `ValueId` and type.
     fn lookup(&self, ident: &Ident) -> Result<(ValueId, IrType), LowerError> {
-        self.scope
-            .get(&ident.name)
-            .cloned()
-            .ok_or_else(|| {
-                // Build a combined candidate list: scope names + known function names.
-                let scope_names: Vec<&str> = self.scope.keys().map(|s| s.as_str()).collect();
-                let fn_names: Vec<&str> = self.fn_sigs.keys().map(|s| s.as_str()).collect();
-                let all = scope_names.iter().chain(fn_names.iter()).copied();
-                let suggestion = did_you_mean(&ident.name, all);
-                LowerError::UndefinedVariable {
-                    name: ident.name.clone(),
-                    span: ident.span,
-                    suggestion,
-                }
-            })
+        self.scope.get(&ident.name).cloned().ok_or_else(|| {
+            // Build a combined candidate list: scope names + known function names.
+            let scope_names: Vec<&str> = self.scope.keys().map(|s| s.as_str()).collect();
+            let fn_names: Vec<&str> = self.fn_sigs.keys().map(|s| s.as_str()).collect();
+            let all = scope_names.iter().chain(fn_names.iter()).copied();
+            let suggestion = did_you_mean(&ident.name, all);
+            LowerError::UndefinedVariable {
+                name: ident.name.clone(),
+                span: ident.span,
+                suggestion,
+            }
+        })
     }
 
     fn lower_expr(&mut self, expr: &AstExpr) -> Result<(ValueId, IrType), LowerError> {
@@ -607,6 +715,16 @@ impl<'m> Lowerer<'m> {
                     },
                     Some(result_ty.clone()),
                 );
+                let tape_op = match ir_op {
+                    BinOp::Add => Some("add"),
+                    BinOp::Sub => Some("sub"),
+                    BinOp::Mul => Some("mul"),
+                    BinOp::Div => Some("div"),
+                    _ => None,
+                };
+                if let Some(tape_op) = tape_op {
+                    self.maybe_record_tape_result(result, &result_ty, tape_op, &[lhs_val, rhs_val]);
+                }
                 Ok((result, result_ty))
             }
 
@@ -626,6 +744,9 @@ impl<'m> Lowerer<'m> {
                     },
                     Some(ty.clone()),
                 );
+                if matches!(ir_op, ScalarUnaryOp::Neg) {
+                    self.maybe_record_tape_result(result, &ty, "neg", &[val]);
+                }
                 Ok((result, ty))
             }
 
@@ -1066,7 +1187,10 @@ impl<'m> Lowerer<'m> {
                         && self.module.enum_def(&base_ident.name).is_none()
                         && self.module.struct_def(&base_ident.name).is_none()
                     {
-                        let ret_ty = self.fn_sigs.get(method.as_str()).cloned()
+                        let ret_ty = self
+                            .fn_sigs
+                            .get(method.as_str())
+                            .cloned()
                             .or_else(|| self.mono_sigs.borrow().get(method.as_str()).cloned());
                         if let Some(ret_ty) = ret_ty {
                             let mut arg_vals = Vec::with_capacity(args.len());
@@ -1330,8 +1454,7 @@ impl<'m> Lowerer<'m> {
                 });
             }
             let (operand, _) = self.lower_expr(&args[0])?;
-            self.builder
-                .push_instr(IrInstr::Print { operand }, None);
+            self.builder.push_instr(IrInstr::Print { operand }, None);
             // Return a dummy i64 0 as the "unit" value.
             let dummy = self.builder.fresh_value();
             let dummy_ty = IrType::Scalar(DType::I64);
@@ -1418,6 +1541,83 @@ impl<'m> Lowerer<'m> {
                 Some(elem_ty.clone()),
             );
             return Ok((result, elem_ty));
+        }
+
+        // Built-in: tape(x) → mark scalar value as a reverse-mode leaf.
+        if callee.name == "tape" {
+            if args.len() != 1 {
+                return Err(LowerError::Unsupported {
+                    detail: "tape() requires exactly 1 argument".into(),
+                    span,
+                });
+            }
+            let (value, ty) = self.lower_expr(&args[0])?;
+            if !Self::is_reverse_diff_scalar(&ty) {
+                return Err(LowerError::Unsupported {
+                    detail: format!("tape() only supports numeric scalar values, got {}", ty),
+                    span,
+                });
+            }
+            self.ensure_taped_leaf(value, &ty);
+            return Ok((value, ty));
+        }
+
+        // Built-in: backward(loss) → run reverse-mode backprop from a taped scalar.
+        if callee.name == "backward" {
+            if args.len() != 1 {
+                return Err(LowerError::Unsupported {
+                    detail: "backward() requires exactly 1 argument".into(),
+                    span,
+                });
+            }
+            let (loss, loss_ty) = self.lower_expr(&args[0])?;
+            if !Self::is_reverse_diff_scalar(&loss_ty) {
+                return Err(LowerError::Unsupported {
+                    detail: format!("backward() requires a numeric scalar loss, got {}", loss_ty),
+                    span,
+                });
+            }
+            let internal = self.builder.fresh_value();
+            self.builder.push_instr(
+                IrInstr::Backward {
+                    result: internal,
+                    loss: self.tape_ref_for(loss),
+                },
+                Some(IrType::Scalar(DType::Bool)),
+            );
+            let dummy = self.builder.fresh_value();
+            let dummy_ty = IrType::Scalar(DType::I64);
+            self.builder.push_instr(
+                IrInstr::ConstInt {
+                    result: dummy,
+                    value: 0,
+                    ty: dummy_ty.clone(),
+                },
+                Some(dummy_ty.clone()),
+            );
+            return Ok((dummy, dummy_ty));
+        }
+
+        // Built-in: grad(x) → extract d(loss)/d(x) after backward(loss).
+        // Only activates when `x` is a taped value (reverse-mode AD context).
+        // For forward-mode dual numbers `grad(literal)` falls through to MakeGrad.
+        if callee.name == "grad" && args.len() == 1 {
+            let (value, _) = self.lower_expr(&args[0])?;
+            if self.taped_values.contains(&value) {
+                let result = self.builder.fresh_value();
+                let result_ty = IrType::Scalar(DType::F64);
+                self.builder.push_instr(
+                    IrInstr::TapeGrad {
+                        result,
+                        tape_node: self.tape_ref_for(value),
+                    },
+                    Some(result_ty.clone()),
+                );
+                return Ok((result, result_ty));
+            }
+            // Not a taped value → forward-mode MakeGrad path below handles it.
+            // Fall through (the MakeGrad handler will re-lower args[0], which is fine
+            // for literals/simple vars with no side effects).
         }
 
         // Built-in: atomic(v) / atomic_new(v) → AtomicNew
@@ -3598,6 +3798,18 @@ impl<'m> Lowerer<'m> {
                     },
                     Some(op_ty.clone()),
                 );
+                let tape_op = match op {
+                    ScalarUnaryOp::Sqrt => Some("sqrt"),
+                    ScalarUnaryOp::Abs => Some("abs"),
+                    ScalarUnaryOp::Sin => Some("sin"),
+                    ScalarUnaryOp::Cos => Some("cos"),
+                    ScalarUnaryOp::Exp => Some("exp"),
+                    ScalarUnaryOp::Log => Some("log"),
+                    _ => None,
+                };
+                if let Some(tape_op) = tape_op {
+                    self.maybe_record_tape_result(result, &op_ty, tape_op, &[operand]);
+                }
                 return Ok((result, op_ty));
             }
         }
@@ -3666,6 +3878,9 @@ impl<'m> Lowerer<'m> {
                     },
                     Some(lhs_ty.clone()),
                 );
+                if matches!(op, BinOp::Pow) {
+                    self.maybe_record_tape_result(result, &lhs_ty, "pow", &[lhs, rhs]);
+                }
                 return Ok((result, lhs_ty));
             }
         }
@@ -3943,20 +4158,20 @@ impl<'m> Lowerer<'m> {
                 )),
 
                 // ── Terminal / Interactive Input ──
-                "read_key"        => Some(("read_key",        IrType::Scalar(DType::I64))),
-                "read_password"   => Some(("read_password",   IrType::Str)),
-                "term_clear"      => Some(("term_clear",      IrType::Scalar(DType::I64))),
-                "term_cursor"     => Some(("term_cursor",     IrType::Scalar(DType::I64))),
-                "term_show_cursor"=> Some(("term_show_cursor",IrType::Scalar(DType::I64))),
-                "term_set_color"  => Some(("term_set_color",  IrType::Scalar(DType::I64))),
-                "term_reset"      => Some(("term_reset",      IrType::Scalar(DType::I64))),
-                "term_rows"       => Some(("term_rows",       IrType::Scalar(DType::I64))),
-                "term_cols"       => Some(("term_cols",       IrType::Scalar(DType::I64))),
+                "read_key" => Some(("read_key", IrType::Scalar(DType::I64))),
+                "read_password" => Some(("read_password", IrType::Str)),
+                "term_clear" => Some(("term_clear", IrType::Scalar(DType::I64))),
+                "term_cursor" => Some(("term_cursor", IrType::Scalar(DType::I64))),
+                "term_show_cursor" => Some(("term_show_cursor", IrType::Scalar(DType::I64))),
+                "term_set_color" => Some(("term_set_color", IrType::Scalar(DType::I64))),
+                "term_reset" => Some(("term_reset", IrType::Scalar(DType::I64))),
+                "term_rows" => Some(("term_rows", IrType::Scalar(DType::I64))),
+                "term_cols" => Some(("term_cols", IrType::Scalar(DType::I64))),
 
                 // ── UDP Networking ──
-                "udp_open"  => Some(("udp_open",  IrType::Scalar(DType::I64))),
-                "udp_send"  => Some(("udp_send",  IrType::Scalar(DType::I64))),
-                "udp_recv"  => Some(("udp_recv",  IrType::Str)),
+                "udp_open" => Some(("udp_open", IrType::Scalar(DType::I64))),
+                "udp_send" => Some(("udp_send", IrType::Scalar(DType::I64))),
+                "udp_recv" => Some(("udp_recv", IrType::Str)),
                 "udp_close" => Some(("udp_close", IrType::Scalar(DType::I64))),
 
                 // ── HTTP extended ──
@@ -4150,8 +4365,7 @@ impl<'m> Lowerer<'m> {
 
         // If we still have Infer here, the callee is not defined anywhere.
         // Emit a compile-time error rather than silently producing bad IR.
-        if ret_ty == IrType::Infer
-            && !self.module.extern_fns.iter().any(|e| e.name == callee.name)
+        if ret_ty == IrType::Infer && !self.module.extern_fns.iter().any(|e| e.name == callee.name)
         {
             return Err(LowerError::UndefinedVariable {
                 name: callee.name.clone(),
@@ -4279,6 +4493,19 @@ impl<'m> Lowerer<'m> {
 
         if let Some(else_blk) = else_blk {
             // Full if/else: three-block CFG (then / else / merge).
+            // If both branches are statement-only, the expression evaluates to
+            // unit and both branches must still jump to the merge block.
+            let unit_ty = IrType::Scalar(DType::I64);
+            let unit_val = self.builder.fresh_value();
+            self.builder.push_instr(
+                IrInstr::ConstInt {
+                    result: unit_val,
+                    value: 0,
+                    ty: unit_ty.clone(),
+                },
+                Some(unit_ty.clone()),
+            );
+
             let then_bb = self.builder.create_block(Some("then"));
             let else_bb = self.builder.create_block(Some("else"));
             let merge_bb = self.builder.create_block(Some("merge"));
@@ -4298,11 +4525,15 @@ impl<'m> Lowerer<'m> {
             let outer_scope = self.scope.clone();
             self.builder.set_current_block(then_bb);
             let then_result = self.lower_block(then_blk)?;
-            if let Some((then_val, _)) = &then_result {
+            if !self.builder.is_current_block_terminated() {
+                let then_arg = then_result
+                    .as_ref()
+                    .map(|(then_val, _)| *then_val)
+                    .unwrap_or(unit_val);
                 self.builder.push_instr(
                     IrInstr::Br {
                         target: merge_bb,
-                        args: vec![*then_val],
+                        args: vec![then_arg],
                     },
                     None,
                 );
@@ -4312,11 +4543,15 @@ impl<'m> Lowerer<'m> {
             // Lower ELSE branch.
             self.builder.set_current_block(else_bb);
             let else_result = self.lower_block(else_blk)?;
-            if let Some((else_val, _)) = &else_result {
+            if !self.builder.is_current_block_terminated() {
+                let else_arg = else_result
+                    .as_ref()
+                    .map(|(else_val, _)| *else_val)
+                    .unwrap_or(unit_val);
                 self.builder.push_instr(
                     IrInstr::Br {
                         target: merge_bb,
-                        args: vec![*else_val],
+                        args: vec![else_arg],
                     },
                     None,
                 );
@@ -4327,7 +4562,7 @@ impl<'m> Lowerer<'m> {
             let result_ty = match (&then_result, &else_result) {
                 (Some((_, ty)), _) => ty.clone(),
                 (_, Some((_, ty))) => ty.clone(),
-                (None, None) => IrType::Scalar(DType::I64),
+                (None, None) => unit_ty,
             };
 
             let result =
@@ -11009,7 +11244,12 @@ impl<'m> Lowerer<'m> {
             self.builder.set_span_byte(byte);
         }
         match stmt {
-            AstStmt::Let { name, ty: ann_ty, init, .. } => {
+            AstStmt::Let {
+                name,
+                ty: ann_ty,
+                init,
+                ..
+            } => {
                 // Set binding_ty from the annotation so constructors like list() can
                 // infer their element type (e.g. `val xs: list<f64> = list()`).
                 if let Some(ast_ty) = ann_ty {
