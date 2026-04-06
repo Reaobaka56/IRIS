@@ -73,6 +73,21 @@ static char* xstrdup(const char* s) {
 // Boxing / Unboxing
 // ---------------------------------------------------------------------------
 
+static IrisVal* box_heap_ref(IrisTag tag, void* ptr, int32_t rc_kind) {
+    IrisVal* r = xmalloc(sizeof(IrisVal));
+    r->tag = tag;
+    r->ptr = ptr;
+    if (ptr) iris_retain_kind(ptr, rc_kind);
+    return r;
+}
+
+static void* unbox_heap_ref(IrisVal* v, IrisTag expected_tag, const char* name) {
+    if (!v) return NULL;
+    if (v->tag == expected_tag) return v->ptr;
+    fprintf(stderr, "iris: %s type mismatch (tag=%d)\n", name, v->tag);
+    abort();
+}
+
 IrisVal* iris_box_i64(int64_t v) {
     IrisVal* r = xmalloc(sizeof(IrisVal));
     r->tag = IRIS_TAG_I64;  r->i64 = v;
@@ -103,10 +118,32 @@ IrisVal* iris_box_str(const char* s) {
     r->tag = IRIS_TAG_STR;  r->str = xstrdup(s);
     return r;
 }
+IrisVal* iris_box_list(IrisList* list) {
+    return box_heap_ref(IRIS_TAG_LIST, list, IRIS_RC_LIST);
+}
+IrisVal* iris_box_map(IrisMap* map) {
+    return box_heap_ref(IRIS_TAG_MAP, map, IRIS_RC_MAP);
+}
 IrisVal* iris_box_option(IrisOption* opt) {
-    IrisVal* r = xmalloc(sizeof(IrisVal));
-    r->tag = IRIS_TAG_OPTION; r->ptr = opt;
-    return r;
+    return box_heap_ref(IRIS_TAG_OPTION, opt, IRIS_RC_OPTION);
+}
+IrisVal* iris_box_result(IrisResult* res) {
+    return box_heap_ref(IRIS_TAG_RESULT, res, IRIS_RC_RESULT);
+}
+IrisVal* iris_box_chan(IrisChannel* chan) {
+    return box_heap_ref(IRIS_TAG_CHAN, chan, IRIS_RC_CHAN);
+}
+IrisVal* iris_box_atomic(IrisAtomic* atomic) {
+    return box_heap_ref(IRIS_TAG_ATOMIC, atomic, IRIS_RC_ATOMIC);
+}
+IrisVal* iris_box_mutex(IrisMutex* mutex) {
+    return box_heap_ref(IRIS_TAG_MUTEX, mutex, IRIS_RC_MUTEX);
+}
+IrisVal* iris_box_grad(IrisGrad* grad) {
+    return box_heap_ref(IRIS_TAG_GRAD, grad, IRIS_RC_GRAD);
+}
+IrisVal* iris_box_sparse(IrisSparse* sparse) {
+    return box_heap_ref(IRIS_TAG_SPARSE, sparse, IRIS_RC_SPARSE);
 }
 
 int64_t iris_unbox_i64(IrisVal* v) {
@@ -138,6 +175,33 @@ char* iris_unbox_str(IrisVal* v) {
     if (!v) return (char*)"";
     if (v->tag == IRIS_TAG_STR) return v->str;
     fprintf(stderr, "iris: unbox_str type mismatch (tag=%d)\n", v->tag); abort();
+}
+IrisList* iris_unbox_list(IrisVal* v) {
+    return (IrisList*)unbox_heap_ref(v, IRIS_TAG_LIST, "unbox_list");
+}
+IrisMap* iris_unbox_map(IrisVal* v) {
+    return (IrisMap*)unbox_heap_ref(v, IRIS_TAG_MAP, "unbox_map");
+}
+IrisOption* iris_unbox_option(IrisVal* v) {
+    return (IrisOption*)unbox_heap_ref(v, IRIS_TAG_OPTION, "unbox_option");
+}
+IrisResult* iris_unbox_result(IrisVal* v) {
+    return (IrisResult*)unbox_heap_ref(v, IRIS_TAG_RESULT, "unbox_result");
+}
+IrisChannel* iris_unbox_chan(IrisVal* v) {
+    return (IrisChannel*)unbox_heap_ref(v, IRIS_TAG_CHAN, "unbox_chan");
+}
+IrisAtomic* iris_unbox_atomic(IrisVal* v) {
+    return (IrisAtomic*)unbox_heap_ref(v, IRIS_TAG_ATOMIC, "unbox_atomic");
+}
+IrisMutex* iris_unbox_mutex(IrisVal* v) {
+    return (IrisMutex*)unbox_heap_ref(v, IRIS_TAG_MUTEX, "unbox_mutex");
+}
+IrisGrad* iris_unbox_grad(IrisVal* v) {
+    return (IrisGrad*)unbox_heap_ref(v, IRIS_TAG_GRAD, "unbox_grad");
+}
+IrisSparse* iris_unbox_sparse(IrisVal* v) {
+    return (IrisSparse*)unbox_heap_ref(v, IRIS_TAG_SPARSE, "unbox_sparse");
 }
 
 // ---------------------------------------------------------------------------
@@ -508,7 +572,9 @@ double  iris_max_f64(double a, double b)     { return a > b ? a : b; }
 
 IrisOption* iris_make_some(IrisVal* val) {
     IrisOption* o = xmalloc(sizeof(IrisOption));
-    o->has_value = 1;  o->value = val;
+    o->has_value = 1;
+    o->value = val;
+    if (val) iris_retain(val);
     return o;
 }
 IrisOption* iris_make_none(void) {
@@ -528,12 +594,16 @@ IrisVal* iris_option_unwrap(IrisOption* opt) {
 
 IrisResult* iris_make_ok(IrisVal* val) {
     IrisResult* r = xmalloc(sizeof(IrisResult));
-    r->is_ok = 1;  r->value = val;
+    r->is_ok = 1;
+    r->value = val;
+    if (val) iris_retain(val);
     return r;
 }
 IrisResult* iris_make_err(IrisVal* val) {
     IrisResult* r = xmalloc(sizeof(IrisResult));
-    r->is_ok = 0;  r->value = val;
+    r->is_ok = 0;
+    r->value = val;
+    if (val) iris_retain(val);
     return r;
 }
 int      iris_is_ok(IrisResult* res)            { return res ? res->is_ok : 0; }
@@ -561,6 +631,7 @@ void iris_list_push(IrisList* l, IrisVal* val) {
         l->cap *= 2;
         l->data = xrealloc(l->data, sizeof(IrisVal*) * l->cap);
     }
+    if (val) iris_retain(val);
     l->data[l->len++] = val;
 }
 int64_t  iris_list_len(IrisList* l) { return (int64_t)l->len; }
@@ -576,6 +647,8 @@ void iris_list_set(IrisList* l, int64_t idx, IrisVal* val) {
         fprintf(stderr, "iris: list set index %ld out of bounds\n", (long)idx);
         abort();
     }
+    if (val) iris_retain(val);
+    if (l->data[idx]) iris_release(l->data[idx]);
     l->data[idx] = val;
 }
 IrisVal* iris_list_pop(IrisList* l) {
@@ -601,34 +674,65 @@ IrisMap* iris_map_new(void) {
     m->buckets   = xcalloc(m->n_buckets, sizeof(IrisMapEntry*));
     return m;
 }
-void iris_map_set(IrisMap* m, const char* key, IrisVal* val) {
-    size_t h = hash_str(key) % m->n_buckets;
+void iris_map_set(IrisMap* m, IrisVal* key, IrisVal* val) {
+    char* key_str = iris_value_to_str(key);
+    size_t h = hash_str(key_str) % m->n_buckets;
     for (IrisMapEntry* e = m->buckets[h]; e; e = e->next) {
-        if (strcmp(e->key, key) == 0) { e->val = val; return; }
+        if (strcmp(e->key, key_str) == 0) {
+            if (val) iris_retain(val);
+            if (e->val) iris_release(e->val);
+            e->val = val;
+            free(key_str);
+            return;
+        }
     }
     IrisMapEntry* e = xmalloc(sizeof(IrisMapEntry));
-    e->key = xstrdup(key);  e->val = val;  e->next = m->buckets[h];
+    e->key = key_str;
+    e->val = val;
+    if (val) iris_retain(val);
+    e->next = m->buckets[h];
     m->buckets[h] = e;  m->len++;
 }
-IrisVal* iris_map_get(IrisMap* m, const char* key) {
-    size_t h = hash_str(key) % m->n_buckets;
+IrisVal* iris_map_get(IrisMap* m, IrisVal* key) {
+    char* key_str = iris_value_to_str(key);
+    size_t h = hash_str(key_str) % m->n_buckets;
     for (IrisMapEntry* e = m->buckets[h]; e; e = e->next)
-        if (strcmp(e->key, key) == 0) return e->val;
+        if (strcmp(e->key, key_str) == 0) {
+            free(key_str);
+            return e->val;
+        }
+    free(key_str);
     return NULL;
 }
-int iris_map_contains(IrisMap* m, const char* key) {
-    size_t h = hash_str(key) % m->n_buckets;
+int iris_map_contains(IrisMap* m, IrisVal* key) {
+    char* key_str = iris_value_to_str(key);
+    size_t h = hash_str(key_str) % m->n_buckets;
     for (IrisMapEntry* e = m->buckets[h]; e; e = e->next)
-        if (strcmp(e->key, key) == 0) return 1;
+        if (strcmp(e->key, key_str) == 0) {
+            free(key_str);
+            return 1;
+        }
+    free(key_str);
     return 0;
 }
-void iris_map_remove(IrisMap* m, const char* key) {
-    size_t h = hash_str(key) % m->n_buckets;
+void iris_map_remove(IrisMap* m, IrisVal* key) {
+    char* key_str = iris_value_to_str(key);
+    size_t h = hash_str(key_str) % m->n_buckets;
     IrisMapEntry** pp = &m->buckets[h];
     while (*pp) {
-        if (strcmp((*pp)->key, key) == 0) { *pp = (*pp)->next; m->len--; return; }
+        if (strcmp((*pp)->key, key_str) == 0) {
+            IrisMapEntry* doomed = *pp;
+            *pp = doomed->next;
+            if (doomed->val) iris_release(doomed->val);
+            free(doomed->key);
+            free(doomed);
+            m->len--;
+            free(key_str);
+            return;
+        }
         pp = &(*pp)->next;
     }
+    free(key_str);
 }
 int64_t iris_map_len(IrisMap* m) { return (int64_t)m->len; }
 
@@ -897,11 +1001,7 @@ IrisList* iris_db_query(int64_t db, const char* sql) {
             const unsigned char* txt = p_sqlite3_column_text(stmt, i);
             iris_list_push(row, iris_box_str(txt ? (const char*)txt : ""));
         }
-        // Box the inner list as an IrisVal with LIST tag
-        IrisVal* row_val = (IrisVal*)xmalloc(sizeof(IrisVal));
-        row_val->tag = IRIS_TAG_LIST;
-        row_val->ptr = row;
-        iris_list_push(rows, row_val);
+        iris_list_push(rows, iris_box_list(row));
     }
     p_sqlite3_finalize(stmt);
     return rows;
@@ -957,6 +1057,7 @@ IrisChannel* iris_chan_new(void) {
 void iris_chan_send(IrisChannel* c, IrisVal* val) {
     pthread_mutex_lock(&c->mu);
     while (c->count == c->cap) pthread_cond_wait(&c->not_full, &c->mu);
+    if (val) iris_retain(val);
     c->buf[c->tail] = val;
     c->tail = (c->tail + 1) % c->cap;
     c->count++;
@@ -1010,6 +1111,7 @@ IrisAtomic* iris_atomic_new(IrisVal* initial) {
     IrisAtomic* a = xmalloc(sizeof(IrisAtomic));
     pthread_mutex_init(&a->mu, NULL);
     a->val = initial;
+    if (initial) iris_retain(initial);
     return a;
 }
 IrisVal* iris_atomic_load(IrisAtomic* a) {
@@ -1020,6 +1122,8 @@ IrisVal* iris_atomic_load(IrisAtomic* a) {
 }
 void iris_atomic_store(IrisAtomic* a, IrisVal* val) {
     pthread_mutex_lock(&a->mu);
+    if (val) iris_retain(val);
+    if (a->val) iris_release(a->val);
     a->val = val;
     pthread_mutex_unlock(&a->mu);
 }
@@ -2360,7 +2464,10 @@ static IrisVal* json_parse_array(const char** p) {
     (*p)++; /* skip '[' */
     IrisList* list = iris_list_new();
     *p = json_skip_ws(*p);
-    if (**p == ']') { (*p)++; IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal)); v->tag = IRIS_TAG_LIST; v->ptr = list; return v; }
+    if (**p == ']') {
+        (*p)++;
+        return iris_box_list(list);
+    }
     for (;;) {
         IrisVal* elem = json_parse_value(p);
         iris_list_push(list, elem);
@@ -2369,17 +2476,17 @@ static IrisVal* json_parse_array(const char** p) {
         else break;
     }
     if (**p == ']') (*p)++;
-    IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal));
-    v->tag = IRIS_TAG_LIST;
-    v->ptr = list;
-    return v;
+    return iris_box_list(list);
 }
 
 static IrisVal* json_parse_object(const char** p) {
     (*p)++; /* skip '{' */
     IrisMap* map = iris_map_new();
     *p = json_skip_ws(*p);
-    if (**p == '}') { (*p)++; IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal)); v->tag = IRIS_TAG_MAP; v->ptr = map; return v; }
+    if (**p == '}') {
+        (*p)++;
+        return iris_box_map(map);
+    }
     for (;;) {
         *p = json_skip_ws(*p);
         /* Parse key (must be a string) */
@@ -2390,16 +2497,14 @@ static IrisVal* json_parse_object(const char** p) {
         if (**p == ':') (*p)++;
         *p = json_skip_ws(*p);
         IrisVal* val = json_parse_value(p);
-        iris_map_set(map, key, val);
+        (void)key;
+        iris_map_set(map, kv, val);
         *p = json_skip_ws(*p);
         if (**p == ',') { (*p)++; }
         else break;
     }
     if (**p == '}') (*p)++;
-    IrisVal* v = (IrisVal*)xmalloc(sizeof(IrisVal));
-    v->tag = IRIS_TAG_MAP;
-    v->ptr = map;
-    return v;
+    return iris_box_map(map);
 }
 
 static IrisVal* json_parse_value(const char** p) {
@@ -2838,6 +2943,7 @@ char* iris_type_of(IrisVal* val) {
         case IRIS_TAG_STRUCT:  name = "struct"; break;
         case IRIS_TAG_CHAN:     name = "channel"; break;
         case IRIS_TAG_ATOMIC:  name = "atomic"; break;
+        case IRIS_TAG_MUTEX:   name = "mutex"; break;
         case IRIS_TAG_GRAD:    name = "grad"; break;
         case IRIS_TAG_SPARSE:  name = "sparse"; break;
         case IRIS_TAG_UNIT:    name = "unit"; break;
@@ -3481,12 +3587,27 @@ void    iris_rust_call_void(void* h, const char* fn_name, int64_t* args, int n) 
 
 /* -- Functional list ops (numeric) -- */
 
-int64_t iris_list_sum(IrisList* list) {
-    if (!list) return 0;
-    int64_t s = 0;
+double iris_list_sum(IrisList* list) {
+    if (!list) return 0.0;
+    double s = 0.0;
     for (size_t i = 0; i < list->len; i++) {
-        if (list->data[i] && list->data[i]->tag == IRIS_TAG_I64)
-            s += list->data[i]->i64;
+        if (!list->data[i]) continue;
+        switch (list->data[i]->tag) {
+            case IRIS_TAG_I64:
+                s += (double)list->data[i]->i64;
+                break;
+            case IRIS_TAG_I32:
+                s += (double)list->data[i]->i32;
+                break;
+            case IRIS_TAG_F64:
+                s += list->data[i]->f64;
+                break;
+            case IRIS_TAG_F32:
+                s += (double)list->data[i]->f32;
+                break;
+            default:
+                break;
+        }
     }
     return s;
 }
@@ -3587,6 +3708,7 @@ int64_t iris_thread_count(void) {
 
 typedef struct RcEntry {
     void*          ptr;
+    int32_t        kind;
     int64_t        count;
     int64_t        scan_count; /* scratch counter used by cycle collector */
     int            color;
@@ -3624,10 +3746,11 @@ static RcEntry* rc_find(void* ptr) {
 }
 
 /* Must be called with rc_global_mu held. */
-static RcEntry* rc_insert(void* ptr) {
+static RcEntry* rc_insert(void* ptr, int32_t kind) {
     size_t h = rc_hash(ptr);
     RcEntry* e = xmalloc(sizeof(RcEntry));
     e->ptr = ptr;
+    e->kind = kind;
     e->count = 1;
     e->scan_count = 0;
     e->color = RC_COLOR_BLACK;
@@ -3638,32 +3761,212 @@ static RcEntry* rc_insert(void* ptr) {
     return e;
 }
 
-void iris_retain(void* ptr) {
+/* Must be called with rc_global_mu held. Removes and returns one live entry
+ * from the RC table so cleanup can deep-free it outside the global lock. */
+static RcEntry* rc_take_one_locked(void) {
+    for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
+        RcEntry* e = rc_table[h];
+        if (e) {
+            rc_table[h] = e->next;
+            e->next = NULL;
+            return e;
+        }
+    }
+    return NULL;
+}
+
+static void rc_free_list_payload(IrisList* list) {
+    if (!list) return;
+    for (size_t i = 0; i < list->len; i++) {
+        if (list->data[i]) iris_release(list->data[i]);
+    }
+    free(list->data);
+    free(list);
+}
+
+static void rc_free_map_payload(IrisMap* m) {
+    if (!m) return;
+    for (size_t i = 0; i < m->n_buckets; i++) {
+        IrisMapEntry* e = m->buckets[i];
+        while (e) {
+            IrisMapEntry* next = e->next;
+            free(e->key);
+            if (e->val) iris_release(e->val);
+            free(e);
+            e = next;
+        }
+    }
+    free(m->buckets);
+    free(m);
+}
+
+static void rc_free_channel_payload(IrisChannel* c) {
+    if (!c) return;
+    for (size_t i = 0; i < c->count; i++) {
+        size_t idx = (c->head + i) % c->cap;
+        if (c->buf[idx]) iris_release(c->buf[idx]);
+    }
+    free(c->buf);
+    pthread_mutex_destroy(&c->mu);
+    pthread_cond_destroy(&c->not_empty);
+    pthread_cond_destroy(&c->not_full);
+    free(c);
+}
+
+static void rc_free_atomic_payload(IrisAtomic* a) {
+    if (!a) return;
+    if (a->val) iris_release(a->val);
+    pthread_mutex_destroy(&a->mu);
+    free(a);
+}
+
+static void rc_free_mutex_payload(IrisMutex* m) {
+    if (!m) return;
+    pthread_mutex_destroy(&m->mu);
+    free(m);
+}
+
+static void rc_free_sparse_payload(IrisSparse* sp) {
+    if (!sp) return;
+    for (size_t i = 0; i < sp->len; i++) {
+        if (sp->values[i]) iris_release(sp->values[i]);
+    }
+    free(sp->indices);
+    free(sp->values);
+    free(sp);
+}
+
+static void rc_deep_free_by_kind(void* ptr, int32_t kind) {
+    if (!ptr) return;
+    switch (kind) {
+        case IRIS_RC_BOXED: {
+            IrisVal* val = (IrisVal*)ptr;
+            switch (val->tag) {
+                case IRIS_TAG_STR:
+                    free(val->str);
+                    break;
+                case IRIS_TAG_LIST:
+                    iris_release_kind(val->ptr, IRIS_RC_LIST);
+                    break;
+                case IRIS_TAG_MAP:
+                    iris_release_kind(val->ptr, IRIS_RC_MAP);
+                    break;
+                case IRIS_TAG_OPTION:
+                    iris_release_kind(val->ptr, IRIS_RC_OPTION);
+                    break;
+                case IRIS_TAG_RESULT:
+                    iris_release_kind(val->ptr, IRIS_RC_RESULT);
+                    break;
+                case IRIS_TAG_CHAN:
+                    iris_release_kind(val->ptr, IRIS_RC_CHAN);
+                    break;
+                case IRIS_TAG_ATOMIC:
+                    iris_release_kind(val->ptr, IRIS_RC_ATOMIC);
+                    break;
+                case IRIS_TAG_GRAD:
+                    iris_release_kind(val->ptr, IRIS_RC_GRAD);
+                    break;
+                case IRIS_TAG_SPARSE:
+                    iris_release_kind(val->ptr, IRIS_RC_SPARSE);
+                    break;
+                case IRIS_TAG_MUTEX:
+                    iris_release_kind(val->ptr, IRIS_RC_MUTEX);
+                    break;
+                case IRIS_TAG_TUPLE:
+                case IRIS_TAG_STRUCT:
+                    rc_free_list_payload((IrisList*)val->ptr);
+                    break;
+                case IRIS_TAG_CLOSURE: {
+                    IrisClosure* c = (IrisClosure*)val->ptr;
+                    if (c) {
+                        rc_free_list_payload(c->captures);
+                        free(c);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            free(val);
+            break;
+        }
+        case IRIS_RC_STR:
+            free((char*)ptr);
+            break;
+        case IRIS_RC_LIST:
+            rc_free_list_payload((IrisList*)ptr);
+            break;
+        case IRIS_RC_MAP:
+            rc_free_map_payload((IrisMap*)ptr);
+            break;
+        case IRIS_RC_OPTION: {
+            IrisOption* opt = (IrisOption*)ptr;
+            if (opt) {
+                if (opt->has_value && opt->value) iris_release(opt->value);
+                free(opt);
+            }
+            break;
+        }
+        case IRIS_RC_RESULT: {
+            IrisResult* res = (IrisResult*)ptr;
+            if (res) {
+                if (res->value) iris_release(res->value);
+                free(res);
+            }
+            break;
+        }
+        case IRIS_RC_CHAN:
+            rc_free_channel_payload((IrisChannel*)ptr);
+            break;
+        case IRIS_RC_ATOMIC:
+            rc_free_atomic_payload((IrisAtomic*)ptr);
+            break;
+        case IRIS_RC_MUTEX:
+            rc_free_mutex_payload((IrisMutex*)ptr);
+            break;
+        case IRIS_RC_GRAD:
+            free((IrisGrad*)ptr);
+            break;
+        case IRIS_RC_SPARSE:
+            rc_free_sparse_payload((IrisSparse*)ptr);
+            break;
+        default:
+            free(ptr);
+            break;
+    }
+}
+
+void iris_retain_kind(void* ptr, int32_t kind) {
     if (!ptr) return;
     pthread_mutex_lock(&rc_global_mu);
     RcEntry* e = rc_find(ptr);
     if (e) {
         e->count++;
-        e->color = RC_COLOR_BLACK; /* back to live */
+        e->color = RC_COLOR_BLACK;
     } else {
-        rc_insert(ptr);
+        rc_insert(ptr, kind);
     }
     pthread_mutex_unlock(&rc_global_mu);
 }
 
-static void rc_deep_free(IrisVal* val);
+void iris_retain(void* ptr) {
+    iris_retain_kind(ptr, IRIS_RC_BOXED);
+}
 
-void iris_release(void* ptr) {
+void iris_release_kind(void* ptr, int32_t kind) {
     if (!ptr) return;
     pthread_mutex_lock(&rc_global_mu);
     RcEntry* e = rc_find(ptr);
-    if (!e) { pthread_mutex_unlock(&rc_global_mu); return; }
+    if (!e) {
+        pthread_mutex_unlock(&rc_global_mu);
+        return;
+    }
     e->count--;
     if (e->count <= 0) {
-        /* Definite garbage: deep-free and remove from table. */
+        int32_t free_kind = e->kind;
         e->color = RC_COLOR_BLACK;
         pthread_mutex_unlock(&rc_global_mu);
-        rc_deep_free((IrisVal*)ptr);
+        rc_deep_free_by_kind(ptr, free_kind);
         pthread_mutex_lock(&rc_global_mu);
         gc_total_freed++;
         size_t h = rc_hash(ptr);
@@ -3678,7 +3981,6 @@ void iris_release(void* ptr) {
             pp = &((*pp)->next);
         }
     } else {
-        /* Count dropped but still > 0: possible cycle root. */
         if (e->color != RC_COLOR_GRAY && !e->buffered) {
             e->color = RC_COLOR_GRAY;
             e->buffered = 1;
@@ -3686,65 +3988,15 @@ void iris_release(void* ptr) {
                 possible_roots[possible_roots_count++] = ptr;
             }
         }
+        if (kind != IRIS_RC_BOXED) {
+            e->kind = kind;
+        }
     }
     pthread_mutex_unlock(&rc_global_mu);
 }
 
-static void rc_deep_free(IrisVal* val) {
-    if (!val) return;
-    switch (val->tag) {
-        case IRIS_TAG_STR:
-            free(val->str);
-            break;
-        case IRIS_TAG_LIST: {
-            IrisList* list = (IrisList*)val->ptr;
-            if (list) {
-                for (size_t i = 0; i < list->len; i++) {
-                    iris_release(list->data[i]);
-                }
-                free(list->data);
-                free(list);
-            }
-            break;
-        }
-        case IRIS_TAG_MAP: {
-            IrisMap* m = (IrisMap*)val->ptr;
-            if (m) {
-                for (size_t i = 0; i < m->n_buckets; i++) {
-                    IrisMapEntry* e = m->buckets[i];
-                    while (e) {
-                        IrisMapEntry* next = e->next;
-                        free(e->key);
-                        iris_release(e->val);
-                        free(e);
-                        e = next;
-                    }
-                }
-                free(m->buckets);
-                free(m);
-            }
-            break;
-        }
-        case IRIS_TAG_OPTION: {
-            IrisOption* opt = (IrisOption*)val->ptr;
-            if (opt) {
-                if (opt->has_value) iris_release(opt->value);
-                free(opt);
-            }
-            break;
-        }
-        case IRIS_TAG_RESULT: {
-            IrisResult* res = (IrisResult*)val->ptr;
-            if (res) {
-                iris_release(res->value);
-                free(res);
-            }
-            break;
-        }
-        default:
-            break;
-    }
-    free(val);
+void iris_release(void* ptr) {
+    iris_release_kind(ptr, IRIS_RC_BOXED);
 }
 
 int64_t iris_refcount(void* ptr) {
@@ -3758,33 +4010,86 @@ int64_t iris_refcount(void* ptr) {
 
 /* ── Bacon-Rajan cycle collector ─────────────────────────────────────────── */
 
-/* Call fn(child_ptr) for every IrisVal* child owned by val. */
+/* Call fn(child_ptr) for every RC-tracked child owned by a node. */
 typedef void (*ChildFn)(void*, void*);
-static void rc_each_child(IrisVal* val, ChildFn fn, void* ctx) {
-    if (!val) return;
-    switch (val->tag) {
-        case IRIS_TAG_LIST: {
-            IrisList* list = (IrisList*)val->ptr;
+static void rc_each_child(void* ptr, int32_t kind, ChildFn fn, void* ctx) {
+    if (!ptr) return;
+    switch (kind) {
+        case IRIS_RC_BOXED: {
+            IrisVal* val = (IrisVal*)ptr;
+            switch (val->tag) {
+                case IRIS_TAG_LIST:
+                case IRIS_TAG_MAP:
+                case IRIS_TAG_OPTION:
+                case IRIS_TAG_RESULT:
+                case IRIS_TAG_CHAN:
+                case IRIS_TAG_ATOMIC:
+                case IRIS_TAG_GRAD:
+                case IRIS_TAG_SPARSE:
+                case IRIS_TAG_MUTEX:
+                    if (val->ptr) fn(val->ptr, ctx);
+                    break;
+                case IRIS_TAG_TUPLE:
+                case IRIS_TAG_STRUCT: {
+                    IrisList* list = (IrisList*)val->ptr;
+                    if (list) for (size_t i = 0; i < list->len; i++) fn(list->data[i], ctx);
+                    break;
+                }
+                case IRIS_TAG_CLOSURE: {
+                    IrisClosure* c = (IrisClosure*)val->ptr;
+                    if (c && c->captures) {
+                        for (size_t i = 0; i < c->captures->len; i++) fn(c->captures->data[i], ctx);
+                    }
+                    break;
+                }
+                default:
+                    break;
+            }
+            break;
+        }
+        case IRIS_RC_LIST: {
+            IrisList* list = (IrisList*)ptr;
             if (list) for (size_t i = 0; i < list->len; i++) fn(list->data[i], ctx);
             break;
         }
-        case IRIS_TAG_MAP: {
-            IrisMap* m = (IrisMap*)val->ptr;
+        case IRIS_RC_MAP: {
+            IrisMap* m = (IrisMap*)ptr;
             if (m) for (size_t i = 0; i < m->n_buckets; i++)
                 for (IrisMapEntry* e = m->buckets[i]; e; e = e->next) fn(e->val, ctx);
             break;
         }
-        case IRIS_TAG_OPTION: {
-            IrisOption* opt = (IrisOption*)val->ptr;
+        case IRIS_RC_OPTION: {
+            IrisOption* opt = (IrisOption*)ptr;
             if (opt && opt->has_value) fn(opt->value, ctx);
             break;
         }
-        case IRIS_TAG_RESULT: {
-            IrisResult* res = (IrisResult*)val->ptr;
-            if (res) fn(res->value, ctx);
+        case IRIS_RC_RESULT: {
+            IrisResult* res = (IrisResult*)ptr;
+            if (res && res->value) fn(res->value, ctx);
             break;
         }
-        default: break;
+        case IRIS_RC_CHAN: {
+            IrisChannel* c = (IrisChannel*)ptr;
+            if (c) {
+                for (size_t i = 0; i < c->count; i++) {
+                    size_t idx = (c->head + i) % c->cap;
+                    fn(c->buf[idx], ctx);
+                }
+            }
+            break;
+        }
+        case IRIS_RC_ATOMIC: {
+            IrisAtomic* a = (IrisAtomic*)ptr;
+            if (a && a->val) fn(a->val, ctx);
+            break;
+        }
+        case IRIS_RC_SPARSE: {
+            IrisSparse* sp = (IrisSparse*)ptr;
+            if (sp) for (size_t i = 0; i < sp->len; i++) fn(sp->values[i], ctx);
+            break;
+        }
+        default:
+            break;
     }
 }
 
@@ -3801,7 +4106,7 @@ static void rc_scan_black_child(void* child, void* ctx);
 static void rc_scan_black_node(RcEntry* e) {
     if (!e || e->color == RC_COLOR_BLACK) return;
     e->color = RC_COLOR_BLACK;
-    rc_each_child((IrisVal*)e->ptr, rc_scan_black_child, NULL);
+    rc_each_child(e->ptr, e->kind, rc_scan_black_child, NULL);
 }
 static void rc_scan_black_child(void* child, void* ctx) {
     (void)ctx;
@@ -3829,7 +4134,7 @@ static void iris_gc_cycle_collect_locked(void) {
     for (int i = 0; i < possible_roots_count; i++) {
         RcEntry* e = rc_find(possible_roots[i]);
         if (e && e->color == RC_COLOR_GRAY)
-            rc_each_child((IrisVal*)e->ptr, rc_mark_gray_child, NULL);
+            rc_each_child(e->ptr, e->kind, rc_mark_gray_child, NULL);
     }
 
     /* Phase 3: Nodes with scan_count > 0 have external references — mark BLACK.
@@ -3857,7 +4162,7 @@ static void iris_gc_cycle_collect_locked(void) {
                 *pp = tmp->next;
                 /* Deep-free outside the lock to avoid recursive acquire. */
                 pthread_mutex_unlock(&rc_global_mu);
-                rc_deep_free((IrisVal*)tmp->ptr);
+                rc_deep_free_by_kind(tmp->ptr, tmp->kind);
                 pthread_mutex_lock(&rc_global_mu);
                 gc_total_freed++;
                 free(tmp);
@@ -3879,7 +4184,7 @@ void iris_gc_collect(void) {
                 RcEntry* tmp = *pp;
                 *pp = tmp->next;
                 pthread_mutex_unlock(&rc_global_mu);
-                rc_deep_free((IrisVal*)tmp->ptr);
+                rc_deep_free_by_kind(tmp->ptr, tmp->kind);
                 pthread_mutex_lock(&rc_global_mu);
                 gc_total_freed++;
                 free(tmp);
@@ -3906,21 +4211,17 @@ static void iris_runtime_cleanup(void) {
     /* Run cycle collector one final time before cleanup. */
     pthread_mutex_lock(&rc_global_mu);
     iris_gc_cycle_collect_locked();
-    for (size_t h = 0; h < RC_TABLE_BUCKETS; h++) {
-        RcEntry* e = rc_table[h];
-        while (e) {
-            RcEntry* next = e->next;
-            /* Only free the pointed-to value if we own it (count > 0).
-             * We skip the deep-free here to avoid double-free on shared data;
-             * a shallow free of the IrisVal* box is sufficient for ASAN. */
-            free(e->ptr);
-            gc_total_freed++;
-            free(e);
-            e = next;
-        }
-        rc_table[h] = NULL;
-    }
+    possible_roots_count = 0;
+    RcEntry* e = rc_take_one_locked();
     pthread_mutex_unlock(&rc_global_mu);
+    while (e) {
+        rc_deep_free_by_kind(e->ptr, e->kind);
+        gc_total_freed++;
+        free(e);
+        pthread_mutex_lock(&rc_global_mu);
+        e = rc_take_one_locked();
+        pthread_mutex_unlock(&rc_global_mu);
+    }
 }
 
 #ifdef _MSC_VER

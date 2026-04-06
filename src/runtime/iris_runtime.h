@@ -39,6 +39,7 @@ typedef enum {
     IRIS_TAG_SPARSE  = 16,
     IRIS_TAG_UNIT    = 17,
     IRIS_TAG_ENUM    = 18,
+    IRIS_TAG_MUTEX   = 19,
 } IrisTag;
 
 typedef struct IrisVal {
@@ -119,6 +120,20 @@ typedef struct {
     pthread_mutex_t mu;
 } IrisMutex;
 
+typedef enum {
+    IRIS_RC_BOXED  = 0,
+    IRIS_RC_STR    = 1,
+    IRIS_RC_LIST   = 2,
+    IRIS_RC_MAP    = 3,
+    IRIS_RC_OPTION = 4,
+    IRIS_RC_RESULT = 5,
+    IRIS_RC_CHAN   = 6,
+    IRIS_RC_ATOMIC = 7,
+    IRIS_RC_MUTEX  = 8,
+    IRIS_RC_GRAD   = 9,
+    IRIS_RC_SPARSE = 10,
+} IrisRcKind;
+
 // ---------------------------------------------------------------------------
 // Boxing / unboxing
 // ---------------------------------------------------------------------------
@@ -128,11 +143,28 @@ IrisVal* iris_box_f64(double v);
 IrisVal* iris_box_f32(float v);
 IrisVal* iris_box_bool(int v);
 IrisVal* iris_box_str(const char* s);
+IrisVal* iris_box_list(IrisList* list);
+IrisVal* iris_box_map(IrisMap* map);
 IrisVal* iris_box_option(IrisOption* opt);
+IrisVal* iris_box_result(IrisResult* res);
+IrisVal* iris_box_chan(IrisChannel* chan);
+IrisVal* iris_box_atomic(IrisAtomic* atomic);
+IrisVal* iris_box_mutex(IrisMutex* mutex);
+IrisVal* iris_box_grad(IrisGrad* grad);
+IrisVal* iris_box_sparse(IrisSparse* sparse);
 int64_t  iris_unbox_i64(IrisVal* v);
 double   iris_unbox_f64(IrisVal* v);
 int      iris_unbox_bool(IrisVal* v);
 char*    iris_unbox_str(IrisVal* v);
+IrisList* iris_unbox_list(IrisVal* v);
+IrisMap*  iris_unbox_map(IrisVal* v);
+IrisOption* iris_unbox_option(IrisVal* v);
+IrisResult* iris_unbox_result(IrisVal* v);
+IrisChannel* iris_unbox_chan(IrisVal* v);
+IrisAtomic*  iris_unbox_atomic(IrisVal* v);
+IrisMutex*   iris_unbox_mutex(IrisVal* v);
+IrisGrad*    iris_unbox_grad(IrisVal* v);
+IrisSparse*  iris_unbox_sparse(IrisVal* v);
 
 // ---------------------------------------------------------------------------
 // Print
@@ -233,10 +265,10 @@ IrisVal*  iris_list_pop(IrisList* list);
 // Map
 // ---------------------------------------------------------------------------
 IrisMap* iris_map_new(void);
-void     iris_map_set(IrisMap* map, const char* key, IrisVal* val);
-IrisVal* iris_map_get(IrisMap* map, const char* key);
-int      iris_map_contains(IrisMap* map, const char* key);
-void     iris_map_remove(IrisMap* map, const char* key);
+void     iris_map_set(IrisMap* map, IrisVal* key, IrisVal* val);
+IrisVal* iris_map_get(IrisMap* map, IrisVal* key);
+int      iris_map_contains(IrisMap* map, IrisVal* key);
+void     iris_map_remove(IrisMap* map, IrisVal* key);
 int64_t  iris_map_len(IrisMap* map);
 
 // ---------------------------------------------------------------------------
@@ -561,7 +593,7 @@ double    iris_rust_call_f64(void* handle, const char* func_name, int64_t* args,
 void      iris_rust_call_void(void* handle, const char* func_name, int64_t* args, int nargs);
 
 // -- Functional list ops --
-int64_t   iris_list_sum(IrisList* list);
+double    iris_list_sum(IrisList* list);
 int64_t   iris_list_min(IrisList* list);
 int64_t   iris_list_max(IrisList* list);
 int64_t   iris_list_index_of(IrisList* list, int64_t val);
@@ -579,6 +611,8 @@ int64_t   iris_thread_count(void);
 // and frees when the count reaches zero.
 void      iris_retain(void* ptr);
 void      iris_release(void* ptr);
+void      iris_retain_kind(void* ptr, int32_t kind);
+void      iris_release_kind(void* ptr, int32_t kind);
 int64_t   iris_refcount(void* ptr);
 void      iris_gc_collect(void);   // Force collection of zero-refcount objects.
 int64_t   iris_gc_stats_allocated(void);  // Total live allocations.
