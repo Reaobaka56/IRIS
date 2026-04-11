@@ -1244,6 +1244,8 @@ fn box_to_ptr(
     emitted_ty: Option<&str>,
     counter: &mut u32,
 ) -> Result<String, CodegenError> {
+    let inferred_ty = inferred_value_type(func, value_id, value_ty);
+    let value_ty = inferred_ty.as_ref();
     let idx = *counter;
     match value_ty {
         Some(IrType::Scalar(DType::I64)) => {
@@ -2301,11 +2303,11 @@ fn emit_instr_ir(
         } => {
             let bv = val(*base);
             // Try to determine struct type from value type.
-            let base_ty = func.value_type(*base);
+            let base_ty = inferred_value_type(func, *base, func.value_type(*base));
             if let Some(IrType::Struct {
                 name,
                 fields: field_tys,
-            }) = base_ty
+            }) = base_ty.as_ref()
             {
                 let struct_ty = format!("%{}", name);
                 let fty_s = llvm_type_complete(result_ty)?;
@@ -4149,8 +4151,8 @@ fn emit_instr_ir(
         // ── I/O ────────────────────────────────────────────────────────────
         IrInstr::Print { operand } => {
             // Typed print: use specialised helper for scalars.
-            let oty = func.value_type(*operand);
-            match oty {
+            let oty = inferred_value_type(func, *operand, func.value_type(*operand));
+            match oty.as_ref() {
                 Some(IrType::Scalar(DType::I64)) => {
                     writeln!(out, "  call void @iris_print_i64(i64 {})", val(*operand))?;
                 }
@@ -4254,11 +4256,11 @@ fn emit_instr_ir(
             )?;
         }
         IrInstr::ValueToStr { result, operand } => {
-            let oty = func.value_type(*operand);
+            let oty = inferred_value_type(func, *operand, func.value_type(*operand));
             // Check the actual emitted LLVM type; if it's ptr but IR thinks scalar,
             // insert a ptrtoint before calling the typed to_str function.
             let emitted_ty = emitted_types.get(operand).map(|s| s.as_str());
-            match oty {
+            match oty.as_ref() {
                 Some(IrType::Scalar(DType::I64)) => {
                     let arg = if emitted_ty == Some("ptr") {
                         let tmp = format!("%cast{}", gep_counter);
@@ -4785,40 +4787,93 @@ fn is_scalar_type(ty: &IrType) -> bool {
 
 /// Extract the primary result ValueId from an instruction (if any).
 fn instr_result_id(instr: &IrInstr) -> Option<ValueId> {
-    match instr {
-        IrInstr::Call { result, .. } => *result,
-        IrInstr::CallExtern { result, .. } => *result,
-        IrInstr::CallClosure { result, .. } => *result,
-        IrInstr::BinOp { result, .. } => Some(*result),
-        IrInstr::UnaryOp { result, .. } => Some(*result),
-        IrInstr::ConstInt { result, .. } => Some(*result),
-        IrInstr::ConstFloat { result, .. } => Some(*result),
-        IrInstr::ConstStr { result, .. } => Some(*result),
-        IrInstr::ConstBool { result, .. } => Some(*result),
-        IrInstr::MakeStruct { result, .. } => Some(*result),
-        IrInstr::MakeTuple { result, .. } => Some(*result),
-        IrInstr::MakeClosure { result, .. } => Some(*result),
-        IrInstr::GetField { result, .. } => Some(*result),
-        IrInstr::GetElement { result, .. } => Some(*result),
-        IrInstr::AllocArray { result, .. } => Some(*result),
-        IrInstr::ArrayLoad { result, .. } => Some(*result),
-        IrInstr::MakeSome { result, .. } => Some(*result),
-        IrInstr::MakeNone { result, .. } => Some(*result),
-        IrInstr::IsSome { result, .. } => Some(*result),
-        IrInstr::OptionUnwrap { result, .. } => Some(*result),
-        IrInstr::MakeOk { result, .. } => Some(*result),
-        IrInstr::MakeErr { result, .. } => Some(*result),
-        IrInstr::IsOk { result, .. } => Some(*result),
-        IrInstr::ResultUnwrap { result, .. } => Some(*result),
-        IrInstr::ResultUnwrapErr { result, .. } => Some(*result),
-        IrInstr::Cast { result, .. } => Some(*result),
-        IrInstr::Load { result, .. } => Some(*result),
-        IrInstr::TensorOp { result, .. } => Some(*result),
-        IrInstr::MakeVariant { result, .. } => Some(*result),
-        IrInstr::ExtractVariantField { result, .. } => Some(*result),
-        IrInstr::BuiltinCall { result, .. } => Some(*result),
-        _ => None,
+    instr.result()
+}
+
+fn inferred_value_type(
+    func: &IrFunction,
+    value_id: ValueId,
+    value_ty: Option<&IrType>,
+) -> Option<IrType> {
+    if let Some(ty) = value_ty.or_else(|| func.value_type(value_id)) {
+        return Some(ty.clone());
     }
+
+    for block in func.blocks() {
+        for instr in &block.instrs {
+            if instr_result_id(instr) != Some(value_id) {
+                continue;
+            }
+            return match instr {
+                IrInstr::Call {
+                    result_ty: Some(ty),
+                    ..
+                }
+                | IrInstr::CallClosure { result_ty: ty, .. }
+                | IrInstr::GetField { result_ty: ty, .. }
+                | IrInstr::GetElement { result_ty: ty, .. }
+                | IrInstr::OptionUnwrap { result_ty: ty, .. }
+                | IrInstr::ResultUnwrap { result_ty: ty, .. }
+                | IrInstr::ResultUnwrapErr { result_ty: ty, .. }
+                | IrInstr::AtomicLoad { result_ty: ty, .. }
+                | IrInstr::MutexLock { result_ty: ty, .. }
+                | IrInstr::MakeStruct { result_ty: ty, .. }
+                | IrInstr::MakeTuple { result_ty: ty, .. }
+                | IrInstr::MakeClosure { result_ty: ty, .. }
+                | IrInstr::MakeSome { result_ty: ty, .. }
+                | IrInstr::MakeNone { result_ty: ty, .. }
+                | IrInstr::MakeOk { result_ty: ty, .. }
+                | IrInstr::MakeErr { result_ty: ty, .. }
+                | IrInstr::MakeGrad { ty, .. }
+                | IrInstr::GradValue { ty, .. }
+                | IrInstr::GradTangent { ty, .. }
+                | IrInstr::Sparsify { ty, .. }
+                | IrInstr::Densify { ty, .. }
+                | IrInstr::CallExtern { ret_ty: ty, .. } => Some(ty.clone()),
+                IrInstr::ListNew { elem_ty, .. } => Some(IrType::List(Box::new(elem_ty.clone()))),
+                IrInstr::ListGet { elem_ty, .. }
+                | IrInstr::ListPop { elem_ty, .. }
+                | IrInstr::ChanRecv { elem_ty, .. } => Some(elem_ty.clone()),
+                IrInstr::MapNew { key_ty, val_ty, .. } => Some(IrType::Map(
+                    Box::new(key_ty.clone()),
+                    Box::new(val_ty.clone()),
+                )),
+                IrInstr::MapGet { val_ty, .. } => Some(val_ty.clone()),
+                IrInstr::MapKeys { map, .. } => inferred_value_type(func, *map, func.value_type(*map))
+                    .and_then(|ty| match ty {
+                        IrType::Map(key_ty, _) => Some(IrType::List(key_ty)),
+                        _ => None,
+                    }),
+                IrInstr::MapValues { map, .. } => inferred_value_type(
+                    func,
+                    *map,
+                    func.value_type(*map),
+                )
+                .and_then(|ty| match ty {
+                    IrType::Map(_, val_ty) => Some(IrType::List(val_ty)),
+                    _ => None,
+                }),
+                IrInstr::ListConcat { lhs, .. } | IrInstr::ListSlice { list: lhs, .. } => {
+                    inferred_value_type(func, *lhs, func.value_type(*lhs))
+                }
+                IrInstr::ConstStr { .. }
+                | IrInstr::StrConcat { .. }
+                | IrInstr::StrToUpper { .. }
+                | IrInstr::StrToLower { .. }
+                | IrInstr::StrTrim { .. }
+                | IrInstr::StrRepeat { .. }
+                | IrInstr::StrSlice { .. }
+                | IrInstr::StrReplace { .. }
+                | IrInstr::ValueToStr { .. }
+                | IrInstr::ReadLine { .. } => Some(IrType::Str),
+                IrInstr::ProcessArgs { .. } => Some(IrType::List(Box::new(IrType::Str))),
+                IrInstr::EnvVar { .. } => Some(IrType::Option(Box::new(IrType::Str))),
+                _ => None,
+            };
+        }
+    }
+
+    None
 }
 
 /// Return the bit width of an LLVM integer type string (e.g. "i64" → 64).

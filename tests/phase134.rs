@@ -132,6 +132,64 @@ def main() -> i64 {
     assert!(out.contains("line two"), "got: {}", out);
 }
 
+#[test]
+fn native_print_inlined_string_result() {
+    let src = r#"
+def greet(name: str) -> str {
+    concat("Hello, ", name)
+}
+
+def main() -> i64 {
+    print(greet("World"));
+    0
+}
+"#;
+    let out = eval(src);
+    assert!(out.contains("Hello, World"), "got: {}", out);
+}
+
+#[test]
+fn native_inline_struct_field_access() {
+    let src = r#"
+record Pair {
+    left: i64,
+    right: i64,
+}
+
+def make_pair(a: i64, b: i64) -> Pair {
+    Pair { left: a, right: b }
+}
+
+def bump(p: Pair) -> Pair {
+    Pair { left: p.left + 1, right: p.right + 2 }
+}
+
+def main() -> i64 {
+    val p = make_pair(10, 20)
+    val q = bump(p)
+    q.left + q.right
+}
+"#;
+    assert_eq!(eval(src), "33");
+}
+
+#[test]
+fn native_returned_list_survives_call_boundary() {
+    let src = r#"
+def make_values() -> list<i64> {
+    val xs: list<i64> = list()
+    val _ = list_push(xs, 7)
+    val _ = list_push(xs, 9)
+    xs
+}
+
+def main() -> i64 {
+    list_get(make_values(), 1)
+}
+"#;
+    assert_eq!(eval(src), "9");
+}
+
 // ── HTTP server stdlib ────────────────────────────────────────────────────────
 
 #[test]

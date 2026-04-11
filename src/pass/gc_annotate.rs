@@ -123,20 +123,10 @@ impl Pass for GcAnnotatePass {
             for bidx in 0..func.blocks.len() {
                 let bid = func.blocks[bidx].id;
 
-                // Which heap values are safe to release in this block?
-                // A value is safe iff its defining block dominates `bid`.
-                let releasable: Vec<(ValueId, IrType)> = heap_vals
-                    .iter()
-                    .filter(|(_, _, def_bid)| {
-                        dom.get(&bid)
-                            .map_or(false, |dom_set| dom_set.contains(def_bid))
-                    })
-                    .map(|(v, ty, _)| (*v, ty.clone()))
-                    .collect();
-
                 // Positions: heap-creating instructions and the Return position.
                 let mut inserts_after: Vec<(usize, IrInstr)> = Vec::new();
                 let mut return_pos: Option<usize> = None;
+                let mut returned_heap_vals: HashSet<ValueId> = HashSet::new();
 
                 for (i, instr) in func.blocks[bidx].instrs.iter().enumerate() {
                     if let Some(result) = instr.result() {
@@ -146,10 +136,27 @@ impl Pass for GcAnnotatePass {
                             }
                         }
                     }
-                    if matches!(instr, IrInstr::Return { .. }) {
+                    if let IrInstr::Return { values } = instr {
                         return_pos = Some(i);
+                        for value in values {
+                            returned_heap_vals.insert(*value);
+                        }
                     }
                 }
+
+                // Which heap values are safe to release in this block?
+                // A value is safe iff its defining block dominates `bid` and it
+                // is not escaping through this block's return.
+                let releasable: Vec<(ValueId, IrType)> = heap_vals
+                    .iter()
+                    .filter(|(value, _, def_bid)| {
+                        !returned_heap_vals.contains(value)
+                            && dom
+                                .get(&bid)
+                                .map_or(false, |dom_set| dom_set.contains(def_bid))
+                    })
+                    .map(|(v, ty, _)| (*v, ty.clone()))
+                    .collect();
 
                 let mut new_instrs: Vec<IrInstr> = Vec::new();
                 let instrs = std::mem::take(&mut func.blocks[bidx].instrs);
